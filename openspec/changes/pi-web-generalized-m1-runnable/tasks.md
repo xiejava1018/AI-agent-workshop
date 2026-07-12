@@ -14,7 +14,7 @@
 
 ## 2. User auth 层（AuthProvider + root bootstrap）
 
-- [ ] 2.1 创建 `lib/auth-provider.ts` 接口：`AuthProvider { authenticate, revoke }` 与 DI 工厂
+- [x] 2.1 创建 `lib/auth-provider.ts` 接口：`AuthProvider { authenticate, revoke }` 与 DI 工厂
 - [ ] 2.2 创建 `lib/auth-provider-local.ts`：`LocalPasswordAuthProvider` 使用 bcryptjs（cost=10）+ jose 签 JWT；首次登录强制改密
 - [ ] 2.3 创建 `scripts/bootstrap-root.ts`：`prisma.user.count() === 0` 时 create root + 随机密码（≥16B URL-safe base64）→ bcrypt 哈希入库 → stdout 写 `[BOOTSTRAP] root username=root password=<secret>` 一行
 - [ ] 2.4 创建 `app/api/auth/user-login/route.ts`：调 `provider.authenticate`；签 JWT（15min）；写 HttpOnly cookie `pw_at`
