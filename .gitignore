@@ -40,3 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .factory
+
+# Comet platform workspace (change state lives in openspec/changes/<name>/.comet/)
+/.comet/
+openspec/changes/*/.comet/
