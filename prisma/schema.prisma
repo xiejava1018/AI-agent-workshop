@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  username           String   @unique
+  passwordHash       String
+  mustChangePassword Boolean  @default(false)
+  lastProjectId      String?
+  createdAt          DateTime @default(now())
+  teams              TeamMember[]
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  ownerUserId String
+  createdAt   DateTime @default(now())
+  members     TeamMember[]
+  projects    Project[]
+}
+
+model TeamMember {
+  teamId   String
+  userId   String
+  role     Role     @default(MEMBER)
+  joinedAt DateTime @default(now())
+  team     Team     @relation(fields: [teamId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+  @@id([teamId, userId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String
+  rootPath  String
+  createdBy String
+  createdAt DateTime @default(now())
+  team      Team     @relation(fields: [teamId], references: [id])
+  @@unique([teamId, rootPath])
+}
+
+// M2 reserved — schema 留空表, M1 永 false
+model SessionShare {
+  sessionId         String
+  sharedWithUserId  String
+  createdAt         DateTime @default(now())
+  @@id([sessionId, sharedWithUserId])
+}
