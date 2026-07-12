@@ -9,8 +9,8 @@
 - [x] 1.1 在 fork 仓库根创建 `prisma/schema.prisma`；包含 `users` / `teams` / `team_members` / `projects`，全部 ID 用 `String @id @default(cuid())`；`team_members.role` 用 enum `OWNER | ADMIN | MEMBER`
 - [x] 1.2 安装依赖：`prisma` + `@prisma/client` + `bcryptjs` + `jose` + `async-mutex` + `next-intl` + `@playwright/test` + `@axe-core/playwright`；在 `package.json` 锁定 `@earendil-works/pi-coding-agent` 与 `@earendil-works/pi-ai` 版本（不带 `^`）
 - [x] 1.3 配置 `package.json` 脚本：`db:migrate` = `prisma migrate dev`、`db:generate` = `prisma generate`、`start` = 预先 `scripts/bootstrap-root.ts` 后 `next start`
-- [ ] 1.4 创建 `.env.example`，含 `DATABASE_URL=file:./data/dev.db`、`PI_WEB_DATA_DIR=./data`、`PI_WEB_MASTER_KEY=`
-- [ ] 1.5 创建 `data/.gitkeep`，README 强调 `-v $(pwd)/data:/app/data` 持久化
+- [x] 1.4 创建 `.env.example`，含 `DATABASE_URL=file:./data/dev.db`、`PI_WEB_DATA_DIR=./data`、`PI_WEB_MASTER_KEY=`
+- [x] 1.5 创建 `data/.gitkeep`，README 强调 `-v $(pwd)/data:/app/data` 持久化
 
 ## 2. User auth 层（AuthProvider + root bootstrap）
 
