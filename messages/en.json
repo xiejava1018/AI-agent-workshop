@@ -22,7 +22,16 @@
     "recentSessions": "Recent sessions",
     "mustChangePassword": "Password change required",
     "changeNow": "Change password now",
-    "noProjects": "No projects yet"
+    "noProjects": "No projects yet",
+    "createUser": {
+      "title": "Create User",
+      "usernameLabel": "Username",
+      "usernamePlaceholder": "New username",
+      "submit": "Create",
+      "success": "Created user: {username}",
+      "initialPassword": "Initial password: {password}",
+      "error": "Failed: {message}"
+    }
   },
   "common": {
     "logout": "Sign out",

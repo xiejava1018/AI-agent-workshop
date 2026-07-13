@@ -4,6 +4,7 @@ import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserContext } from "@/lib/server-user";
 import { isSupportedLocale, t as translate, type Locale } from "@/lib/i18n";
+import CreateUserForm from "./CreateUserForm";
 
 // Task 3.3: dashboard server component (RSC). Reads the pw_at JWT cookie
 // directly (the /{locale}/dashboard route is excluded from middleware JWT
@@ -93,6 +94,8 @@ export default async function DashboardPage({ params }: Props) {
           ))}
         </ul>
       )}
+
+      {(ctx.role === "OWNER" || ctx.role === "ADMIN") && <CreateUserForm />}
     </div>
   );
 }
