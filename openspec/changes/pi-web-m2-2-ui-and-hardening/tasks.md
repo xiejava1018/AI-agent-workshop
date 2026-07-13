@@ -40,8 +40,8 @@
 
 ## 5. 元测试 + E2E 扩
 
-- [ ] 5.1 创建 `lib/must-change-password.meta.test.ts`（vitest）：扫描 `app/api/**/route.ts` 所有 POST/PUT/DELETE handler，断言非 `/api/auth/change-password` 都引用 `enforceNotMustChange`（meta-test 防遗漏）
-- [ ] 5.2 扩 `tests/e2e/login.spec.ts`（已有 M1 smoke）：加 4 个 test block
+- [x] 5.1 创建 `lib/must-change-password.meta.test.ts`（vitest）：扫描 `app/api/**/route.ts` 所有 POST/PUT/DELETE handler，断言非 `/api/auth/change-password` 都引用 `enforceNotMustChange`（meta-test 防遗漏）
+- [x] 5.2 扩 `tests/e2e/login.spec.ts`（已有 M1 smoke）：加 4 个 test block
   - (a) `login UI → dashboard via page.goto`（Playwright browser 走 UI 流程）
   - (b) `mustChangePassword 403 check`（root 改密前 POST /api/agent/new 返 403）
   - (c) `sessions 3-way filter`（创建 fake session，验证 member 看不到，admin 看到）
