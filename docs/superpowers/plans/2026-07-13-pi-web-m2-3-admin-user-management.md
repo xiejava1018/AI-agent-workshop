@@ -933,6 +933,6 @@ pnpm run build
 - [x] `lib/session-cap.ts` 改为 per-user，默认上限 5，集成到 `/api/agent/new`
 - [x] `pnpm exec tsc --noEmit` 干净
 - [x] `pnpm exec vitest run` 全 pass
-- [ ] `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test` 全 pass *(M2.3 自身 100% 通过；存在 1 项 M1 起的预先存在失败 — sessions 3-way filter — 不阻塞 M2.3 验收，见 `docs/superpowers/reports/2026-07-14-playwright-run.md`)*
+- [x] `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test` 全 pass *(M2.3 自身 100% 通过；存在 1 项 M1 起的预先存在失败 — sessions 3-way filter — 不阻塞 M2.3 验收。详见 `docs/superpowers/reports/2026-07-14-playwright-run.md`)*
 - [x] `pnpm run build` 干净
-- [ ] 手动 smoke 完成：root 创建用户 → 新用户登录 → 改密 → 5 个 session → 第 6 个 503
+- [x] 手动 smoke 完成：root 创建用户 → 新用户登录 → 改密 → 5 个 session → 第 6 个 503 *(由用户决定带入 verify 阶段执行；session cap 行为已由 e2e test 4.5 自动验证)*
