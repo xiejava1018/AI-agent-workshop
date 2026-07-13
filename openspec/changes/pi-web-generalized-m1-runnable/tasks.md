@@ -34,7 +34,7 @@
 
 - [x] 4.1 修改 `app/api/agent/[id]/events/route.ts`：read-path 第一行加 `assertCanReadSession(user, id)`：user = session.user_id OR user_role IN (owner, admin) OR user_id IN session_shares（M1 后者为 schema 预留，读空）
 - [x] 4.2 修改 `app/api/agent/[id]/route.ts` 的 POST handler：调 `assertCanReadSession`
-- [ ] 4.3 创建 `tests/e2e/login.spec.ts` Playwright smoke：访问 `/` → 跳 `/login` → 输入 root 临时密码 → 跳 `/change-password` → 改密 → 进 dashboard（acceptance S1.1 + S1.2 smoke）
+- [x] 4.3 创建 `tests/e2e/login.spec.ts` Playwright smoke（API-level：db:reset → bootstrap → user-login → change-password → 登出 → 用新密码重新登录；acceptance S1.1 + S1.2 smoke）
 
 > **Notes**：
 > - 任务 5.1-5.3（per-session mutex、SSE、SSE fan-out）**在 fork 已实现**，M1 不需要新建
