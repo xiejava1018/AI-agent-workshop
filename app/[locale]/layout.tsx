@@ -16,11 +16,13 @@ type Props = {
   params: Promise<{ locale: string }>;
 };
 
-// Pre-render the two supported locale roots. Unknown segments fall through
-// to the isSupportedLocale guard below and 404.
-export function generateStaticParams() {
-  return [{ locale: "en" }, { locale: "zh-CN" }];
-}
+// Auth/i18n UI pages are interactive and must not be statically prerendered:
+// next-intl resolves its server config during SSG, which this fork doesn't
+// provide (messages come via NextIntlClientProvider, not i18n/request.ts).
+// M2.2 Tasks 3.1-3.3: replaced generateStaticParams (which forced prerender
+// and tripped the missing-config error) with force-dynamic so the [locale]
+// routes render on demand.
+export const dynamic = "force-dynamic";
 
 export default async function LocaleLayout({ children, params }: Props) {
   const { locale } = await params;
