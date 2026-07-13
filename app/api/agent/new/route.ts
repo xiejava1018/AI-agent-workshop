@@ -3,30 +3,115 @@ import { existsSync } from "fs";
 import { allowFileRoot } from "@/lib/file-access";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { enforceNotMustChange } from "@/lib/must-change-password";
+import { prisma } from "@/lib/prisma";
+import { assertWithinRoot } from "@/lib/path-safety";
+import {
+  sessionCapCheck,
+  sessionCapIncrement,
+  SESSION_CAP_MAX,
+} from "@/lib/session-cap";
 
-// POST /api/agent/new  body: { cwd: string; type: string; message?: string; ... }
+// POST /api/agent/new  body: { type: string; message?: string; ... }
 // Spawns a brand-new pi session. Most calls immediately send the first command;
 // type:"ensure_session" only creates the runtime so clients can query commands.
 // Returns { sessionId, data } where sessionId is pi's real session id.
+//
+// The cwd is NOT supplied by the client. Instead, server reads
+// user.lastProjectId, loads the Project, verifies the user is a member of
+// the project's team, and uses project.rootPath as the cwd (Task 4.2).
 export async function POST(req: NextRequest) {
   const gate = enforceNotMustChange(req);
   if (gate) return gate;
-  try {
-    const body = await req.json() as { cwd?: string; [key: string]: unknown };
-    const { cwd, ...command } = body;
 
-    if (!cwd || typeof cwd !== "string") {
-      return NextResponse.json({ error: "cwd is required" }, { status: 400 });
+  // Task 4.6: 50-cap check BEFORE any expensive work. In-memory counter
+  // (lib/session-cap.ts). JS single-threaded event loop makes the check
+  // + (later) increment safe for synchronous calls. Awaited lookups
+  // between check and increment could theoretically allow concurrent
+  // requests to slip past by 1 in the worst case; accepted per design
+  // doc §D4.
+  const cap = sessionCapCheck();
+  if (!cap.allowed) {
+    return new NextResponse(
+      JSON.stringify({
+        error: `session cap reached (${SESSION_CAP_MAX} active sessions)`,
+      }),
+      {
+        status: 503,
+        headers: {
+          "Retry-After": "60",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+
+  try {
+    // Task 4.2: cwd is no longer read from request body. Resolve cwd
+    // from user.lastProjectId -> Project.rootPath, with team-membership
+    // authorization.
+    const userId = req.headers.get("x-user-id");
+    if (!userId) {
+      return NextResponse.json({ error: "auth required" }, { status: 401 });
     }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { lastProjectId: true },
+    });
+    if (!user?.lastProjectId) {
+      return NextResponse.json(
+        { error: "no project selected" },
+        { status: 400 }
+      );
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: user.lastProjectId },
+    });
+    if (!project) {
+      return NextResponse.json({ error: "project not found" }, { status: 404 });
+    }
+
+    // Authorization: user must be a member of the project's team.
+    const tm = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId: project.teamId, userId } },
+    });
+    if (!tm) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
+    // Path self-check (M1 invariant — cwd must lie within itself).
+    try {
+      assertWithinRoot(project.rootPath, project.rootPath);
+    } catch {
+      return NextResponse.json({ error: "path invalid" }, { status: 500 });
+    }
+
+    const cwd = project.rootPath;
+    const body = await req.json() as { [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } =
+      body as {
+        provider?: string;
+        modelId?: string;
+        toolNames?: string[];
+        thinkingLevel?: string;
+        [key: string]: unknown;
+      };
+
     if (!existsSync(cwd)) {
-      return NextResponse.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
+      return NextResponse.json(
+        { error: `Directory does not exist: ${cwd}` },
+        { status: 400 }
+      );
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: string; [key: string]: unknown };
-
     const tempKey = `__new__${Date.now()}`;
     const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, toolNames);
+
+    // Task 4.6: increment cap ONLY after successful session creation.
+    // A failed startRpcSession must NOT consume a slot.
+    sessionCapIncrement();
 
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
     // in sync so the new cwd is immediately readable via /api/files. Without this,
