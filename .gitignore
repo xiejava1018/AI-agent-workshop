@@ -48,3 +48,6 @@ next-env.d.ts
 # Comet platform workspace (change state lives in openspec/changes/<name>/.comet/)
 /.comet/
 openspec/changes/*/.comet/
+
+# Local git worktrees
+/.worktrees/
