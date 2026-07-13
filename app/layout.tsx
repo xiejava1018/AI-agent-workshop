@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Noto_Sans_Mono } from "next/font/google";
-import Script from "next/script";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import { ThemeInit } from "./theme-init";
 
 const notoSansMono = Noto_Sans_Mono({
   subsets: ["latin", "cyrillic"],
@@ -24,9 +24,9 @@ export default function RootLayout({
     <html lang="en" translate="no" className={`${notoSansMono.variable} notranslate`} suppressHydrationWarning>
       <head>
         <meta name="google" content="notranslate" />
-        <Script id="theme-init" strategy="beforeInteractive">{`(function(){try{var t=localStorage.getItem("pi-theme");if(t==="dark")document.documentElement.classList.add("dark")}catch(e){}})();`}</Script>
       </head>
       <body translate="no" className="notranslate" style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
+        <ThemeInit />
         {children}
       </body>
     </html>
