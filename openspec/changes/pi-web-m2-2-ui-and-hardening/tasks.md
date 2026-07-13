@@ -30,7 +30,7 @@
 
 ## 4. M1 deferred WARNINGs 修复
 
-- [ ] 4.1 6 个写路由顶部加 `enforceNotMustChange` 调用：`app/api/agent/new` `app/api/projects` (POST) `app/api/projects/[id]/bind` `app/api/agent/[id]/events` `app/api/agent/[id]` (POST) `app/api/agent/[id]` (GET)
+- [x] 4.1 6 个写路由顶部加 `enforceNotMustChange` 调用：`app/api/agent/new` `app/api/projects` (POST) `app/api/projects/[id]/bind` `app/api/agent/[id]/events` `app/api/agent/[id]` (POST) `app/api/agent/[id]` (GET)
 - [ ] 4.2 修改 `app/api/agent/new/route.ts`：删 `cwd` 从 body 读取；改用 `user.lastProjectId` → `project.rootPath`（含 membership check）
 - [ ] 4.3 修改 `app/api/sessions/route.ts`：实现 3 路并集过滤（self / team admin / share placeholder）
 - [ ] 4.4 修改 `lib/session-meta.ts::rebuildFromJsonl`：真正扫 `<PI_WEB_DATA_DIR>/**/*.jsonl` 第一行元数据
