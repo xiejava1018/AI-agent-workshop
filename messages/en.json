@@ -3,15 +3,29 @@
     "title": "Sign in",
     "username": "Username",
     "password": "Password",
-    "submit": "Sign in"
+    "submit": "Sign in",
+    "error": "Invalid credentials"
   },
   "changePassword": {
     "title": "Change your password",
     "newPassword": "New password",
     "confirm": "Confirm new password",
-    "submit": "Update password"
+    "submit": "Update password",
+    "tooShort": "Password must be at least 8 characters",
+    "success": "Password updated"
   },
   "dashboard": {
-    "title": "Dashboard"
+    "title": "Dashboard",
+    "welcome": "Welcome {username} ({role})",
+    "team": "Team",
+    "projects": "Projects",
+    "recentSessions": "Recent sessions",
+    "mustChangePassword": "Password change required",
+    "changeNow": "Change password now",
+    "noProjects": "No projects yet"
+  },
+  "common": {
+    "logout": "Sign out",
+    "language": "Language"
   }
 }
