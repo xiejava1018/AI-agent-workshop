@@ -2,6 +2,7 @@
 change: pi-web-generalized-m1-runnable
 design-doc: docs/superpowers/specs/2026-07-12-pi-web-generalized-m1-design.md
 base-ref: b3bcb4c58eec1c29704e7dbbad5d6904b36f05d7
+archived-with: 2026-07-13-pi-web-generalized-m1-runnable
 ---
 
 # M1 通用 web 多用户 AI agent 工作台 — 实现计划

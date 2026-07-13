@@ -2,6 +2,8 @@
 comet_change: pi-web-generalized-m1-runnable
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-13-pi-web-generalized-m1-runnable
+status: final
 ---
 
 # 设计文档 — M1 通用 web 多用户 AI agent 工作台
