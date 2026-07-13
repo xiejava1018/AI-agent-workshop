@@ -28,7 +28,7 @@
 - [x] 3.3 新增 `lib/server-user.ts`：扩展 `getCurrentUserContext` 或新增 `assertIsAdmin(req)` helper，校验 role 为 OWNER/ADMIN
 - [x] 3.4 新增 `app/api/admin/users/route.ts`：`POST` 仅 admin 可调用，生成随机密码（≥16B URL-safe），bcrypt 哈希后写入 `User`，返回一次性明文密码
 - [x] 3.5 新增 `app/api/admin/users/route.ts` 的 `GET` handler：列出当前 team 下用户（仅 admin）
-- [ ] 3.6 更新 `tests/e2e/login.spec.ts`：新增 admin 创建用户 → 新用户登录 → 强制改密流程
+- [x] 3.6 更新 `tests/e2e/login.spec.ts`：新增 admin 创建用户 → 新用户登录 → 强制改密流程
 
 ## 4. per-user session cap
 
