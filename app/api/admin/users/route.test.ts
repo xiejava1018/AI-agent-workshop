@@ -7,7 +7,8 @@
 //     createdBy set to caller.
 //   - POST non-admin (MEMBER role): 403 forbidden, no user created.
 //   - POST missing x-user-id header: 401.
-//   - POST missing x-user-role header: 401 (treat as non-authenticated for admin API).
+//   - POST with only x-user-id: role is derived from DB (admin allowed, MEMBER denied).
+//   - POST forged x-user-role header cannot elevate a MEMBER caller.
 //   - POST empty username: 400.
 //   - POST duplicate username: 409 username exists.
 //   - GET non-admin: 403.
@@ -148,11 +149,58 @@ describe("POST /api/admin/users", () => {
     expect(body).toEqual({ error: "auth required" });
   });
 
-  it("returns 401 when x-user-role header is missing", async () => {
+  it("derives an admin role from DB when x-user-role header is missing", async () => {
     const { POST } = await import("./route");
     const { userId } = await makeAdminUser();
-    const res = await POST(makePostReq({ callerId: userId, callerRole: null }));
-    expect(res.status).toBe(401);
+    const username = uniqueUsername("role-from-db");
+    const res = await POST(
+      makePostReq({
+        callerId: userId,
+        callerRole: null,
+        body: { username },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).username).toBe(username);
+  });
+
+  it("returns 403 for MEMBER with only x-user-id and no x-user-role", async () => {
+    const { POST } = await import("./route");
+    const { userId } = await makeMemberUser();
+    const blockedUsername = uniqueUsername("missing-role");
+    const res = await POST(
+      makePostReq({
+        callerId: userId,
+        callerRole: null,
+        body: { username: blockedUsername },
+      })
+    );
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
+    expect(
+      await prisma.user.findUnique({ where: { username: blockedUsername } })
+    ).toBeNull();
+  });
+
+  it("returns 403 when MEMBER forges an OWNER role header", async () => {
+    const { POST } = await import("./route");
+    const { userId } = await makeMemberUser();
+    const blockedUsername = uniqueUsername("forged-role");
+    const res = await POST(
+      makePostReq({
+        callerId: userId,
+        callerRole: "OWNER",
+        body: { username: blockedUsername },
+      })
+    );
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
+    expect(
+      await prisma.user.findUnique({ where: { username: blockedUsername } })
+    ).toBeNull();
   });
 
   it("returns 403 with forbidden when caller is MEMBER", async () => {

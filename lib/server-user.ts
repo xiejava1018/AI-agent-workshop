@@ -40,32 +40,31 @@ export async function getCurrentUserContext(
 
 /**
  * Pure helper — true if the role string is OWNER or ADMIN.
- * Used by routes that gate on role without needing DB context, e.g. when the
- * request only carries `x-user-role` and we want to fail fast before reading
- * the DB. Caller-side `assertIsAdmin` performs the same check but also
- * inspects the request headers.
  */
 export function isAdminRole(role: string | null | undefined): boolean {
   return role === "OWNER" || role === "ADMIN";
 }
 
 /**
- * Read `x-user-id` and `x-user-role` from the request headers and verify the
- * caller is an OWNER or ADMIN. Returns the admin's userId on success, or null
- * if either header is missing or the role is not admin.
+ * Read `x-user-id` from the request header and derive the caller's role from
+ * the database (via `getUserHighestRole`). Returns the admin's userId on
+ * success, or null if the header is missing or the derived role is not OWNER
+ * or ADMIN.
  *
- * Routes that need to allow non-admin callers (or surface 401 vs 403
- * distinctly) should NOT use this — they should branch on the headers
- * themselves. The admin API surface always returns 403 for both "missing
- * header" and "wrong role" — that is intentionally the same shape so a probe
- * cannot distinguish "not logged in" from "not admin".
+ * SECURITY: This helper intentionally does NOT trust `x-user-role` on the
+ * request. Even though middleware injects a DB-derived value for downstream
+ * consumers, a direct route invocation can supply its own header. The only
+ * source of truth for this authorization decision is the DB.
+ *
+ * Route handlers that need to distinguish 401 (no auth) from 403 (logged-in
+ * but not admin) should branch on `x-user-id` themselves.
  */
-export function assertIsAdmin(
+export async function assertIsAdmin(
   req: NextRequest
-): { userId: string } | null {
+): Promise<{ userId: string } | null> {
   const userId = req.headers.get("x-user-id");
-  const role = req.headers.get("x-user-role");
   if (!userId) return null;
-  if (!isAdminRole(role)) return null;
+  const role = await getUserHighestRole(userId);
+  if (role !== "OWNER" && role !== "ADMIN") return null;
   return { userId };
 }

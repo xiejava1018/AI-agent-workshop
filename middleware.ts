@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma"; // M2.2 NEW: now possible with runtime:'nodejs'
+import { getUserHighestRole } from "@/lib/user-role";
 
 // Read PI_WEB_JWT_SECRET at module load; throw if missing so a missing
 // secret is caught at boot, never silently allowing forged tokens.
@@ -54,9 +55,15 @@ export async function middleware(req: NextRequest) {
       return NextResponse.json({ error: "invalid session" }, { status: 401 });
     }
 
+    const userRole = await getUserHighestRole(userId);
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-user-id", userId);
     requestHeaders.set("x-must-change-password", String(user.mustChangePassword)); // M2.2 NEW
+    if (userRole) {
+      requestHeaders.set("x-user-role", userRole);
+    } else {
+      requestHeaders.delete("x-user-role");
+    }
 
     return NextResponse.next({ request: { headers: requestHeaders } });
   } catch {
