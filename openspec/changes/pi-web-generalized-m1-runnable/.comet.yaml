@@ -1,6 +1,6 @@
 workflow: full
 language: zh-CN
-phase: verify
+phase: archive
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -13,12 +13,12 @@ auto_transition: true
 base_ref: b3bcb4c58eec1c29704e7dbbad5d6904b36f05d7
 design_doc: docs/superpowers/specs/2026-07-12-pi-web-generalized-m1-design.md
 plan: docs/superpowers/plans/2026-07-13-pi-web-generalized-m1-runnable.md
-verify_result: pending
+verify_result: pass
 verification_report: docs/superpowers/reports/2026-07-13-pi-web-generalized-m1-runnable-verify.md
 branch_status: handled
 created_at: 2026-07-12
-verified_at: null
-archive_confirmation: null
+verified_at: 2026-07-13
+archive_confirmation: pending
 archived: false
 direct_override: null
 handoff_context: openspec/changes/pi-web-generalized-m1-runnable/.comet/handoff/design-context.json
