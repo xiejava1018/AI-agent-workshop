@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
 import { statSync } from "fs";
 import { allowFileRoot } from "@/lib/allowed-roots";  // fork 已有
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 async function assertCanCreate(userId: string): Promise<{ teamId: string; role: string } | null> {
   const tm = await prisma.teamMember.findFirst({

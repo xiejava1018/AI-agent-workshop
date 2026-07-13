@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
 import { statSync } from "fs";
 import { allowFileRoot } from "@/lib/allowed-roots";  // fork 已有
 import { assertWithinRoot } from "@/lib/path-safety";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
