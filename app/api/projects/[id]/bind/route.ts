@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
 import { statSync } from "fs";
 import { allowFileRoot } from "@/lib/allowed-roots";  // fork 已有
 import { assertWithinRoot } from "@/lib/path-safety";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
+import { enforceNotMustChange } from "@/lib/must-change-password";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = enforceNotMustChange(req);
+  if (gate) return gate;
   const { id } = await params;
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });

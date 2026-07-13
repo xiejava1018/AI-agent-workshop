@@ -1,5 +1,4 @@
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import { prisma } from "./prisma";
 
 export async function getUserHighestRole(userId: string): Promise<"OWNER" | "ADMIN" | "MEMBER" | null> {
   const tms = await prisma.teamMember.findMany({ where: { userId } });

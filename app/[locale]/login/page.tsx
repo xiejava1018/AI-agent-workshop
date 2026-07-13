@@ -1,0 +1,57 @@
+"use client";
+import { useTranslations } from "next-intl";
+import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
+
+// Auth forms are inherently interactive (credentials entry + server round-trip),
+// so skip static prerender. Without this, Next.js attempts to SSG the page and
+// next-intl looks for an i18n/request.ts server config that this fork does not
+// provide (messages are supplied via NextIntlClientProvider in the layout).
+export const dynamic = "force-dynamic";
+
+export default function LoginPage() {
+  const t = useTranslations("login");
+  const router = useRouter();
+  const params = useParams<{ locale: string }>();
+  const locale = params.locale || "en";
+  const [error, setError] = useState("");
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    const fd = new FormData(e.currentTarget);
+    const res = await fetch("/api/auth/user-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: fd.get("username"),
+        password: fd.get("password"),
+      }),
+    });
+    if (!res.ok) {
+      setError(t("error"));
+      return;
+    }
+    const body = await res.json();
+    // Redirect under the current [locale] segment
+    router.push(body.mustChangePassword ? `/${locale}/change-password` : `/${locale}/dashboard`);
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="max-w-sm mx-auto mt-20 p-6 border rounded">
+      <h1 className="text-2xl mb-4">{t("title")}</h1>
+      <div className="mb-4">
+        <label className="block mb-1">{t("username")}</label>
+        <input name="username" required className="w-full border rounded px-2 py-1" />
+      </div>
+      <div className="mb-4">
+        <label className="block mb-1">{t("password")}</label>
+        <input name="password" type="password" required className="w-full border rounded px-2 py-1" />
+      </div>
+      {error && <p className="text-red-600 mb-2">{error}</p>}
+      <button type="submit" className="w-full bg-blue-600 text-white rounded py-2">
+        {t("submit")}
+      </button>
+    </form>
+  );
+}

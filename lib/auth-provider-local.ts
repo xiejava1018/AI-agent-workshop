@@ -1,9 +1,8 @@
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
-import { PrismaClient } from "@prisma/client";
 import { AuthProvider, AuthenticatedUser } from "./auth-provider";
+import { prisma } from "./prisma";
 
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.PI_WEB_JWT_SECRET || "m1-dev-secret-rotate-in-prod";
 const COST = 10;
 

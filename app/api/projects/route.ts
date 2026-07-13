@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
 import { statSync } from "fs";
 import { allowFileRoot } from "@/lib/allowed-roots";  // fork 已有
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
+import { enforceNotMustChange } from "@/lib/must-change-password";
 
 async function assertCanCreate(userId: string): Promise<{ teamId: string; role: string } | null> {
   const tm = await prisma.teamMember.findFirst({
@@ -14,6 +13,8 @@ async function assertCanCreate(userId: string): Promise<{ teamId: string; role: 
 }
 
 export async function GET(req: NextRequest) {
+  const gate = enforceNotMustChange(req);
+  if (gate) return gate;
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
   // M1 简化: 列 user 加入的 team 下的所有 projects
@@ -24,6 +25,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = enforceNotMustChange(req);
+  if (gate) return gate;
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
   const authz = await assertCanCreate(userId);
