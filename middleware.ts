@@ -24,6 +24,8 @@ export async function middleware(req: NextRequest) {
     const { payload } = await jwtVerify(cookie, new TextEncoder().encode(SECRET));
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-user-id", String(payload.sub));
+    // 不在 middleware 注入 x-user-role：middleware 默认 edge runtime，
+    // 不能直接 import Prisma。需 role 的路由自己调 getUserHighestRole(req)。
     return NextResponse.next({ request: { headers: requestHeaders } });
   } catch {
     return NextResponse.json({ error: "invalid session" }, { status: 401 });

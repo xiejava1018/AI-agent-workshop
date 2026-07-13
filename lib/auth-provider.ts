@@ -7,6 +7,8 @@ export interface AuthenticatedUser {
 export interface AuthProvider {
   authenticate(username: string, password: string): Promise<AuthenticatedUser>;
   revoke(userId: string): Promise<void>;
+  // 签发短寿命 JWT — 所有 user-auth provider 都需要（cookie 用）
+  signJwt(userId: string): Promise<string>;
 }
 
 let _provider: AuthProvider | null = null;

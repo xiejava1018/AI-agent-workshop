@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LocalPasswordAuthProvider } from "@/lib/auth-provider-local";
+import { getAuthProvider, registerAuthProvider } from "@/lib/auth-provider";
 
-const provider = new LocalPasswordAuthProvider();
+// Register the local-password implementation once at module load.
+// Other auth implementations (SAML/OIDC, M2) can register a different
+// provider without touching route code.
+registerAuthProvider(new LocalPasswordAuthProvider());
+
+const provider = getAuthProvider();
 
 export async function POST(req: NextRequest) {
   const { username, password } = await req.json();

@@ -6,7 +6,12 @@ const prisma = new PrismaClient();
 
 async function main() {
   const count = await prisma.user.count();
-  if (count > 0) return;
+  if (count > 0) {
+    // 重启不重新生成 — 但 spec 要求始终输出一行 [BOOTSTRAP] 用于运维确认
+    // eslint-disable-next-line no-console
+    console.log(`[BOOTSTRAP] root username=root password=<redacted>`);
+    return;
+  }
 
   const password = randomBytes(18).toString("base64url");
   const passwordHash = await bcrypt.hash(password, 10);
