@@ -1,0 +1,19 @@
+{
+  "change": "pi-web-m2-2-ui-and-hardening",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "aea867d6c2970330e156d76fdfb84cdbda06c0779e1e31d9ac85b60117df30f4",
+  "files": [
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/proposal.md", "sha256": "b9c72aefd6e063600f72a02affe560420e9c03f2b3665e165a365090374ca01d" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/design.md", "sha256": "c8e6fbc3e5f5653b38760469e34a494049b1d7fb2c7570f97ce05b21768e6a7e" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/tasks.md", "sha256": "d4f66c49642aa19d1b39cde98ee05401617757dc1d5b972864f626f456bade65" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/specs/agent-session-in-process/spec.md", "sha256": "8f9d7f1074124a9b7b1774c70c6491c0db804f6c6d8253a0e173a4c8d8d8a24a" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/specs/multi-tenant-team-model/spec.md", "sha256": "6e450a94a493e2bbd2280fda29ca431b854dd0acee65cee0258de1fbd157e5ed" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/specs/runnable-harness/spec.md", "sha256": "b6c8618a6dfd6cd2fa4a9bcf37ff1533d1fdc4d391fe46ce192133e380131ee4" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/specs/session-cap/spec.md", "sha256": "96a5034d51957cd51ef17fc2233e9fab4668527eeacbc0d1698d43ed31e3288c" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/specs/session-visibility-filter/spec.md", "sha256": "5ff9bac9cb7efc1e5beb68d4bcd44e0dec357d7037a567209ce08643f6f808c8" },
+    { "path": "openspec/changes/pi-web-m2-2-ui-and-hardening/specs/user-auth-ui/spec.md", "sha256": "d653091ff820c79bb95df9081d6a1e95356ca0b1d1d6f46b9d0a9373f4b8d832" }
+  ]
+}

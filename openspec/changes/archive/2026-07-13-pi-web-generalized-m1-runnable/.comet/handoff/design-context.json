@@ -1,0 +1,19 @@
+{
+  "change": "pi-web-generalized-m1-runnable",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "b6cc83d48548eef88c2f8f4c545261e8c7f55ea5be902686a0c1996210edb8ec",
+  "files": [
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/proposal.md", "sha256": "89d4e8a80766e474285fa0308cb2d66cb71d668986fa7eccb3c4f06ff1769406" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/design.md", "sha256": "b81cd24a11942bfc35cb7fa2f9aa360443e24e8220542e9486eb4e90eaa77fd3" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/tasks.md", "sha256": "90865c02fc2e5168e9f61a99ea5f5d5e557d5917e8bbef01f69c1c025e905d63" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/specs/agent-session-in-process/spec.md", "sha256": "148a44027be370e7a3c6420682b10c8f7161d90c8a5d62993926e7c7415dce8a" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/specs/auth-provider-user/spec.md", "sha256": "4f6194581b8c72936c91f67e3c9c18e9fd496346d4a412a62b1c49765848c925" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/specs/bootstrap-root-owner/spec.md", "sha256": "06b5009ce8bf1ef1f8e2a7b15de47554adc61d563049919f57243fb86d9df588" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/specs/multi-tenant-team-model/spec.md", "sha256": "40cd9fe184106b3d923b103b7d6d3fc5eda8f55ac4f6ed31721c04398626d38e" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/specs/project-and-path-safety/spec.md", "sha256": "6748a4f4d645bdb79f1f9c68286f3364e278766cb9364c9d72bde8aab47ad832" },
+    { "path": "openspec/changes/pi-web-generalized-m1-runnable/specs/runnable-harness/spec.md", "sha256": "60e6827c1f34d172b98ff541a028219025029e8807fe2e62b1459244c87cf75d" }
+  ]
+}

@@ -18,30 +18,13 @@
 - **WHEN** `docker build -t pi-web-m2:test .` 被执行
 - **THEN** 镜像成功 build；`docker run pi-web-m2:test` 时启动日志包含 `[BOOTSTRAP]` 一行（如数据库空）+ `prisma migrate deploy` 输出 + `next start` 监听 30141
 
+## RENAMED Requirements
+
 ### Requirement: i18n 完整 wiring
+**FROM**: i18n 架构占位
+**TO**: i18n 完整 wiring
 
 仓库 MUST 安装 `next-intl` 且 MUST 通过 `[locale]` 路由段 (`app/[locale]/...`) 暴露所有 UI 页面。所有 key 必须在 `messages/en.json` 与 `messages/zh.json` 中存在对应值（中英文内容均填全，不留占位）。`lib/i18n.ts` MUST 暴露 `t(key, locale)` 与 `getMessages(locale)`。
-
-M2.2 范围覆盖的 key：
-- `login.{title,username,password,submit,error}`
-- `changePassword.{title,newPassword,confirm,submit,tooShort,success}`
-- `dashboard.{title,welcome,team,projects,recentSessions,mustChangePassword,changeNow}`
-- `common.{logout,language}`
-
-#### Scenario: 切换 en.json 中 key 值，UI 文字随之改变
-- **WHEN** 修改 `messages/en.json` 的 `login.title`
-- **THEN** 浏览器刷新后 `/en/login` 页面标题变更
-- **AND** `/zh-CN/login` 标题不变（仍走 zh.json）
-
-#### Scenario: 切换 locale URL
-- **WHEN** 浏览器从 `/en/dashboard` 导航到 `/zh-CN/dashboard`
-- **THEN** 页面文案切到中文
-- **AND** 用户会话 cookie 仍有效（locale 切换不重新登录）
-
-#### Scenario: zh.json 含完整值
-- **WHEN** `cat messages/zh.json` 被执行
-- **THEN** 输出包含所有 login / changePassword / dashboard / common key 的中文值
-- **AND** 无 "TODO" / "占位" / 空字符串值
 
 ### Requirement: PrismaClient 单例
 

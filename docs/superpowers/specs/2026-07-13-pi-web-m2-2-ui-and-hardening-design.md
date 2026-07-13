@@ -2,6 +2,8 @@
 comet_change: pi-web-m2-2-ui-and-hardening
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-13-pi-web-m2-2-ui-and-hardening
+status: final
 ---
 
 # 设计文档 — M2.2 通用 web 多用户 AI agent 工作台 (UI + 硬化 + 50 session cap)
@@ -845,4 +847,3 @@ CMD ["pnpm", "start"]
 - M1 验证报告: `docs/superpowers/reports/2026-07-13-pi-web-generalized-m1-runnable-verify.md`
 - 上游 capability spec (archived to main): `openspec/specs/{auth-provider-user,bootstrap-root-owner,multi-tenant-team-model,project-and-path-safety,agent-session-in-process,runnable-harness}/spec.md`
 - Fork: [xiejava1018/pi-web](https://github.com/xiejava1018/pi-web) v0.7.11
-
