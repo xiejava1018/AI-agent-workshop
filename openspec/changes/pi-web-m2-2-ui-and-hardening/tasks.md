@@ -36,7 +36,7 @@
 - [x] 4.4 修改 `lib/session-meta.ts::rebuildFromJsonl`：真正扫 `<PI_WEB_DATA_DIR>/**/*.jsonl` 第一行元数据
 - [x] 4.5 创建 `lib/session-cap.ts`：50 session 全局硬上限 in-memory counter；提供 `checkAndIncrement()` + `decrement()`
 - [x] 4.6 修改 `app/api/agent/new/route.ts`：调用 `lib/session-cap.ts::checkAndIncrement()`，超 50 返 503
-- [ ] 4.7 修改 `Dockerfile`：在 `prisma generate` 后加 `RUN pnpm exec prisma migrate deploy`
+- [x] 4.7 修改 `Dockerfile`：在 `prisma generate` 后加 `RUN pnpm exec prisma migrate deploy`
 
 ## 5. 元测试 + E2E 扩
 
