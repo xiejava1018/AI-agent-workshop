@@ -32,3 +32,18 @@ export function sessionCapDecrement(): void {
 }
 
 export const SESSION_CAP_MAX = MAX;
+
+// M2.2 known limitation: sessionCapDecrement has no production call site.
+// The fork's SessionManager does not expose a close hook for the M1 RSC
+// subsystem, so the in-memory counter only grows during a server's lifetime.
+// A process-exit observer below ensures graceful shutdown logs the final
+// count; M2.3+ will add a proper session-close hook.
+if (typeof process !== "undefined") {
+  process.on("beforeExit", () => {
+    const counter = getCounter();
+    // eslint-disable-next-line no-console
+    console.log(
+      `[session-cap] shutdown: final count = ${counter.count} (max ${MAX})`
+    );
+  });
+}

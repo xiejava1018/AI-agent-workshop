@@ -1,6 +1,6 @@
 "use client";
 import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 // Auth forms are inherently interactive, so skip static prerender. Without
@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 export default function ChangePasswordPage() {
   const t = useTranslations("changePassword");
   const router = useRouter();
+  const params = useParams<{ locale: string }>();
+  const locale = params.locale || "en";
   const [error, setError] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -38,7 +40,8 @@ export default function ChangePasswordPage() {
       setError(t("tooShort"));
       return;
     }
-    router.push("/dashboard");
+    // Redirect under the current [locale] segment
+    router.push(`/${locale}/dashboard`);
   }
 
   return (

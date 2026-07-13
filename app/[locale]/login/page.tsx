@@ -1,6 +1,6 @@
 "use client";
 import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 // Auth forms are inherently interactive (credentials entry + server round-trip),
@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 export default function LoginPage() {
   const t = useTranslations("login");
   const router = useRouter();
+  const params = useParams<{ locale: string }>();
+  const locale = params.locale || "en";
   const [error, setError] = useState("");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -31,8 +33,8 @@ export default function LoginPage() {
       return;
     }
     const body = await res.json();
-    // Redirect based on mustChangePassword flag
-    router.push(body.mustChangePassword ? "/change-password" : "/dashboard");
+    // Redirect under the current [locale] segment
+    router.push(body.mustChangePassword ? `/${locale}/change-password` : `/${locale}/dashboard`);
   }
 
   return (
