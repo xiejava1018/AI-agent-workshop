@@ -2,7 +2,19 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma"; // M2.2 NEW: now possible with runtime:'nodejs'
 
-const SECRET = process.env.PI_WEB_JWT_SECRET || "m1-dev-secret-rotate-in-prod";
+// Read PI_WEB_JWT_SECRET at module load; throw if missing so a missing
+// secret is caught at boot, never silently allowing forged tokens.
+function loadSecret(): Uint8Array {
+  const secret = process.env.PI_WEB_JWT_SECRET;
+  if (!secret) {
+    throw new Error(
+      "PI_WEB_JWT_SECRET is not set. Configure a strong random secret in the environment."
+    );
+  }
+  return new TextEncoder().encode(secret);
+}
+
+const SECRET = loadSecret();
 
 export const config = {
   runtime: "nodejs", // M2.2 NEW: required for Prisma in middleware (edge runtime can't run Prisma)
@@ -28,7 +40,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.json({ error: "auth required" }, { status: 401 });
   }
   try {
-    const { payload } = await jwtVerify(cookie, new TextEncoder().encode(SECRET));
+    const { payload } = await jwtVerify(cookie, SECRET);
     const userId = String(payload.sub);
 
     // M2.2 NEW: query mustChangePassword from DB (now possible with runtime:'nodejs')

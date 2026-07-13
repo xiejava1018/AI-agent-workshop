@@ -3,11 +3,20 @@ import { SignJWT } from "jose";
 import { PasswordAuthProvider, AuthenticatedUser } from "./auth-provider";
 import { prisma } from "./prisma";
 
-const JWT_SECRET = process.env.PI_WEB_JWT_SECRET || "m1-dev-secret-rotate-in-prod";
-const COST = 10;
+// Read PI_WEB_JWT_SECRET at module load time. Throwing here means a missing
+// secret is caught at boot, never silently allowing forged tokens.
+function loadSecret(): Uint8Array {
+  const secret = process.env.PI_WEB_JWT_SECRET;
+  if (!secret) {
+    throw new Error(
+      "PI_WEB_JWT_SECRET is not set. Configure a strong random secret in the environment."
+    );
+  }
+  return new TextEncoder().encode(secret);
+}
 
 function secretKey(): Uint8Array {
-  return new TextEncoder().encode(JWT_SECRET);
+  return loadSecret();
 }
 
 function randomJti(): string {

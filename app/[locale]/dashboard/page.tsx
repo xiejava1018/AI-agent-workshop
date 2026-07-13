@@ -10,7 +10,19 @@ import { isSupportedLocale, t as translate, type Locale } from "@/lib/i18n";
 // gating, so no x-user-id header is forwarded here). On any auth failure
 // (missing cookie / invalid JWT / unknown user) it redirects to the locale
 // login page. Inherits force-dynamic from the [locale] layout.
-const SECRET = process.env.PI_WEB_JWT_SECRET || "m1-dev-secret-rotate-in-prod";
+// Read PI_WEB_JWT_SECRET at module load; throw if missing so a missing
+// secret is caught at boot, never silently allowing forged tokens.
+function loadSecret(): Uint8Array {
+  const secret = process.env.PI_WEB_JWT_SECRET;
+  if (!secret) {
+    throw new Error(
+      "PI_WEB_JWT_SECRET is not set. Configure a strong random secret in the environment."
+    );
+  }
+  return new TextEncoder().encode(secret);
+}
+
+const SECRET = loadSecret();
 
 type Props = {
   params: Promise<{ locale: string }>;
@@ -38,7 +50,7 @@ export default async function DashboardPage({ params }: Props) {
   // Verify JWT
   let userId: string;
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(SECRET));
+    const { payload } = await jwtVerify(token, SECRET);
     userId = String(payload.sub);
   } catch {
     redirect(`/${locale}/login`);
