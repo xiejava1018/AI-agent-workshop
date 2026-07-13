@@ -41,8 +41,8 @@
 ## 5. UI 适配（最小改动）
 
 - [ ] 5.1 修改 `app/[locale]/login/page.tsx`：支持 401 时调用 `/api/auth/refresh` 重试；刷新失败跳转登录页
-- [ ] 5.2 修改 `app/[locale]/dashboard/page.tsx`：admin 角色显示最小“创建用户”表单；member 隐藏
-- [ ] 5.3 扩 `messages/en.json` 与 `messages/zh.json`：新增 admin 创建用户相关 key（username, createUser, initialPassword 等）
+- [x] 5.2 修改 `app/[locale]/dashboard/page.tsx`：admin 角色显示最小“创建用户”表单；member 隐藏
+- [x] 5.3 扩 `messages/en.json` 与 `messages/zh.json`：新增 admin 创建用户相关 key（username, createUser, initialPassword 等）
 
 ## 6. 验证与收尾
 
