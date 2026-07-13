@@ -7,7 +7,7 @@
 
 ## 1. 基础设施（i18n + Prisma 单例 + 写 API 门）
 
-- [ ] 1.1 创建 `lib/prisma.ts`：导出 `prisma` 单例（`globalThis.__prisma ?? new PrismaClient()`，dev hot-reload 复用）
+- [x] 1.1 创建 `lib/prisma.ts`：导出 `prisma` 单例（`globalThis.__prisma ?? new PrismaClient()`，dev hot-reload 复用）
 - [ ] 1.2 重构 M1 中所有 `new PrismaClient()` 调用为 `import { prisma } from "@/lib/prisma"`（auth-provider-local, user-role, auth routes, projects routes, projects/[id]/bind）
 - [ ] 1.3 创建 `lib/must-change-password.ts`：导出 `enforceNotMustChange(req: NextRequest): NextResponse | null`（读 `x-must-change-password` header，返回 null 通过或 403）
 - [ ] 1.4 创建 `lib/server-user.ts`：server-side helper `getCurrentUserContext(userId)` 返回 `{ user, role, teamIds, mustChangePassword }`，复用 `getUserHighestRole` 并新增 `getUserTeamIds`
