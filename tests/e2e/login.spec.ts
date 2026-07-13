@@ -231,3 +231,89 @@ test("change-password contract: fresh login → change-password → new password
   });
   expect(oldResp.status()).toBe(401);
 });
+
+// --- M2.3 Task 3.6: admin create user → new user login → force change password ---
+
+// E2E flow: admin (root) creates a user via POST /api/admin/users, receives
+// a one-time initialPassword, then the new user logs in with that password,
+// is forced to change it (mustChangePassword=true), and the new password
+// works while the old one is rejected.
+//
+// Test isolation: reset root password to the known bootstrap password so
+// we can login as root regardless of what previous tests did to the hash.
+test("admin creates user → new user login → force change password flow", async () => {
+  // Reset root password to the known bootstrap password
+  const { prisma } = await import("@/lib/prisma");
+  const bcrypt = await import("bcryptjs");
+  const newHash = await bcrypt.hash(rootPassword, 10);
+  await prisma.user.update({
+    where: { username: "root" },
+    data: { passwordHash: newHash, mustChangePassword: true },
+  });
+
+  // 1. Login as root (admin / OWNER) to get the pw_at cookie for admin API calls
+  const adminCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const adminLoginResp = await adminCtx.post("/api/auth/user-login", {
+    data: { username: "root", password: rootPassword },
+  });
+  expect(adminLoginResp.status()).toBe(200);
+  const adminLoginBody = await adminLoginResp.json();
+  expect(adminLoginBody.username).toBe("root");
+
+  // 2. Create a new user via admin API
+  const newUsername = "testuser-" + Date.now().toString(36);
+  const createResp = await adminCtx.post("/api/admin/users", {
+    data: { username: newUsername },
+  });
+  expect(createResp.status()).toBe(200);
+  const createBody = await createResp.json();
+  expect(createBody.id).toBeTruthy();
+  expect(createBody.username).toBe(newUsername);
+  expect(typeof createBody.initialPassword).toBe("string");
+  expect(createBody.initialPassword.length).toBeGreaterThanOrEqual(16);
+  const initialPassword: string = createBody.initialPassword;
+
+  // 3. Login as the new user with the initialPassword
+  const newUserCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const newUserLoginResp = await newUserCtx.post("/api/auth/user-login", {
+    data: { username: newUsername, password: initialPassword },
+  });
+  expect(newUserLoginResp.status()).toBe(200);
+  const newUserLoginBody = await newUserLoginResp.json();
+  expect(newUserLoginBody.username).toBe(newUsername);
+  expect(newUserLoginBody.mustChangePassword).toBe(true);
+
+  // 4. Verify the pw_at cookie is set for the new user
+  const newUserCookies = await newUserCtx.storageState();
+  const newUserPwAt = newUserCookies.cookies.find(c => c.name === "pw_at");
+  expect(newUserPwAt).toBeTruthy();
+  expect(newUserPwAt!.httpOnly).toBe(true);
+  expect(newUserPwAt!.sameSite).toBe("Lax");
+
+  // 5. Change the new user's password (clears mustChangePassword)
+  const newPassword = "newuser-pw-" + Date.now();
+  const changeResp = await newUserCtx.post("/api/auth/change-password", {
+    data: { newPassword },
+  });
+  expect(changeResp.status()).toBe(200);
+  const changeBody = await changeResp.json();
+  expect(changeBody.ok).toBe(true);
+
+  // 6. Logout and re-login with the new password to verify it works
+  await newUserCtx.post("/api/auth/user-logout");
+  const reLoginCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const reLoginResp = await reLoginCtx.post("/api/auth/user-login", {
+    data: { username: newUsername, password: newPassword },
+  });
+  expect(reLoginResp.status()).toBe(200);
+  const reLoginBody = await reLoginResp.json();
+  expect(reLoginBody.username).toBe(newUsername);
+  expect(reLoginBody.mustChangePassword).toBe(false);
+
+  // 7. Verify the old (initial) password no longer works
+  const oldPwCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const oldPwResp = await oldPwCtx.post("/api/auth/user-login", {
+    data: { username: newUsername, password: initialPassword },
+  });
+  expect(oldPwResp.status()).toBe(401);
+});
