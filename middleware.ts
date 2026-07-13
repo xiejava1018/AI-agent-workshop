@@ -12,7 +12,7 @@ export const config = {
     //  - fork 现有 model provider auth: providers/login/logout/api-key/all-providers
     //  - 静态资源
     // M1 preserved verbatim - non-capturing groups (?:...) required by path-to-regexp v8
-    "/((?!_next/|favicon|api/auth/(?:user-login|user-logout)|api/auth/(?:providers|login|logout|all-providers|api-key)).*)",
+    "/((?!_next/|favicon|api/auth/(?:user-login|user-logout)|api/auth/(?:providers|login|logout|all-providers|api-key)|(?:en|zh-CN)/(?:login|change-password|dashboard)).*)",
     // 显式拦 /api/* 一律
     "/api/((?!auth/(?:user-login|user-logout|providers|login|logout|all-providers|api-key)).*)",
   ],
