@@ -60,3 +60,13 @@ model SessionShare {
   createdAt         DateTime @default(now())
   @@id([sessionId, sharedWithUserId])
 }
+
+// M2.3 — refresh token 黑名单: 存已撤销 jti + 过期时间, 过期可清理
+model RefreshTokenBlacklist {
+  id        String   @id @default(cuid())
+  jti       String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
