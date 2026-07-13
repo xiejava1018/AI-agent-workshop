@@ -12,9 +12,9 @@
 
 ## 2. Refresh token 与双 cookie 机制
 
-- [ ] 2.1 修改 `prisma/schema.prisma`：新增 `RefreshTokenBlacklist` 表（`jti` unique, `expiresAt`, `createdAt`）
-- [ ] 2.2 运行 `pnpm exec prisma migrate dev --name add_refresh_token_blacklist` 生成迁移
-- [ ] 2.3 新增 `lib/token-blacklist.ts`：Prisma 持久化记录已撤销 refresh token，提供 `revokeRefreshToken(jti, expiresAt)`、`isRefreshTokenRevoked(jti)`，并清理过期记录
+- [x] 2.1 修改 `prisma/schema.prisma`：新增 `RefreshTokenBlacklist` 表（`jti` unique, `expiresAt`, `createdAt`）
+- [x] 2.2 运行 `pnpm exec prisma migrate dev --name add_refresh_token_blacklist` 生成迁移
+- [x] 2.3 新增 `lib/token-blacklist.ts`：Prisma 持久化记录已撤销 refresh token，提供 `revokeRefreshToken(jti, expiresAt)`、`isRefreshTokenRevoked(jti)`，并清理过期记录
 - [x] 2.4 修改 `lib/auth-provider-local.ts`：`LocalPasswordAuthProvider` 实现 `PasswordAuthProvider`；实现 `signAccessToken`（15min）与 `signRefreshToken`（7d），并在 token claim 中区分 `type=access`/`type=refresh`
 - [x] 2.5 修改 `app/api/auth/user-login/route.ts`：登录成功后同时设置 `pw_at` 与 `pw_rt` cookie
 - [ ] 2.6 新增 `app/api/auth/refresh/route.ts`：验证 `pw_rt`，查黑名单，旧 jti 入库，签发新 `pw_at` 与新 `pw_rt`
