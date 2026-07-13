@@ -10,11 +10,28 @@ async function main() {
 
   const password = randomBytes(18).toString("base64url");
   const passwordHash = await bcrypt.hash(password, 10);
-  await prisma.user.create({
+  const root = await prisma.user.create({
     data: {
       username: "root",
       passwordHash,
       mustChangePassword: true,
+    },
+  });
+
+  // Create a default team so root has an OWNER TeamMember; otherwise
+  // assertCanReadSession's OWNER/ADMIN bypass never fires and root gets 403
+  // on every agent session read.
+  const team = await prisma.team.create({
+    data: {
+      name: "Default Team",
+      ownerUserId: root.id,
+    },
+  });
+  await prisma.teamMember.create({
+    data: {
+      teamId: team.id,
+      userId: root.id,
+      role: "OWNER",
     },
   });
 
