@@ -17,9 +17,9 @@
 ## 2. i18n `[locale]` 路由 + 文案
 
 - [ ] 2.1 创建 `app/[locale]/layout.tsx`：根 layout for locale（next-intl `NextIntlClientProvider` + 注入 `messages`）
-- [ ] 2.2 扩 `lib/i18n.ts`：加 locale 解析（`/{locale}/...` URL path → `getMessages(locale)`）+ default-locale 推断
-- [ ] 2.3 扩 `messages/en.json`：login/changePassword/dashboard/common key 全填（不占位）
-- [ ] 2.4 扩 `messages/zh.json`：同上，中文值完整
+- [x] 2.2 扩 `lib/i18n.ts`：加 locale 解析（`/{locale}/...` URL path → `getMessages(locale)`）+ default-locale 推断
+- [x] 2.3 扩 `messages/en.json`：login/changePassword/dashboard/common key 全填（不占位）
+- [x] 2.4 扩 `messages/zh.json`：同上，中文值完整
 - [ ] 2.5 修改 `middleware.ts` matcher：加 `/{locale}/(login|change-password|dashboard)` 例外（不挡 UI 页面）
 
 ## 3. Login / ChangePassword / Dashboard UI 页面
