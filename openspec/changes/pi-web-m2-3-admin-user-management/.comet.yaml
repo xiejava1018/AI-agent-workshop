@@ -1,6 +1,6 @@
 workflow: full
 language: zh-CN
-phase: build
+phase: verify
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -21,8 +21,8 @@ verified_at: null
 archive_confirmation: null
 archived: false
 direct_override: null
-handoff_context: openspec/changes/pi-web-m2-3-admin-user-management/.comet/handoff/design-context.json
+handoff_context: null
 handoff_hash: eb3ae68c309399ffb047bb8c8f4ed414e5260e7e644ece198540a49db1111003
 classic_profile: full
 classic_migration: 1
-run_id: 610f5466-1c75-42b2-9a1d-b65515bcebc4
+run_id: 5ef12ff0-5509-4259-9acd-f9e5cf1807bb
