@@ -12,6 +12,16 @@ try {
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai"],
   allowedDevOrigins: ['192.168.*.*'],
+  // M2.2 follow-up: redirect bare paths to default locale.
+  // next.config.ts redirects run BEFORE middleware, so they bypass
+  // the JWT-gate matcher exclusion issue (path-to-regexp v8 alternation
+  // for the bare / and /en cases is fragile). App page also has a
+  // server redirect as a defense-in-depth fallback.
+  async redirects() {
+    return [
+      { source: '/', destination: '/en', permanent: false },
+    ];
+  },
   async headers() {
     return [
       {
