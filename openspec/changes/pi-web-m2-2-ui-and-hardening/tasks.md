@@ -26,7 +26,7 @@
 
 - [x] 3.1 创建 `app/[locale]/login/page.tsx`（client component）：表单 + `t('login.*')` 文案 + 成功后跳 `/{locale}/change-password`（mustChangePassword=true）或 `/{locale}/dashboard`
 - [x] 3.2 创建 `app/[locale]/change-password/page.tsx`：表单 + `t('changePassword.*')` + 成功后跳 `/{locale}/dashboard`
-- [ ] 3.3 创建 `app/[locale]/dashboard/page.tsx`（server component）：调 `getCurrentUserContext(userId)` + `GET /api/projects` 拉数据；展示 user / team / projects / mustChangePassword 状态
+- [x] 3.3 创建 `app/[locale]/dashboard/page.tsx`（server component）：调 `getCurrentUserContext(userId)` + `GET /api/projects` 拉数据；展示 user / team / projects / mustChangePassword 状态
 
 ## 4. M1 deferred WARNINGs 修复
 
