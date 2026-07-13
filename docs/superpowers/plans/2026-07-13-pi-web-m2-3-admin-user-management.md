@@ -925,14 +925,14 @@ pnpm run build
 
 ## 10. Success Criteria
 
-- [ ] `AuthProvider` 拆分为 `PasswordAuthProvider` / `OAuthProvider` 占位，`LocalPasswordAuthProvider` 关闭自动注册
-- [ ] 登录/刷新/登出三端点管理 `pw_at` + `pw_rt` 双 cookie
-- [ ] `RefreshTokenBlacklist` 持久化撤销记录，旧 refresh 不能复用
-- [ ] `POST /api/admin/users` 仅 OWNER/ADMIN 可创建用户，返回一次性明文密码
-- [ ] Dashboard 对 admin 显示最小创建用户表单
-- [ ] `lib/session-cap.ts` 改为 per-user，默认上限 5，集成到 `/api/agent/new`
-- [ ] `pnpm exec tsc --noEmit` 干净
-- [ ] `pnpm exec vitest run` 全 pass
-- [ ] `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test` 全 pass
-- [ ] `pnpm run build` 干净
+- [x] `AuthProvider` 拆分为 `PasswordAuthProvider` / `OAuthProvider` 占位，`LocalPasswordAuthProvider` 关闭自动注册
+- [x] 登录/刷新/登出三端点管理 `pw_at` + `pw_rt` 双 cookie
+- [x] `RefreshTokenBlacklist` 持久化撤销记录，旧 refresh 不能复用
+- [x] `POST /api/admin/users` 仅 OWNER/ADMIN 可创建用户，返回一次性明文密码
+- [x] Dashboard 对 admin 显示最小创建用户表单
+- [x] `lib/session-cap.ts` 改为 per-user，默认上限 5，集成到 `/api/agent/new`
+- [x] `pnpm exec tsc --noEmit` 干净
+- [x] `pnpm exec vitest run` 全 pass
+- [ ] `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test` 全 pass *(M2.3 自身 100% 通过；存在 1 项 M1 起的预先存在失败 — sessions 3-way filter — 不阻塞 M2.3 验收，见 `docs/superpowers/reports/2026-07-14-playwright-run.md`)*
+- [x] `pnpm run build` 干净
 - [ ] 手动 smoke 完成：root 创建用户 → 新用户登录 → 改密 → 5 个 session → 第 6 个 503
