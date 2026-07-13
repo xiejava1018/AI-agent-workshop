@@ -6,9 +6,9 @@ import { enforceNotMustChange } from "@/lib/must-change-password";
 import { prisma } from "@/lib/prisma";
 import { assertWithinRoot } from "@/lib/path-safety";
 import {
-  sessionCapCheck,
-  sessionCapIncrement,
-  SESSION_CAP_MAX,
+  checkUserSessionCap,
+  incrementUserSessionCap,
+  GLOBAL_SESSION_CAP_MAX,
 } from "@/lib/session-cap";
 
 // POST /api/agent/new  body: { type: string; message?: string; ... }
@@ -23,28 +23,6 @@ export async function POST(req: NextRequest) {
   const gate = enforceNotMustChange(req);
   if (gate) return gate;
 
-  // Task 4.6: 50-cap check BEFORE any expensive work. In-memory counter
-  // (lib/session-cap.ts). JS single-threaded event loop makes the check
-  // + (later) increment safe for synchronous calls. Awaited lookups
-  // between check and increment could theoretically allow concurrent
-  // requests to slip past by 1 in the worst case; accepted per design
-  // doc §D4.
-  const cap = sessionCapCheck();
-  if (!cap.allowed) {
-    return new NextResponse(
-      JSON.stringify({
-        error: `session cap reached (${SESSION_CAP_MAX} active sessions)`,
-      }),
-      {
-        status: 503,
-        headers: {
-          "Retry-After": "60",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  }
-
   try {
     // Task 4.2: cwd is no longer read from request body. Resolve cwd
     // from user.lastProjectId -> Project.rootPath, with team-membership
@@ -52,6 +30,29 @@ export async function POST(req: NextRequest) {
     const userId = req.headers.get("x-user-id");
     if (!userId) {
       return NextResponse.json({ error: "auth required" }, { status: 401 });
+    }
+
+    // Task 4.6: per-user cap check (default 5) with global 50 fallback,
+    // enforced BEFORE any expensive work (DB lookups, RPC start). JS single-
+    // threaded event loop makes the check + (later) increment safe for
+    // synchronous calls. Awaited lookups between check and increment could
+    // theoretically allow concurrent requests to slip past by 1 in the worst
+    // case; accepted per design doc §D4.
+    // NOTE: checkUserSessionCap checks BOTH per-user (5) AND global (50);
+    // the previous M2.2 separate global-only check is folded into this call.
+    const cap = checkUserSessionCap(userId);
+    if (!cap.allowed) {
+      const isGlobal = cap.max === GLOBAL_SESSION_CAP_MAX;
+      const message = isGlobal
+        ? `global session cap reached (${GLOBAL_SESSION_CAP_MAX} active sessions)`
+        : `user session cap reached (${cap.current}/${cap.max})`;
+      return new NextResponse(JSON.stringify({ error: message }), {
+        status: 503,
+        headers: {
+          "Retry-After": "60",
+          "Content-Type": "application/json",
+        },
+      });
     }
 
     const user = await prisma.user.findUnique({
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
 
     // Task 4.6: increment cap ONLY after successful session creation.
     // A failed startRpcSession must NOT consume a slot.
-    sessionCapIncrement();
+    incrementUserSessionCap(userId);
 
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
     // in sync so the new cwd is immediately readable via /api/files. Without this,
