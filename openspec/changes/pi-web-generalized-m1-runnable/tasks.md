@@ -27,7 +27,7 @@
 - [x] 3.1 创建 `lib/path-safety.ts`：`assertWithinRoot(absolutePath, rootPath): string`，覆盖 `..` 路径 / 符号链接 / 绝对路径绕过；抛 `PathTraversalError`
 - [x] 3.2 写 `lib/path-safety.test.ts` 单测：覆盖 `..`、符号链接指向外、合法路径、URL 编码绕过等 fuzz case（acceptance S1.5）
 - [x] 3.3 创建 `app/api/projects/route.ts`（GET/POST）：GET 列当前 Team 可见 Project；POST 仅 admin/owner；接受 `{ name, root_path }`，调 `prisma.project.create` 与 `fs.statSync` 校验，调 `allowFileRoot(root_path)` 把 root 加入 fork 的白名单 cache
-- [ ] 3.4 创建 `app/api/projects/[id]/bind/route.ts`：调 `cwd/validate` + `allowFileRoot`，返回当前 user 的 `last_project_id`
+- [x] 3.4 创建 `app/api/projects/[id]/bind/route.ts`：调 `cwd/validate` + `allowFileRoot`，返回当前 user 的 `last_project_id`
 - [ ] 3.5 修改 fork 现有 sidebar 的 cwd 输入控件为 Project 选择 dropdown：选 project 调 `/api/projects/[id]/bind`，再调现有 `startRpcSession` 启动 session（**不引入新 SessionBus**）
 
 ## 4. 会话可见性 + 同步 + smoke
