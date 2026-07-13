@@ -14,6 +14,7 @@ import { join, relative } from "path";
 const ALLOWLIST_PATHS = new Set<string>([
   // Group 1 — auth-flow endpoints (pre-auth or state-clearing)
   "auth/change-password/route.ts",
+  "auth/refresh/route.ts", // M2.3: pre-auth (pw_at may be expired when refresh is needed)
   "auth/user-login/route.ts",
   "auth/user-logout/route.ts",
   "auth/api-key/[provider]/route.ts",

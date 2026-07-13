@@ -20,7 +20,8 @@ export const config = {
   runtime: "nodejs", // M2.2 NEW: required for Prisma in middleware (edge runtime can't run Prisma)
   matcher: [
     // 拦截 /api/*, 但放过:
-    //  - user-login, user-logout
+    //  - user-login, user-logout, refresh (M2.3: refresh must NOT require pw_at,
+    //    since by definition pw_at may have expired when the client needs to renew)
     //  - fork 现有 model provider auth: providers/login/logout/api-key/all-providers
     //  - 静态资源
     //  - 根路径 /, /en, /zh-CN, /en/, /zh-CN/ (M2.2 follow-up: 让 root redirect
@@ -28,9 +29,9 @@ export const config = {
     //    path-to-regexp v8 在 negative lookahead 中用 |\$ 表达"路径结束"（$ 字符
     //    在 path 模板中表示字符串末尾）.
     // M1 preserved verbatim - non-capturing groups (?:...) required by path-to-regexp v8
-    "/((?!_next/|favicon|api/auth/(?:user-login|user-logout)|api/auth/(?:providers|login|logout|all-providers|api-key)|(?:en|zh-CN)/(?:login|change-password|dashboard)|$|/en$|/zh-CN$|/en/$|/zh-CN/$).*)",
+    "/((?!_next/|favicon|api/auth/(?:user-login|user-logout|refresh)|api/auth/(?:providers|login|logout|all-providers|api-key)|(?:en|zh-CN)/(?:login|change-password|dashboard)|$|/en$|/zh-CN$|/en/$|/zh-CN/$).*)",
     // 显式拦 /api/* 一律
-    "/api/((?!auth/(?:user-login|user-logout|providers|login|logout|all-providers|api-key)).*)",
+    "/api/((?!auth/(?:user-login|user-logout|refresh|providers|login|logout|all-providers|api-key)).*)",
   ],
 };
 
