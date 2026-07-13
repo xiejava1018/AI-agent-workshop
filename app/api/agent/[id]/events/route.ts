@@ -3,16 +3,20 @@ import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { assertCanReadSession } from "@/lib/session-meta";
 import { getUserHighestRole } from "@/lib/user-role";
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { enforceNotMustChange } from "@/lib/must-change-password";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/agent/[id]/events - SSE stream of agent events
 export async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const gate = enforceNotMustChange(req);
+  if (gate) return gate;
 
   const userId = req.headers.get("x-user-id");
   if (!userId) return new NextResponse("auth required", { status: 401 });

@@ -1,13 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { allowFileRoot } from "@/lib/file-access";
 import { startRpcSession } from "@/lib/rpc-manager";
+import { enforceNotMustChange } from "@/lib/must-change-password";
 
 // POST /api/agent/new  body: { cwd: string; type: string; message?: string; ... }
 // Spawns a brand-new pi session. Most calls immediately send the first command;
 // type:"ensure_session" only creates the runtime so clients can query commands.
 // Returns { sessionId, data } where sessionId is pi's real session id.
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const gate = enforceNotMustChange(req);
+  if (gate) return gate;
   try {
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
     const { cwd, ...command } = body;
