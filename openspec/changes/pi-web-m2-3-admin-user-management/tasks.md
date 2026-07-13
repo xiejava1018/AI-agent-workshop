@@ -48,6 +48,6 @@
 
 - [x] 6.1 `pnpm exec tsc --noEmit` clean
 - [x] 6.2 `pnpm exec vitest run`（含 path-safety 回归 + session-cap 新测试）all pass
-- [ ] 6.3 `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test` all pass
+- [x] 6.3 `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test` all pass
 - [x] 6.4 `pnpm run build` clean（middleware matcher 不报错）
 - [ ] 6.5 浏览器手动 smoke：root 创建新用户 → 新用户登录 → 改密 → 创建 5 个 session → 第 6 个 503
