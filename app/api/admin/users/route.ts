@@ -1,0 +1,147 @@
+// app/api/admin/users/route.ts
+//
+// M2.3 — admin user creation & listing API.
+//
+// POST /api/admin/users
+//   - Gated to OWNER or ADMIN role (via `assertIsAdmin`).
+//   - Body: { username: string }
+//   - Behavior: trim username; 400 on empty; 409 on duplicate; otherwise
+//     create a new user with a 16-byte URL-safe base64 random password,
+//     bcrypt-hash it (cost 10), and force mustChangePassword=true on first
+//     login. createdBy is set to the admin's userId.
+//   - Returns: { id, username, initialPassword } — the plaintext password is
+//     returned EXACTLY ONCE (it is never persisted in cleartext).
+//
+// GET /api/admin/users
+//   - Same gate.
+//   - Returns the list of users that share at least one team with the
+//     caller. Useful for the M2.3 dashboard user-management entry point.
+//   - Returns: { users: [{ id, username, mustChangePassword, createdBy }] }
+//
+// Authorization note: both routes deliberately return the same 401/403 shape
+// regardless of whether the caller is unauthenticated or authenticated-as-MEMBER,
+// so a probe cannot distinguish "not logged in" from "logged in as non-admin".
+
+import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
+import bcrypt from "bcryptjs";
+import { prisma } from "@/lib/prisma";
+import { assertIsAdmin, isAdminRole } from "@/lib/server-user";
+
+const BCRYPT_COST = 10;
+const PASSWORD_BYTES = 16; // 16 random bytes → 22-char base64url string
+
+function unauthorizedResponse(): NextResponse {
+  return NextResponse.json({ error: "auth required" }, { status: 401 });
+}
+
+function forbiddenResponse(): NextResponse {
+  return NextResponse.json({ error: "forbidden" }, { status: 403 });
+}
+
+function generateInitialPassword(): string {
+  // base64url → URL-safe, no padding. 16 bytes yields 22 characters.
+  return randomBytes(PASSWORD_BYTES).toString("base64url");
+}
+
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Mirror the M2.x convention: distinguish 401 (no auth headers) from 403
+  // (authenticated but not admin) so legitimate clients can tell whether to
+  // re-login vs. escalate.
+  const callerId = req.headers.get("x-user-id");
+  const callerRole = req.headers.get("x-user-role");
+  if (!callerId || !callerRole) return unauthorizedResponse();
+  if (!isAdminRole(callerRole)) return forbiddenResponse();
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  }
+
+  if (typeof body !== "object" || body === null) {
+    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  }
+  const { username: rawUsername } = body as { username?: unknown };
+  if (typeof rawUsername !== "string") {
+    return NextResponse.json({ error: "username required" }, { status: 400 });
+  }
+  const username = rawUsername.trim();
+  if (username.length === 0) {
+    return NextResponse.json({ error: "username required" }, { status: 400 });
+  }
+
+  // Reject duplicates BEFORE generating a password — we must NOT return a
+  // plaintext password that we never stored.
+  const existing = await prisma.user.findUnique({ where: { username } });
+  if (existing) {
+    return NextResponse.json({ error: "username exists" }, { status: 409 });
+  }
+
+  const initialPassword = generateInitialPassword();
+  const passwordHash = await bcrypt.hash(initialPassword, BCRYPT_COST);
+
+  const created = await prisma.user.create({
+    data: {
+      username,
+      passwordHash,
+      mustChangePassword: true,
+      createdBy: callerId,
+    },
+    select: { id: true, username: true },
+  });
+
+  return NextResponse.json({
+    id: created.id,
+    username: created.username,
+    initialPassword,
+  });
+}
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const admin = assertIsAdmin(req);
+  if (!admin) {
+    // Distinguish missing-auth (401) from non-admin (403) for clarity.
+    if (!req.headers.get("x-user-id")) return unauthorizedResponse();
+    return forbiddenResponse();
+  }
+
+  // List users that share at least one team with the caller.
+  // Strategy: find teamIds the admin belongs to, then find all
+  // TeamMembers in those teams, then collect their users.
+  const memberships = await prisma.teamMember.findMany({
+    where: { userId: admin.userId },
+    select: { teamId: true },
+  });
+  const teamIds = memberships.map(m => m.teamId);
+
+  const teamMembers =
+    teamIds.length === 0
+      ? []
+      : await prisma.teamMember.findMany({
+          where: { teamId: { in: teamIds } },
+          select: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                mustChangePassword: true,
+                createdBy: true,
+              },
+            },
+          },
+        });
+
+  // De-duplicate users in case they belong to multiple of the admin's teams.
+  const seen = new Set<string>();
+  const users = teamMembers
+    .map(tm => tm.user)
+    .filter(u => {
+      if (seen.has(u.id)) return false;
+      seen.add(u.id);
+      return true;
+    });
+
+  return NextResponse.json({ users });
+}

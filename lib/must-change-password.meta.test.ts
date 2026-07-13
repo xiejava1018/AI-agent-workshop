@@ -36,6 +36,11 @@ const ALLOWLIST_PATHS = new Set<string>([
   "skills/route.ts",
   "skills/search/route.ts",
   "worktrees/route.ts",
+  // M2.3 admin user-management endpoint — OWNER/ADMIN gated by role,
+  // intentionally does not require mustChangePassword: an admin who just
+  // accepted an initial password needs to provision team members BEFORE
+  // they can sign in to change their own password.
+  "admin/users/route.ts",
 ]);
 
 type RouteFile = {
