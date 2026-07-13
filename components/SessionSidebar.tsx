@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, type CSSProperties, type ReactNode } from "react";
 import type { SessionInfo } from "@/lib/types";
 import { FileExplorer } from "./FileExplorer";
+import { SidebarProjectPicker } from "./sidebar/SidebarProjectPicker";
 
 interface Props {
   selectedSessionId: string | null;
@@ -920,6 +921,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                   />
                 </div>
               )}
+              <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
+                <SidebarProjectPicker
+                  onPick={(p) => {
+                    setSelectedCwd(p.rootPath);
+                    setProjectFilter("");
+                    setCustomPathOpen(false);
+                    setCustomPathValue("");
+                    setCustomPathError(null);
+                    setDropdownOpen(false);
+                  }}
+                />
+              </div>
               <div style={{ maxHeight: "min(50vh, 380px)", overflowY: "auto" }}>
                 {visibleProjects.map((project) => (
                   <button
