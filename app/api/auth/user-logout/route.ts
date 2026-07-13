@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthProvider } from "@/lib/auth-provider";
+import "@/lib/auth-provider-bootstrap"; // side-effect: registers LocalPasswordAuthProvider
 
-// Module-level: provider is registered by user-login/route.ts.
-// If user-login hasn't loaded (e.g. only logout is hit in tests), the
-// registry will throw "AuthProvider not registered" — that's the spec
-// contract: the routes share one registry, not each register its own.
 const provider = getAuthProvider();
 
 export async function POST(req: NextRequest) {

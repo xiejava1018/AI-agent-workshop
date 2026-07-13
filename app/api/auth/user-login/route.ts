@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LocalPasswordAuthProvider } from "@/lib/auth-provider-local";
-import { getAuthProvider, registerAuthProvider } from "@/lib/auth-provider";
-
-// Register the local-password implementation once at module load.
-// Other auth implementations (SAML/OIDC, M2) can register a different
-// provider without touching route code.
-registerAuthProvider(new LocalPasswordAuthProvider());
+import { getAuthProvider } from "@/lib/auth-provider";
+import "@/lib/auth-provider-bootstrap"; // side-effect: registers LocalPasswordAuthProvider
 
 const provider = getAuthProvider();
 
