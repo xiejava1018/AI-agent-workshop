@@ -32,10 +32,10 @@
 
 ## 4. per-user session cap
 
-- [ ] 4.1 修改 `lib/session-cap.ts`：从全局计数器改为 `Map<userId, count>`；保留全局 50 作为兜底；默认 per-user 上限为 5
-- [ ] 4.2 修改 `app/api/agent/new/route.ts`：在现有逻辑前调用 per-user cap 检查；超限时返回 503
-- [ ] 4.3 在 `startRpcSession` 成功返回后调用 `perUserSessionCapIncrement(userId)`
-- [ ] 4.4 新增 `lib/session-cap.test.ts`：覆盖 per-user 上限、跨用户隔离、全局兜底
+- [x] 4.1 修改 `lib/session-cap.ts`：从全局计数器改为 `Map<userId, count>`；保留全局 50 作为兜底；默认 per-user 上限为 5
+- [x] 4.2 修改 `app/api/agent/new/route.ts`：在现有逻辑前调用 per-user cap 检查；超限时返回 503
+- [x] 4.3 在 `startRpcSession` 成功返回后调用 `perUserSessionCapIncrement(userId)`
+- [x] 4.4 新增 `lib/session-cap.test.ts`：覆盖 per-user 上限、跨用户隔离、全局兜底
 - [ ] 4.5 更新 `tests/e2e/login.spec.ts`：循环创建 5 个 session 后第 6 个返回 503
 
 ## 5. UI 适配（最小改动）
