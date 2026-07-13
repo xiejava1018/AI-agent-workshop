@@ -66,7 +66,34 @@ test("API smoke: bootstrap → user-login → change-password → JWT access", a
 // (b) mustChangePassword 403 check — POST /api/agent/new must be blocked while
 // mustChangePassword is true. The gate is wired in task 4.1 (enforceNotMustChange)
 // and verified here end-to-end.
+//
+// Test isolation note: test 1 above (API smoke) logs in as root and
+// CHANGES THE PASSWORD, then logs out. By the time this test runs,
+// `rootPassword` is no longer valid (DB has a new hash). This test
+// therefore resets the root user's password + mustChangePassword=true
+// directly via prisma before its scenario, so the mustChangePassword=true
+// branch is exercised cleanly without coupling to test 1's state.
 test("mustChangePassword blocks POST /api/agent/new until password changed", async () => {
+  // Reset root to mustChangePassword=true with the known bootstrap password
+  const { execSync } = await import("child_process");
+  execSync("pnpm exec tsx scripts/bootstrap-root.ts", {
+    env: { ...process.env, PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION: "yes" },
+    stdio: "inherit",
+  });
+  // bootstrap-root early-returns when count > 0, so re-run db:reset first
+  // to wipe the root user, then bootstrap creates a fresh one with a NEW
+  // random password (printed to bootstrap-root's stdout but we don't capture
+  // it here — we read it back from DB).
+  // Simplification: instead of full reset, directly UPDATE root to use
+  // rootPassword as the hash:
+  const { prisma } = await import("@/lib/prisma");
+  const bcrypt = await import("bcryptjs");
+  const newHash = await bcrypt.hash(rootPassword, 10);
+  await prisma.user.update({
+    where: { username: "root" },
+    data: { passwordHash: newHash, mustChangePassword: true },
+  });
+
   // Login but DO NOT change the password. mustChangePassword will still be true.
   const loginCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
   const loginResp = await loginCtx.post("/api/auth/user-login", {
@@ -159,7 +186,20 @@ test.skip("50 session cap: returns 503 + Retry-After when over cap", async () =>
 // re-validates the contract end-to-end with a fresh login (different code
 // path from test 1, which reuses the same context). This serves as the
 // "4th use case" for Task 5.2's spec checklist.
+//
+// Test isolation: reset root password + mustChangePassword=true so we
+// can exercise the mustChangePassword=true → change-password → false flow
+// from a clean state. Test 1 above mutated the password hash.
 test("change-password contract: fresh login → change-password → new password works", async () => {
+  // Reset root to mustChangePassword=true with the known bootstrap password
+  const { prisma } = await import("@/lib/prisma");
+  const bcrypt = await import("bcryptjs");
+  const newHash = await bcrypt.hash(rootPassword, 10);
+  await prisma.user.update({
+    where: { username: "root" },
+    data: { passwordHash: newHash, mustChangePassword: true },
+  });
+
   const ctx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
   const loginResp = await ctx.post("/api/auth/user-login", {
     data: { username: "root", password: rootPassword },
