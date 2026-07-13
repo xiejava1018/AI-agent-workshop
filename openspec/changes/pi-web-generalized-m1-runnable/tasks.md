@@ -20,7 +20,7 @@
 - [x] 2.4 创建 `app/api/auth/user-login/route.ts`：调 `provider.authenticate`；签 JWT（15min）；写 HttpOnly cookie `pw_at`
 - [x] 2.5 创建 `app/api/auth/user-logout/route.ts`：清 cookie、调 `provider.revoke`
 - [x] 2.6 创建 `middleware.ts`（根目录）：拦截除 `/`、`/api/auth/user-login`、`/api/auth/user-logout`、model provider auth（`/api/auth/{providers,login,logout,all-providers,api-key}`）、静态资源外的 `/api/*`；解码 JWT 写 `req.user`；root user 加 `must_change_password=true` 标志
-- [ ] 2.7 创建 `app/api/auth/change-password/route.ts`：root 改密后清 `must_change_password` 标志（acceptance S1.1 smoke）
+- [x] 2.7 创建 `app/api/auth/change-password/route.ts`：root 改密后清 `must_change_password` 标志（acceptance S1.1 smoke）
 
 ## 3. Project 绑定 + 路径白名单接入
 
