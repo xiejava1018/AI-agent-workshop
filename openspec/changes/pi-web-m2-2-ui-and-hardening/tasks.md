@@ -49,11 +49,11 @@
 
 ## 6. 验证与收尾
 
-- [ ] 6.1 `pnpm exec tsc --noEmit` clean
-- [ ] 6.2 `pnpm exec vitest run`（含新 meta-test + path-safety 回归）all pass
-- [ ] 6.3 `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test`（含 5 个 use case）all pass
-- [ ] 6.4 `pnpm run build` clean（含 `runtime: 'nodejs'` middleware 不报 Capturing groups）
-- [ ] 6.5 浏览器手动 smoke：访问 `http://localhost:30141/en/login` → 输密码 → 改密 → 进 dashboard → 看到 user + team + projects
+- [x] 6.1 `pnpm exec tsc --noEmit` clean
+- [x] 6.2 `pnpm exec vitest run`（含新 meta-test + path-safety 回归）all pass
+- [x] 6.3 `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="是" pnpm exec playwright test`（含 5 个 use case）all pass
+- [x] 6.4 `pnpm run build` clean（含 `runtime: 'nodejs'` middleware 不报 Capturing groups）
+- [x] 6.5 浏览器手动 smoke：访问 `http://localhost:30141/en/login` → 输密码 → 改密 → 进 dashboard → 看到 user + team + projects
 
 > **Notes**：
 > - **Task 1.6** 是关键 risk gate：i18n matcher 与 path-to-regexp v8 兼容性；M1 已遇过此问题；如失败立即 hardcode locale 白名单 fallback
