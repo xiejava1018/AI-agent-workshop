@@ -1,6 +1,9 @@
 import { resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { assertCanReadSession } from "@/lib/session-meta";
+import { getUserHighestRole } from "@/lib/user-role";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +13,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const userId = req.headers.get("x-user-id");
+  if (!userId) return new NextResponse("auth required", { status: 401 });
+
+  // 找用户的最高 role（OWNER > ADMIN > MEMBER）
+  const userRole = await getUserHighestRole(userId);
+
+  if (!assertCanReadSession(userId, userRole, id)) {
+    return new NextResponse("forbidden", { status: 403 });
+  }
 
   // Fast path: already-running session
   let session = getRpcSession(id);
