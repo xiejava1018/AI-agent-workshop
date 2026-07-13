@@ -24,7 +24,7 @@
 
 ## 3. Project 绑定 + 路径白名单接入
 
-- [ ] 3.1 创建 `lib/path-safety.ts`：`assertWithinRoot(absolutePath, rootPath): string`，覆盖 `..` 路径 / 符号链接 / 绝对路径绕过；抛 `PathTraversalError`
+- [x] 3.1 创建 `lib/path-safety.ts`：`assertWithinRoot(absolutePath, rootPath): string`，覆盖 `..` 路径 / 符号链接 / 绝对路径绕过；抛 `PathTraversalError`
 - [ ] 3.2 写 `lib/path-safety.test.ts` 单测：覆盖 `..`、符号链接指向外、合法路径、URL 编码绕过等 fuzz case（acceptance S1.5）
 - [ ] 3.3 创建 `app/api/projects/route.ts`（GET/POST）：GET 列当前 Team 可见 Project；POST 仅 admin/owner；接受 `{ name, root_path }`，调 `prisma.project.create` 与 `fs.statSync` 校验，调 `allowFileRoot(root_path)` 把 root 加入 fork 的白名单 cache
 - [ ] 3.4 创建 `app/api/projects/[id]/bind/route.ts`：调 `cwd/validate` + `allowFileRoot`，返回当前 user 的 `last_project_id`
