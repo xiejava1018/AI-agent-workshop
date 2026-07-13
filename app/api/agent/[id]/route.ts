@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { assertCanReadSession } from "@/lib/session-meta";
+import { getUserHighestRole } from "@/lib/user-role";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -9,6 +11,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const userId = req.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
+  const userRole = await getUserHighestRole(userId);
+  if (!assertCanReadSession(userId, userRole, id)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   try {
     const body = await req.json() as { type: string; [key: string]: unknown };
@@ -38,10 +46,16 @@ export async function POST(
 
 // GET /api/agent/[id] - Get current agent state
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const userId = req.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
+  const userRole = await getUserHighestRole(userId);
+  if (!assertCanReadSession(userId, userRole, id)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   try {
     const session = getRpcSession(id);

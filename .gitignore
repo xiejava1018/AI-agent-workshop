@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -40,3 +41,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .factory
+
+# Prisma generated SQLite test artifacts (db files inside prisma/data/ are scratch)
+/prisma/data/
+
+# Comet platform workspace (change state lives in openspec/changes/<name>/.comet/)
+/.comet/
+openspec/changes/*/.comet/

@@ -1,0 +1,17 @@
+{
+  "login": {
+    "title": "登录",
+    "username": "用户名",
+    "password": "密码",
+    "submit": "登录"
+  },
+  "changePassword": {
+    "title": "修改密码",
+    "newPassword": "新密码",
+    "confirm": "确认新密码",
+    "submit": "更新密码"
+  },
+  "dashboard": {
+    "title": "仪表盘"
+  }
+}

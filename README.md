@@ -112,3 +112,9 @@ hooks/
 bin/
   pi-web.js           # npm CLI entrypoint
 ```
+
+## 数据持久化（M1 本地）
+
+启动前确保 `./data` 目录存在。Docker 启动时挂载 `-v $(pwd)/data:/app/data`。
+
+> TODO M3: 写完整 README 部署文档（docker-compose、Postgres、上游 fork 同步策略）。
