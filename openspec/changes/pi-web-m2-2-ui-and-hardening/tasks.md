@@ -11,8 +11,8 @@
 - [x] 1.2 重构 M1 中所有 `new PrismaClient()` 调用为 `import { prisma } from "@/lib/prisma"`（auth-provider-local, user-role, auth routes, projects routes, projects/[id]/bind）
 - [x] 1.3 创建 `lib/must-change-password.ts`：导出 `enforceNotMustChange(req: NextRequest): NextResponse | null`（读 `x-must-change-password` header，返回 null 通过或 403）
 - [x] 1.4 创建 `lib/server-user.ts`：server-side helper `getCurrentUserContext(userId)` 返回 `{ user, role, teamIds, mustChangePassword }`，复用 `getUserHighestRole` 并新增 `getUserTeamIds`
-- [ ] 1.5 修改 `middleware.ts`：加 `runtime: 'nodejs'` + 注入 `x-must-change-password` header（从 prisma.user 读 `mustChangePassword`）
-- [ ] 1.6 验证 `pnpm dev` middleware matcher 在 path-to-regexp v8 下不报 "Capturing groups"（如 i18n matcher 冲突需 fix）
+- [x] 1.5 修改 `middleware.ts`：加 `runtime: 'nodejs'` + 注入 `x-must-change-password` header（从 prisma.user 读 `mustChangePassword`）
+- [x] 1.6 验证 `pnpm dev` middleware matcher 在 path-to-regexp v8 下不报 "Capturing groups"（如 i18n matcher 冲突需 fix）
 
 ## 2. i18n `[locale]` 路由 + 文案
 
