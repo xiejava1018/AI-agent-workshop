@@ -22,7 +22,16 @@
     "recentSessions": "最近的会话",
     "mustChangePassword": "需要修改密码",
     "changeNow": "立即修改密码",
-    "noProjects": "暂无项目"
+    "noProjects": "暂无项目",
+    "createUser": {
+      "title": "创建用户",
+      "usernameLabel": "用户名",
+      "usernamePlaceholder": "新用户名",
+      "submit": "创建",
+      "success": "已创建用户：{username}",
+      "initialPassword": "初始密码：{password}",
+      "error": "失败：{message}"
+    }
   },
   "common": {
     "logout": "退出登录",

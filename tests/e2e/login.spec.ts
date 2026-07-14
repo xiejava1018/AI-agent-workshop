@@ -231,3 +231,217 @@ test("change-password contract: fresh login → change-password → new password
   });
   expect(oldResp.status()).toBe(401);
 });
+
+// --- M2.3 Task 3.6: admin create user → new user login → force change password ---
+
+// E2E flow: admin (root) creates a user via POST /api/admin/users, receives
+// a one-time initialPassword, then the new user logs in with that password,
+// is forced to change it (mustChangePassword=true), and the new password
+// works while the old one is rejected.
+//
+// Test isolation: reset root password to the known bootstrap password so
+// we can login as root regardless of what previous tests did to the hash.
+test("admin creates user → new user login → force change password flow", async () => {
+  // Reset root password to the known bootstrap password
+  const { prisma } = await import("@/lib/prisma");
+  const bcrypt = await import("bcryptjs");
+  const newHash = await bcrypt.hash(rootPassword, 10);
+  await prisma.user.update({
+    where: { username: "root" },
+    data: { passwordHash: newHash, mustChangePassword: true },
+  });
+
+  // 1. Login as root (admin / OWNER) to get the pw_at cookie for admin API calls
+  const adminCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const adminLoginResp = await adminCtx.post("/api/auth/user-login", {
+    data: { username: "root", password: rootPassword },
+  });
+  expect(adminLoginResp.status()).toBe(200);
+  const adminLoginBody = await adminLoginResp.json();
+  expect(adminLoginBody.username).toBe("root");
+
+  // 2. Create a new user via admin API
+  const newUsername = "testuser-" + Date.now().toString(36);
+  const createResp = await adminCtx.post("/api/admin/users", {
+    data: { username: newUsername },
+  });
+  expect(createResp.status()).toBe(200);
+  const createBody = await createResp.json();
+  expect(createBody.id).toBeTruthy();
+  expect(createBody.username).toBe(newUsername);
+  expect(typeof createBody.initialPassword).toBe("string");
+  expect(createBody.initialPassword.length).toBeGreaterThanOrEqual(16);
+  const initialPassword: string = createBody.initialPassword;
+
+  // 3. Login as the new user with the initialPassword
+  const newUserCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const newUserLoginResp = await newUserCtx.post("/api/auth/user-login", {
+    data: { username: newUsername, password: initialPassword },
+  });
+  expect(newUserLoginResp.status()).toBe(200);
+  const newUserLoginBody = await newUserLoginResp.json();
+  expect(newUserLoginBody.username).toBe(newUsername);
+  expect(newUserLoginBody.mustChangePassword).toBe(true);
+
+  // 4. Verify the pw_at cookie is set for the new user
+  const newUserCookies = await newUserCtx.storageState();
+  const newUserPwAt = newUserCookies.cookies.find(c => c.name === "pw_at");
+  expect(newUserPwAt).toBeTruthy();
+  expect(newUserPwAt!.httpOnly).toBe(true);
+  expect(newUserPwAt!.sameSite).toBe("Lax");
+
+  // 5. Change the new user's password (clears mustChangePassword)
+  const newPassword = "newuser-pw-" + Date.now();
+  const changeResp = await newUserCtx.post("/api/auth/change-password", {
+    data: { newPassword },
+  });
+  expect(changeResp.status()).toBe(200);
+  const changeBody = await changeResp.json();
+  expect(changeBody.ok).toBe(true);
+
+  // 6. Logout and re-login with the new password to verify it works
+  await newUserCtx.post("/api/auth/user-logout");
+  const reLoginCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const reLoginResp = await reLoginCtx.post("/api/auth/user-login", {
+    data: { username: newUsername, password: newPassword },
+  });
+  expect(reLoginResp.status()).toBe(200);
+  const reLoginBody = await reLoginResp.json();
+  expect(reLoginBody.username).toBe(newUsername);
+  expect(reLoginBody.mustChangePassword).toBe(false);
+
+  // 7. Verify the old (initial) password no longer works
+  const oldPwCtx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const oldPwResp = await oldPwCtx.post("/api/auth/user-login", {
+    data: { username: newUsername, password: initialPassword },
+  });
+  expect(oldPwResp.status()).toBe(401);
+});
+
+// --- M2.3 Task 4.5: per-user session cap E2E (5 + 1 → 503) ---
+
+// Verify the per-user session cap (default 5) end-to-end by driving root's
+// session counter all the way to the ceiling via real POST /api/agent/new
+// requests. The first 5 must succeed (each completing startRpcSession so
+// incrementUserSessionCap fires); the 6th must be rejected with 503 +
+// Retry-After before any DB / RPC work is done.
+//
+// Test isolation strategy:
+//   1. Reset root's password + mustChangePassword=true so we can log in
+//      with the known bootstrap password regardless of prior tests.
+//   2. Change the password before hitting /api/agent/new, otherwise the
+//      mustChangePassword gate (Task 4.1) returns 403 before the cap
+//      counter is touched.
+//   3. The default project seeded by bootstrap-root.ts points at
+//      data/projects/default, which is a real on-disk directory. We
+//      re-bind root.lastProjectId to that project explicitly —
+//      other tests in this file do not touch lastProjectId, but
+//      resetting it makes the test independent of state mutations.
+//   4. The in-memory cap counter lives in globalThis.__piSessionCap on
+//      the dev server process. Web-server reuse between tests means
+//      previous session creates (from the "sessions 3-way filter" test)
+//      may already have pushed root's per-user count above 0. The
+//      assertion is on the RELATIVE delta: we increment up to and
+//      past the 5-slot ceiling, so pre-existing 1-2 slots are absorbed
+//      into the count.
+test("per-user session cap: 6th POST /api/agent/new returns 503 + Retry-After", async () => {
+  const { prisma } = await import("@/lib/prisma");
+  const bcrypt = await import("bcryptjs");
+
+  // 1. Reset root's password to the known bootstrap hash and force
+  //    mustChangePassword=true so the login at step 2 sees the
+  //    expected value.
+  const newHash = await bcrypt.hash(rootPassword, 10);
+  const root = await prisma.user.update({
+    where: { username: "root" },
+    data: { passwordHash: newHash, mustChangePassword: true },
+  });
+
+  // 2. Log in as root, then change the password to clear
+  //    mustChangePassword (otherwise enforceNotMustChange returns 403
+  //    before checkUserSessionCap is reached).
+  const ctx = await pwRequest.newContext({ baseURL: "http://localhost:30141" });
+  const loginResp = await ctx.post("/api/auth/user-login", {
+    data: { username: "root", password: rootPassword },
+  });
+  expect(loginResp.status()).toBe(200);
+  expect((await loginResp.json()).mustChangePassword).toBe(true);
+
+  const newPassword = "cap-test-pw-" + Date.now();
+  const changeResp = await ctx.post("/api/auth/change-password", {
+    data: { newPassword },
+  });
+  expect(changeResp.status()).toBe(200);
+
+  // 3. Re-bind root.lastProjectId to the default project seeded by
+  //    bootstrap-root.ts. The project + its on-disk rootPath directory
+  //    already exist; we only update the FK on root. The query uses
+  //    team-id membership via the project's teamId — root's OWNER
+  //    TeamMember on the default team (created by bootstrap) makes
+  //    the agent/new authorization gate pass.
+  const defaultProject = await prisma.project.findFirst({
+    where: { name: "Default Project" },
+  });
+  expect(defaultProject).not.toBeNull();
+  await prisma.user.update({
+    where: { id: root.id },
+    data: { lastProjectId: defaultProject!.id },
+  });
+
+  // 4. Drive the cap to the ceiling. We POST /api/agent/new up to 5
+  //    times; each successful 200 increments the per-user counter by
+  //    1 (incrementUserSessionCap only runs after startRpcSession
+  //    succeeds). We tolerate pre-existing slots from prior tests by
+  //    allowing up to 9 attempts (worst case server already has 5
+  //    slots, then 5 more to push the 6th request into 503 territory).
+  //    Because startRpcSession uses the real pi runtime and may need
+  //    network/tool setup, each successful create may take a few
+  //    seconds — give the suite generous timeout via the test config.
+  const MAX_CAP = 5;
+  let sessionsCreated = 0;
+  let firstOverCapResponse: Awaited<ReturnType<typeof ctx.post>> | null = null;
+  // Up to 9 requests: even if server already had 4 slots, the 5th here
+  // reaches the ceiling, and the next one trips the cap.
+  for (let i = 0; i < MAX_CAP + 4; i++) {
+    const resp = await ctx.post("/api/agent/new", {
+      data: { type: "ensure_session" },
+    });
+    if (resp.status() === 200) {
+      sessionsCreated++;
+      continue;
+    }
+    // Captured the first over-cap response.
+    firstOverCapResponse = resp;
+    break;
+  }
+
+  // 5. We must have observed at least one over-cap response, AND the
+  //    counter must have actually been incremented at least once
+  //    (otherwise the test is meaningless). If the pi runtime
+  //    refuses to start, sessionsCreated stays 0 and the test fails
+  //    loudly — that is the signal to investigate whether the dev
+  //    server has the required runtime dependencies, NOT to silently
+  //    skip. Use the explicit early-return guard below to surface
+  //    that failure mode clearly.
+  expect(sessionsCreated, "expected at least one successful session create before hitting cap").toBeGreaterThan(0);
+  expect(firstOverCapResponse, "expected at least one over-cap 503 response").not.toBeNull();
+
+  // 6. Verify the 503 contract:
+  //    - status 503
+  //    - Retry-After: 60 header
+  //    - body.error mentions "user session cap reached (X/5)"
+  const overCap = firstOverCapResponse!;
+  expect(overCap.status()).toBe(503);
+  expect(overCap.headers()["retry-after"]).toBe("60");
+  const overCapBody = await overCap.json();
+  expect(overCapBody.error).toMatch(/user session cap reached \(\d+\/5\)/);
+
+  // 7. Cleanup: clear lastProjectId so subsequent tests in this file
+  //    are not affected. (The in-memory cap counter is lost on dev
+  //    server restart, so we do not need to clear it; any state
+  //    residue is bounded to the next test that creates sessions.)
+  await prisma.user.update({
+    where: { id: root.id },
+    data: { lastProjectId: null },
+  });
+});

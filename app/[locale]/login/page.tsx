@@ -2,6 +2,7 @@
 import { useTranslations } from "next-intl";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { authFetch } from "@/lib/client-fetch";
 
 // Auth forms are inherently interactive (credentials entry + server round-trip),
 // so skip static prerender. Without this, Next.js attempts to SSG the page and
@@ -33,6 +34,35 @@ export default function LoginPage() {
       return;
     }
     const body = await res.json();
+
+    // M2.3 Task 5.1: verify the freshly-issued session with one authenticated
+    // call. If the access token happens to be stale (clock skew, race with
+    // refresh rotation, etc.) authFetch transparently retries via
+    // /api/auth/refresh. If refresh itself fails, we land back on the login
+    // page — the user just re-authenticates.
+    //
+    // Using a light read-only authenticated endpoint keeps the verification
+    // cheap. /api/projects is gated by middleware and returns 200 + an empty
+    // array for users with no team memberships.
+    try {
+      await authFetch(
+        "/api/projects",
+        { method: "GET", credentials: "same-origin" },
+        () => {
+          // Refresh failed — bounce back to this same login page. No state to
+          // clear client-side; the server already cleared pw_at / pw_rt via
+          // Set-Cookie maxAge=0 on the refresh 401 response.
+          router.replace(`/${locale}/login`);
+        }
+      );
+    } catch {
+      // Network error talking to /api/projects after a successful login is
+      // unusual but recoverable — fall through to the same redirect so the
+      // user can retry from a known-good page.
+      router.replace(`/${locale}/login`);
+      return;
+    }
+
     // Redirect under the current [locale] segment
     router.push(body.mustChangePassword ? `/${locale}/change-password` : `/${locale}/dashboard`);
   }
