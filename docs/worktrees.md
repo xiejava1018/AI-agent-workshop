@@ -1,4 +1,6 @@
-# Worktrees in pi-web
+# Worktrees in pi-web / AI-agent-workshop
+
+This document describes the worktree UX for the upstream pi-web chat UI, which AI-agent-workshop inherits unchanged. Whether you run `@agegr/pi-web`, `xiejava1018/pi-web`, or AI-agent-workshop, the worktree control behaves the same.
 
 pi-web can show all Git worktrees for one project in the sidebar. Use this when you want to keep separate checkouts for different branches, while keeping the project's sessions grouped together.
 

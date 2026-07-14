@@ -1,4 +1,6 @@
-# pi-web 里的 Worktree
+# pi-web / AI-agent-workshop 里的 Worktree
+
+本文描述的是上游 pi-web chat UI 的 worktree 行为,AI-agent-workshop 完整继承。无论你跑的是 `@agegr/pi-web`、`xiejava1018/pi-web` 还是 AI-agent-workshop,worktree 控件行为完全一致。
 
 pi-web 会把同一个 Git 项目的 main checkout 和 linked worktree 放在同一个项目下。你可以用它在不同分支之间切换工作目录，同时保留统一的会话列表。
 
