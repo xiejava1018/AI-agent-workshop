@@ -16,6 +16,14 @@ M2.3 在 `startRpcSession` 成功返回后，SHALL 调用 `perUserSessionCapIncr
 
 （M2.2 已实现，M2.3 保持行为不变）SSE 端点 MUST 在 read-path 上对当前 user 强制权限校验，user 只能访问自己有权限的 session 数据。
 
+#### Scenario: 未授权 tab 被拒订阅
+- **WHEN** user `V` 无权访问 session `S`，调用 `GET /api/agent/S/events`
+- **THEN** handler 内 `assertCanReadSession` 抛 `ForbiddenError`；返回 403；fork 的 `startRpcSession` 不被调用
+
+#### Scenario: 创建者 tab 收到事件
+- **WHEN** user `U` 是 session `S` 创建者
+- **THEN** `assertCanReadSession` 通过；handler 调 `getRpcSession` / `startRpcSession`；SSE 流正常返回
+
 #### Scenario: 用户访问自己 session 的 SSE 流
 - **WHEN** user A 通过 SSE 订阅自己创建的 session 流
 - **THEN** 服务端允许流式推送
