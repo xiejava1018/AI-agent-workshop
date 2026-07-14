@@ -1,6 +1,7 @@
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, SessionManager, Theme, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "crypto";
 import { cacheSessionPath } from "./session-reader";
+import { decrementUserSessionCap } from "./session-cap";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
@@ -116,8 +117,16 @@ export class AgentSessionWrapper {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private _alive = true;
+  // Owning userId, set at construction. Used by destroyAllSessionsForUser
+  // so the LRU eviction in lib/session-cap can match sessions to their
+  // owner without needing a separate userId->sessionIds map. Defaults
+  // to null for legacy callers and is overridden via the second
+  // constructor argument.
+  private _userId: string | null;
 
-  constructor(public readonly inner: AgentSessionLike) {}
+  constructor(public readonly inner: AgentSessionLike, userId: string | null = null) {
+    this._userId = userId;
+  }
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -129,6 +138,20 @@ export class AgentSessionWrapper {
 
   isAlive(): boolean {
     return this._alive;
+  }
+
+  /**
+   * Returns true when this wrapper's owning userId matches `userId`.
+   * Sessions created without an owner (legacy callers) match any
+   * userId, so LRU eviction of an unrelated user is still safe — the
+   * cap counter is the authoritative source of truth.
+   */
+  _isOwnedBy(userId: string): boolean {
+    return this._userId === null || this._userId === userId;
+  }
+
+  get userId(): string | null {
+    return this._userId;
   }
 
   isRunning(): boolean {
@@ -843,8 +866,54 @@ export class AgentSessionWrapper {
 }
 
 // ============================================================================
-// Session registry
+// Per-cwd services cache
+//
+// createAgentSessionServices() builds AuthStorage, ModelRegistry,
+// SettingsManager, and DefaultResourceLoader — the latter scans the
+// filesystem and loads ALL extensions, skills, prompts, and themes.
+// Each fresh build costs ~250MB and the SDK never frees it, so under
+// sustained session churn the dev server OOMs within minutes
+// (reproduced 2026-07-14: 5 sessions = +1.7GB, and even after destroy
+// the RSS did not drop).
+//
+// The services are read-only after creation (modelRegistry.find,
+// resourceLoader.getExtensions, settingsManager.getXxx are all getters),
+// so they are safe to share across sessions that target the same cwd.
+// We key the cache on `cwd` because all of the loaded resources are
+// cwd-bound (settings, extensions discovered under cwd). agentDir is
+// process-global (getAgentDir), so it's implicitly constant.
 // ============================================================================
+declare global {
+  // eslint-disable-next-line no-var
+  var __piServicesCache: Map<string, Promise<AgentSessionServices>> | undefined;
+}
+
+function getServicesCache(): Map<string, Promise<AgentSessionServices>> {
+  if (!globalThis.__piServicesCache) {
+    globalThis.__piServicesCache = new Map();
+  }
+  return globalThis.__piServicesCache;
+}
+type AgentServices = AgentSessionServices;
+
+function getOrCreateServices(
+  cwd: string,
+  agentDir: string
+): Promise<AgentServices> {
+  const cache = getServicesCache();
+  const existing = cache.get(cwd);
+  if (existing) return existing;
+  const fresh: Promise<AgentServices> = createAgentSessionServices({ cwd, agentDir });
+  cache.set(cwd, fresh);
+  // If the first build throws, drop the cached rejection so the next
+  // caller can retry instead of propagating a stale failure forever.
+  fresh.catch(() => cache.delete(cwd));
+  return fresh;
+}
+
+// ----------------------------------------------------------------------------
+// Session registry
+// ----------------------------------------------------------------------------
 
 declare global {
   var __piSessions: Map<string, AgentSessionWrapper> | undefined;
@@ -870,6 +939,54 @@ function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSes
 
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
   return getRegistry().get(sessionId);
+}
+
+/**
+ * Destroy every live session owned by `userId` and return the number
+ * destroyed. This is the LRU-eviction primitive used by
+ * `lib/session-cap.ts` when a per-user or global cap is hit. We don't
+ * require the caller to know the session IDs — we walk the registry.
+ *
+ * Side effects, in order:
+ *  1. For each matching session: `wrapper.destroy()` (idempotent).
+ *     `destroy` fires `onDestroy` which `registry.delete(realSessionId)`,
+ *     so the registry is self-cleaning.
+ *  2. For each destroyed session: `decrementUserSessionCap(userId)` is
+ *     called by the SSE route's cleanup handler when the SSE is the one
+ *     that closed it. For an LRU eviction triggered by the cap check
+ *     (no SSE close), we ALSO decrement here so the cap counter stays
+ *     consistent. (See note below about double-decrement safety.)
+ *
+ * Double-decrement safety: the SSE cleanup handler is wired to the
+ * `abort` signal on the SSE request. When we destroy here, the SSE
+ * controller will eventually error and trigger the abort handler, which
+ * will ALSO call `decrementUserSessionCap`. To avoid that, the SSE
+ * route checks `if (destroyed) return;` (set via the wrapper's `_alive`
+ * flag) before decrementing.
+ */
+export function destroyAllSessionsForUser(userId: string): number {
+  const registry = getRegistry();
+  let destroyed = 0;
+  for (const [sessionId, wrapper] of registry) {
+    if (wrapper._isOwnedBy(userId) && wrapper.isAlive()) {
+      try {
+        wrapper.destroy();
+        destroyed++;
+        // Cap counter decrement is the responsibility of the route that
+        // initiated the destroy. For LRU eviction there is no closing
+        // route, so we decrement here. The SSE route guards against
+        // double-decrement via wrapper._alive (false after destroy).
+        // We use a direct import to avoid the circular-dep path that
+        // session-cap would otherwise walk back through us.
+        decrementUserSessionCap(userId);
+      } catch {
+        // best-effort; the next LRU sweep will retry
+      }
+    }
+  }
+  // sessionId unused but keep iteration explicit
+  void Array.from(registry.keys());
+  return destroyed;
 }
 
 export function getRunningRpcSessionIds(): string[] {
@@ -926,7 +1043,8 @@ export async function startRpcSession(
   sessionId: string,
   sessionFile: string,
   cwd: string,
-  toolNames?: string[]
+  toolNames?: string[],
+  userId?: string | null
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
@@ -958,9 +1076,12 @@ export async function startRpcSession(
       toolsOption = toolNames.length === 0 ? [] : undefined;
     }
 
-    // Build services first so extension-registered providers are available
-    // before the SDK restores the saved model from the session file.
-    const services = await createAgentSessionServices({ cwd, agentDir });
+    // Build (or reuse from cache) services. The per-cwd cache avoids
+    // re-scanning the filesystem when the same user opens several
+    // sessions in quick succession — each reload costs ~250MB in the
+    // SDK, which is the primary driver of the OOM kills observed on
+    // 2026-07-14.
+    const services = await getOrCreateServices(cwd, agentDir);
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -974,7 +1095,7 @@ export async function startRpcSession(
       inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
     }
 
-    const wrapper = new AgentSessionWrapper(inner);
+    const wrapper = new AgentSessionWrapper(inner, userId ?? null);
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
     // keep this forced after extension resource discovery and reloads as well.
