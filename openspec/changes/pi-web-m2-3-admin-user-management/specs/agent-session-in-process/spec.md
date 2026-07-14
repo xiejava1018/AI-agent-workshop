@@ -2,7 +2,11 @@
 
 ### Requirement: 复用 fork 的 per-session 串行调度
 
-M2.3 在 `startRpcSession` 成功返回后，SHALL 调用 `perUserSessionCapIncrement(userId)` 增加该用户的活跃 session 计数；在 `POST /api/agent/new` 中，计数检查与递增之间应保持最小竞态窗口。
+M2.3 在 `startRpcSession` 成功返回后，SHALL 调用 `perUserSessionCapIncrement(userId)` 增加该用户的活跃 session 计数；在 `POST /api/agent/new` 中，计数检查与递增之间应保持最小竞态窗口。fork 内部仍对同一 session 串行调度（同 session 双 prompt 不会事件交叉）。
+
+#### Scenario: 复用 fork 现有调度
+- **WHEN** `app/api/agent/new/route.ts` 调 `startRpcSession(tempKey, "", cwd, ...)` 启动 session
+- **THEN** fork 的串行链生效；同 session 双 prompt 不会事件交叉
 
 #### Scenario: 启动 session 后 per-user 计数增加
 - **WHEN** `POST /api/agent/new` 成功创建 session
