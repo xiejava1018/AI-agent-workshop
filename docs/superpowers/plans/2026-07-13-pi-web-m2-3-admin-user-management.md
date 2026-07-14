@@ -2,6 +2,7 @@
 change: pi-web-m2-3-admin-user-management
 design-doc: docs/superpowers/specs/2026-07-13-pi-web-m2-3-admin-user-management-design.md
 base-ref: ad8d043ad06d5c3304d65d04a844099987b640d6
+archived-with: 2026-07-14-pi-web-m2-3-admin-user-management
 ---
 
 # M2.3 pi-web 受控多用户管理实施计划

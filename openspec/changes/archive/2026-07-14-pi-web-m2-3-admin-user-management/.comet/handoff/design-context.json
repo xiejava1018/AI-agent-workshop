@@ -1,0 +1,19 @@
+{
+  "change": "pi-web-m2-3-admin-user-management",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "eb3ae68c309399ffb047bb8c8f4ed414e5260e7e644ece198540a49db1111003",
+  "files": [
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/proposal.md", "sha256": "6fa0100d5abd37641c0b84be73c2460c4a99d511906fcad91334fe0ec6f49ab7" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/design.md", "sha256": "8979a497eb982b19fb1a14d28ca5fb1b6353de577b69feab10cae95184ecdb82" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/tasks.md", "sha256": "bf52121b4884ee2918625d66fb2bc34e3e31ab91d5878f023c88e18dd6f2671d" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/specs/admin-user-creation/spec.md", "sha256": "147505aba90b772cb86e313b0a002c8eb863a01d1922e501d09b35f9af6aa04b" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/specs/agent-session-in-process/spec.md", "sha256": "385895854a2dbbe97663b255e1270e9edeb736301bdc90704fb279bc0255cb76" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/specs/auth-provider-user/spec.md", "sha256": "c519b237355dd07838d37cdb31832dbb397728e03ac8fd8661f14881c81d577b" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/specs/per-user-session-cap/spec.md", "sha256": "354f42eeaf06835cd7df4f923987c5b28100523374fe28ac9691528bf559e841" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/specs/refresh-token/spec.md", "sha256": "758c16f79ac8cfab1587c94ab7ee371e5d8f9c16fd6e528105fa159ed9aa74e3" },
+    { "path": "openspec/changes/pi-web-m2-3-admin-user-management/specs/user-auth-ui/spec.md", "sha256": "7b218045adf09fe07ddcec4a7a70ccd22ab306b5382a30fc1e41ee1d896af7ba" }
+  ]
+}

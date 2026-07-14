@@ -2,6 +2,8 @@
 comet_change: pi-web-m2-3-admin-user-management
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-14-pi-web-m2-3-admin-user-management
+status: final
 ---
 
 # M2.3 Technical Design: 受控多用户管理
