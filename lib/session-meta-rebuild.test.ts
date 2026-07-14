@@ -69,7 +69,7 @@ describe("rebuildFromJsonl", () => {
       JSON.stringify({ userId: "user-from-disk" }) + "\n"
     );
     const map = new Map<string, SessionMetaRow>();
-    map.set("session3", { userId: "user-in-memory", projectId: null, createdAt: 123 });
+    map.set("session3", { userId: "user-in-memory", projectId: null, teamId: null, createdAt: 123 });
     await rebuildFromJsonl(map);
     expect(map.get("session3")?.userId).toBe("user-in-memory");
   });

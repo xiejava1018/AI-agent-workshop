@@ -5,6 +5,12 @@ declare global {
 export type SessionMetaRow = {
   userId: string | null;
   projectId: string | null;
+  // M2.4: teamId is set at session creation time from the project the
+  // session belongs to. It is the authoritative scope for authorization
+  // decisions — see lib/team-auth.ts. `null` means "unknown scope"
+  // (session predates M2.4, or rebuildFromJsonl could not resolve it)
+  // and is treated as deny-by-default by assertCanReadSession.
+  teamId: string | null;
   createdAt: number;
 };
 
@@ -57,6 +63,22 @@ export async function rebuildFromJsonl(map: Map<string, SessionMetaRow>): Promis
   }
 
   const files = await walk(dataDir);
+  // M2.4: backfill teamId from Project for sessions whose .jsonl predates
+  // the teamId field. We do one bulk query for all distinct projectIds
+  // (instead of per-file) so the rebuild stays O(files + projects) not
+  // O(files × projects).
+  const projectToTeam = new Map<string, string>();
+  try {
+    const { prisma } = await import("./prisma");
+    const projects = await prisma.project.findMany({
+      select: { id: true, teamId: true },
+    });
+    for (const p of projects) projectToTeam.set(p.id, p.teamId);
+  } catch {
+    // DB unavailable during rebuild (e.g. before bootstrap): teamId stays
+    // null for all sessions, which the auth layer treats as deny.
+  }
+
   for (const file of files) {
     if (!file.endsWith(".jsonl")) continue;
     // Session id = filename basename without .jsonl extension
@@ -78,8 +100,25 @@ export async function rebuildFromJsonl(map: Map<string, SessionMetaRow>): Promis
       // Parse failure → userId=null, projectId=null (M1 spec degradation)
     }
 
+    // M2.4: prefer the teamId embedded in the .jsonl header (new sessions
+    // after M2.4 write it). Fall back to Project lookup for old sessions.
+    let teamId: string | null = null;
+    try {
+      const content = await readFile(file, "utf-8");
+      const firstLine = content.split("\n")[0];
+      if (firstLine) {
+        const parsed = JSON.parse(firstLine);
+        if (typeof parsed.teamId === "string") teamId = parsed.teamId;
+      }
+    } catch {
+      // ignore
+    }
+    if (!teamId && projectId) {
+      teamId = projectToTeam.get(projectId) ?? null;
+    }
+
     if (!map.has(sessionId)) {
-      map.set(sessionId, { userId, projectId, createdAt: Date.now() });
+      map.set(sessionId, { userId, projectId, teamId, createdAt: Date.now() });
     }
   }
 }
@@ -87,11 +126,12 @@ export async function rebuildFromJsonl(map: Map<string, SessionMetaRow>): Promis
 export function recordSessionMeta(
   realSessionId: string,
   userId: string | null,
-  projectId: string | null
+  projectId: string | null,
+  teamId: string | null
 ) {
   const map = getMetaMap();
   if (!map.has(realSessionId)) {
-    map.set(realSessionId, { userId, projectId, createdAt: Date.now() });
+    map.set(realSessionId, { userId, projectId, teamId, createdAt: Date.now() });
   }
 }
 
@@ -103,17 +143,21 @@ export function listSessionMeta(): SessionMetaRow[] {
   return Array.from(getMetaMap().values());
 }
 
+// M2.4: assertCanReadSession now requires awaiting an async DB lookup.
+// The synchronous shape is kept only as a transitional deprecation stub
+// that throws if called — all call sites in app/ must migrate to
+// assertCanReadSessionScoped from lib/team-auth.ts (which returns the
+// decision reason alongside the boolean, so the caller can write audit
+// log entries with proper context).
 export function assertCanReadSession(
   userId: string,
   userRole: "OWNER" | "ADMIN" | "MEMBER" | null,
   sessionId: string
 ): boolean {
-  const meta = getSessionMeta(sessionId);
-  if (!meta) return false;
-  if (meta.userId === userId) return true;
-  if (userRole && ["OWNER", "ADMIN"].includes(userRole)) {
-    // 注: M1 简化, 不做 teamId 检查（owner/admin 总可见）
-    return true;
-  }
-  return false;
+  throw new Error(
+    "assertCanReadSession is removed in M2.4 — use await " +
+      "assertCanReadSessionScoped(userId, userRole, meta, sessionId) " +
+      "from lib/team-auth.ts. The signature change forces every call " +
+      "site to be reviewed for team isolation."
+  );
 }
