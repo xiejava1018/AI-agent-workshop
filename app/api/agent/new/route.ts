@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { allowFileRoot } from "@/lib/file-access";
-import { startRpcSession } from "@/lib/rpc-manager";
+import { startRpcSession, destroyAllSessionsForUser } from "@/lib/rpc-manager";
+import { recordSessionMeta } from "@/lib/session-meta";
 import { enforceNotMustChange } from "@/lib/must-change-password";
 import { prisma } from "@/lib/prisma";
 import { assertWithinRoot } from "@/lib/path-safety";
+import { auditLog } from "@/lib/audit-log";
 import {
   checkUserSessionCap,
   incrementUserSessionCap,
+  getOldestActiveUserIdExcept,
   GLOBAL_SESSION_CAP_MAX,
 } from "@/lib/session-cap";
 
@@ -40,7 +43,25 @@ export async function POST(req: NextRequest) {
     // case; accepted per design doc §D4.
     // NOTE: checkUserSessionCap checks BOTH per-user (5) AND global (50);
     // the previous M2.2 separate global-only check is folded into this call.
-    const cap = checkUserSessionCap(userId);
+    // LEAK FIX (2026-07-14): when a cap is hit, attempt LRU eviction of the
+    // least-recently-active user before rejecting. The original cap design
+    // only ever incremented (decrement had no caller), so a dev server with
+    // sustained session churn drove RSS from 1.7GB to 8GB and OOM-killed
+    // the process within minutes. Eviction here destroys the victim's live
+    // AgentSessionWrapper objects (the ~hundreds-of-MB pi runtime state),
+    // which is what actually frees memory — the cap counter is just the gate.
+    let cap = checkUserSessionCap(userId);
+    if (!cap.allowed) {
+      const victim =
+        cap.max === GLOBAL_SESSION_CAP_MAX
+          ? getOldestActiveUserIdExcept(userId)
+          : userId; // per-user cap: only this user's own sessions can be freed
+      if (victim) {
+        destroyAllSessionsForUser(victim);
+        // Re-check after eviction; allowed may flip to true.
+        cap = checkUserSessionCap(userId);
+      }
+    }
     if (!cap.allowed) {
       const isGlobal = cap.max === GLOBAL_SESSION_CAP_MAX;
       const message = isGlobal
@@ -108,7 +129,29 @@ export async function POST(req: NextRequest) {
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
     const tempKey = `__new__${Date.now()}`;
-    const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, toolNames);
+    const { session, realSessionId } = await startRpcSession(tempKey, "", cwd, toolNames, userId);
+
+    // Register session metadata so /api/agent/[id]/events and
+    // /api/agent/[id] (POST) can authorize the freshly-created session
+    // synchronously. The lazy rebuildFromJsonl scan in lib/session-meta.ts
+    // is asynchronous and races with the first SSE open from the client,
+    // which manifests as "EventStreamConnectionError -> 403" in
+    // hooks/useAgentSession.ts's ensureEventsConnected (observed
+    // 2026-07-14). recordSessionMeta is idempotent — later reads from the
+    // .jsonl file override on the first-line fields.
+    recordSessionMeta(realSessionId, userId, project.id, project.teamId);
+
+    // M2.4 audit: every successful session creation is logged so we can
+    // reconstruct what user created which session in which team after the
+    // fact. This is the entry that lets "what sessions exist" questions
+    // be answered without scanning globalThis.__piSessions.
+    void auditLog({
+      userId,
+      action: "session.create",
+      resourceType: "session",
+      resourceId: realSessionId,
+      metadata: { projectId: project.id, projectName: project.name, teamId: project.teamId },
+    });
 
     // Task 4.6: increment cap ONLY after successful session creation.
     // A failed startRpcSession must NOT consume a slot.

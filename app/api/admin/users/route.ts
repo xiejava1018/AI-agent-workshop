@@ -87,19 +87,92 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const initialPassword = generateInitialPassword();
   const passwordHash = await bcrypt.hash(initialPassword, BCRYPT_COST);
 
-  const created = await prisma.user.create({
-    data: {
-      username,
-      passwordHash,
-      mustChangePassword: true,
-      createdBy: callerId,
-    },
-    select: { id: true, username: true },
+  // Auto-bind the new admin to a team so they can immediately use the
+  // app. Without this, /api/agent/new returns 400 "no project selected"
+  // (route.ts:63) and 403 "forbidden" (route.ts:81) — neither of which
+  // is actionable from the admin-creation UI. Strategy: prefer the
+  // caller's first team; if the caller has no team, fall back to the
+  // first team in the DB; if no teams exist, create a "Default Team".
+  // The bound project's rootPath is recorded as lastProjectId so
+  // /api/agent/new can resolve cwd from user.lastProjectId.
+  const callerTeam = await prisma.teamMember.findFirst({
+    where: { userId: callerId },
+    select: { teamId: true },
+  });
+  let teamId: string;
+  if (callerTeam) {
+    teamId = callerTeam.teamId;
+  } else {
+    const anyTeam = await prisma.team.findFirst({ select: { id: true } });
+    if (anyTeam) {
+      teamId = anyTeam.id;
+    } else {
+      const created = await prisma.team.create({
+        data: { name: "Default Team", ownerUserId: callerId },
+        select: { id: true },
+      });
+      teamId = created.id;
+    }
+  }
+
+  // Use a single transaction so user + team membership + project binding
+  // either all succeed or all roll back. Avoids a half-bound admin
+  // (user exists but has no team, or team exists but user not in it)
+  // that would still surface 400/403 on /api/agent/new.
+  const result = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        username,
+        passwordHash,
+        mustChangePassword: true,
+        createdBy: callerId,
+      },
+      select: { id: true, username: true },
+    });
+    await tx.teamMember.create({
+      data: { teamId, userId: created.id, role: "MEMBER" },
+    });
+    // Pick a project in the same team. Use the first by createdAt so
+    // binding is deterministic; if none, create a per-user scratch dir.
+    const existingProject = await tx.project.findFirst({
+      where: { teamId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    let projectId: string;
+    if (existingProject) {
+      projectId = existingProject.id;
+    } else {
+      const { mkdirSync } = await import("fs");
+      const { join } = await import("path");
+      const scratchPath = join(
+        process.cwd(),
+        "data",
+        "projects",
+        `user-${created.username}`,
+      );
+      mkdirSync(scratchPath, { recursive: true });
+      const newProject = await tx.project.create({
+        data: {
+          teamId,
+          name: `${username}'s workspace`,
+          rootPath: scratchPath,
+          createdBy: callerId,
+        },
+        select: { id: true },
+      });
+      projectId = newProject.id;
+    }
+    await tx.user.update({
+      where: { id: created.id },
+      data: { lastProjectId: projectId },
+    });
+    return { id: created.id, username: created.username };
   });
 
   return NextResponse.json({
-    id: created.id,
-    username: created.username,
+    id: result.id,
+    username: result.username,
     initialPassword,
   });
 }

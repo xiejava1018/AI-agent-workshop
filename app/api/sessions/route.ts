@@ -30,10 +30,20 @@ export async function GET(req: NextRequest) {
     // 3-way union filter per spec session-visibility-filter:
     //   1. Self: meta.userId === userId
     //   2. Team admin: isAdmin AND project.teamId in user's teamIds
-    //   3. Shared: M2.4 placeholder, always false (session_shares table empty in M2.2)
+    //   3. Shared: a SessionShare row exists for this (session, user)
     //
     // Note: listSessionMeta() returns rows without the session id (id is the map
     // key), so we use getSessionMeta(id) per session from listAllSessions().
+    //
+    // Performance: load all SessionShare rows for the user ONCE, instead
+    // of per-session. The session-id column is part of the composite PK
+    // (sessionId, sharedWithUserId), so the query is cheap.
+    const sharedRows = await prisma.sessionShare.findMany({
+      where: { sharedWithUserId: userId },
+      select: { sessionId: true },
+    });
+    const sharedSessionIds = new Set(sharedRows.map((r) => r.sessionId));
+
     const visibleSessions = [];
     for (const session of sessions) {
       const meta = getSessionMeta(session.id);
@@ -57,8 +67,14 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // (3) Shared placeholder — M2.4 will check session_shares table.
-      // For M2.2 the table is empty, so this branch never matches.
+      // (3) Shared — any explicit SessionShare row grants visibility.
+      // M2.4 implementation: SessionShare table was previously empty so
+      // this branch never matched. Now the user can be added to other
+      // users' sessions via /api/agent/[id]/share.
+      if (sharedSessionIds.has(session.id)) {
+        visibleSessions.push(session);
+        continue;
+      }
     }
 
     return NextResponse.json({
