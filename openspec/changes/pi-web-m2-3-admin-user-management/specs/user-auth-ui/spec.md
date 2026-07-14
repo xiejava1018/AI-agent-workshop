@@ -19,13 +19,18 @@
 
 ### Requirement: 改密页面强制 root 在首次登录后改密
 
-（M2.2 已完整实现，M2.3 保持行为不变）
+（M2.2 已完整实现，M2.3 保持行为不变）改密页面 MUST 强制 root 账号在首次登录后立即改密，未改密时 root 的写 API 调用 MUST 被拦截。
 
 #### Scenario: mustChangePassword 用户改密成功
 - **WHEN** root 提交新密码（≥ 8 字符）到 `/{locale}/change-password`
 - **THEN** POST `/api/auth/change-password` 返回 200
 - **AND** 客户端跳转到 `/{locale}/dashboard`
 - **AND** DB 中 `User.mustChangePassword` 被置为 `false`
+
+#### Scenario: mustChangePassword 状态下写 API 被拦截
+- **WHEN** user 的 `mustChangePassword` 为 `true`
+- **AND** user 调用任何写 API
+- **THEN** 服务端返回 403 提示必须先改密
 
 ## ADDED Requirements
 

@@ -10,7 +10,16 @@ M2.3 在 `startRpcSession` 成功返回后，SHALL 调用 `perUserSessionCapIncr
 
 ### Requirement: SSE 端点 read-path 强制 user 权限校验
 
-（M2.2 已实现，M2.3 保持行为不变）
+（M2.2 已实现，M2.3 保持行为不变）SSE 端点 MUST 在 read-path 上对当前 user 强制权限校验，user 只能访问自己有权限的 session 数据。
+
+#### Scenario: 用户访问自己 session 的 SSE 流
+- **WHEN** user A 通过 SSE 订阅自己创建的 session 流
+- **THEN** 服务端允许流式推送
+- **AND** 不会越权推送其他 user 的数据
+
+#### Scenario: 用户越权访问他人 session 的 SSE 流
+- **WHEN** user A 尝试订阅 user B 的 session 流
+- **THEN** 服务端拒绝并返回 403
 
 ### Requirement: SSE 端点 cwd 与 Project.root_path 一致
 
@@ -28,7 +37,12 @@ M2.3 在 `startRpcSession` 成功返回后，SHALL 调用 `perUserSessionCapIncr
 
 ### Requirement: Server 启动时 metadata rebuild 失败降级
 
-（M2.2 已实现，M2.3 保持行为不变）
+（M2.2 已实现，M2.3 保持行为不变）当 Server 启动时 `recordSessionMeta` 历史 metadata 从 JSONL 文件 rebuild 失败，系统 MUST 优雅降级，进程继续运行而不阻塞启动。
+
+#### Scenario: metadata rebuild 失败但 Server 仍可启动
+- **WHEN** 启动时 JSONL 文件损坏或缺失导致 metadata rebuild 失败
+- **THEN** Server 进程继续运行并接受新请求
+- **AND** 不向客户端返回启动错误
 
 ## ADDED Requirements
 
