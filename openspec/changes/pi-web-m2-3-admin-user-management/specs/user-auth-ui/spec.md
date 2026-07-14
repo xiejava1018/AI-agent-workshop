@@ -17,6 +17,24 @@
 - **AND** 刷新成功后重试原请求
 - **AND** 刷新失败则跳转回 `/{locale}/login`
 
+#### Scenario: 未登录用户访问受保护页面
+- **WHEN** 未携带 `pw_at` cookie 的浏览器访问 `/{locale}/dashboard`
+- **THEN** 客户端逻辑重定向到 `/{locale}/login`
+- **AND** `/api/auth/*` 之外的 `/api/*` 返回 401 JSON（middleware 拦截）
+
+
+#### Scenario: 用户提交登录表单
+- **WHEN** 用户在 `/{locale}/login` 提交 username + password
+- **THEN** POST `/api/auth/user-login` 成功（200 + Set-Cookie `pw_at`）
+- **AND** 客户端跳转到 `/{locale}/change-password` 当响应体 `mustChangePassword === true`
+- **AND** 客户端跳转到 `/{locale}/dashboard` 当响应体 `mustChangePassword === false`
+
+
+#### Scenario: 登录失败显示错误
+- **WHEN** 用户在 `/{locale}/login` 提交错误密码
+- **THEN** 页面显示来自 `messages/{locale}.json::login.error` 的本地化错误消息
+- **AND** 不跳转、不显示密码
+
 ### Requirement: 改密页面强制 root 在首次登录后改密
 
 （M2.2 已完整实现，M2.3 保持行为不变）改密页面 MUST 强制 root 账号在首次登录后立即改密，未改密时 root 的写 API 调用 MUST 被拦截。
@@ -31,6 +49,11 @@
 - **WHEN** user 的 `mustChangePassword` 为 `true`
 - **AND** user 调用任何写 API
 - **THEN** 服务端返回 403 提示必须先改密
+
+#### Scenario: 新密码太短
+- **WHEN** 用户提交 < 8 字符的新密码
+- **THEN** 页面显示来自 `messages/{locale}.json::changePassword.tooShort` 的错误
+- **AND** 不跳转
 
 ## ADDED Requirements
 
