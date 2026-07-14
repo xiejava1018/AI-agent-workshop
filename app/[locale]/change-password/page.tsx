@@ -40,8 +40,10 @@ export default function ChangePasswordPage() {
       setError(t("tooShort"));
       return;
     }
-    // Redirect under the current [locale] segment
-    router.push(`/${locale}/dashboard`);
+    // Redirect under the current [locale] segment. /<locale> mounts the full
+    // chat AppShell — see login/page.tsx for the rationale on avoiding the
+    // M2.2 admin dashboard as the post-auth landing.
+    router.push(`/${locale}`);
   }
 
   return (

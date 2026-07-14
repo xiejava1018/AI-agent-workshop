@@ -159,7 +159,10 @@ const PROMPT_SETTLE_INITIAL_DELAY_MS = 800;
 const PROMPT_SETTLE_POLL_MS = 600;
 const PROMPT_SETTLE_MAX_MS = 20_000;
 const AGENT_STATE_RECONCILE_MS = 15_000;
-const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5_000;
+// Production SSE connects in single-digit ms; dev (Turbopack) first request
+// can take 6+ seconds while Next.js compiles the route + middleware chain.
+// Use a longer timeout in dev so the dev experience matches production.
+const EVENT_STREAM_CONNECT_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 30_000 : 5_000;
 const MAX_NOTICES = 5;
 const NOTICE_VISIBLE_MS = 5000;
 const NOTICE_EXIT_ANIMATION_MS = 180;

@@ -63,8 +63,12 @@ export default function LoginPage() {
       return;
     }
 
-    // Redirect under the current [locale] segment
-    router.push(body.mustChangePassword ? `/${locale}/change-password` : `/${locale}/dashboard`);
+    // Redirect under the current [locale] segment. /<locale> mounts the full
+    // chat AppShell (SessionSidebar + ChatWindow + FileExplorer + …). The
+    // dashboard page is the M2.2 admin-only summary view, not the user's
+    // home — preserve the spec's change-password gate, but otherwise send
+    // everyone straight to /<locale>, not /<locale>/dashboard.
+    router.push(body.mustChangePassword ? `/${locale}/change-password` : `/${locale}`);
   }
 
   return (
