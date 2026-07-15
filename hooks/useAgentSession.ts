@@ -1035,22 +1035,31 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               await sendAgentCommand(sid, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
             }
           }
-          await ensureEventsConnected(sid);
+          // Send the prompt FIRST. The POST path also calls startRpcSession
+          // (which loads history/extensions/skills from .jsonl), so a session
+          // destroyed by the 10-minute idle timer is rebuilt here. We used
+          // to call ensureEventsConnected before sendAgentCommand, which made
+          // the SSE connect-timeout (5s prod / 30s dev) fire before the
+          // session finished rebuilding — hence the "Timed out connecting
+          // to the agent event stream" error. With POST-first, the session
+          // is live by the time the SSE handler picks it up.
           await sendAgentCommand(sid, {
             type: "prompt",
             message,
             ...(piImages?.length ? { images: piImages } : {}),
           });
+          await ensureEventsConnected(sid);
           promoteNewSession(1, message);
         }
       } else if (session) {
         sentSessionId = session.id;
-        await ensureEventsConnected(session.id);
+        // Same POST-first rationale as the new-session branch above.
         await sendAgentCommand(session.id, {
           type: "prompt",
           message,
           ...(piImages?.length ? { images: piImages } : {}),
         });
+        await ensureEventsConnected(session.id);
       }
       if (isSlashCommandPrompt && sentSessionId) {
         void waitForPromptSettlement(sentSessionId, promptRunId);

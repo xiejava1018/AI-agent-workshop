@@ -107,6 +107,18 @@ export async function GET(
         encode(event);
       });
 
+      // When the wrapper is destroyed (e.g. by the 10-minute idle timer in
+      // AgentSessionWrapper, or by LRU eviction from the session cap), the
+      // registry entry is removed and the session can no longer accept new
+      // prompts. Close the SSE stream so the browser's EventSource
+      // transitions to CLOSED and our frontend can reconnect — `connectEvents`
+      // will then re-call this route, which sees the missing registry entry
+      // and re-runs `startRpcSession` to rebuild the session from the .jsonl
+      // file. The user sees a brief reconnect; no "Timed out connecting" error.
+      session.onDestroy(() => {
+        try { controller.close(); } catch { /* already closed */ }
+      });
+
       // Heartbeat every 30s to prevent server/proxy timeout (Next.js default ~120-150s)
       const heartbeat = setInterval(() => {
         try {
