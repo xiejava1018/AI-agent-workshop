@@ -144,3 +144,38 @@ model UserSkillBinding {
   @@unique([userId, skillPackageId])
   @@index([userId])
 }
+
+// M3 — SkillPackage: a skill bundle that can be scoped to global/team/user.
+// `scope` is "global" | "team" | "user"; `source` and `filePath` describe where
+// the bundle is loaded from (e.g. "builtin" path, or remote registry id). A
+// (scope, slug, teamId, userId) tuple uniquely identifies a package so a
+// global slug and a team-scoped slug can coexist. Like other M3 binding
+// tables, there are no FK relations — references are validated in-app.
+model SkillPackage {
+  id          String  @id @default(cuid())
+  slug        String
+  name        String
+  description String  @default("")
+  scope       String  @default("global") // global | team | user
+  teamId      String?
+  userId      String?
+  source      String  @default("")
+  filePath    String  @default("")
+  enabled     Boolean @default(true)
+
+  @@unique([scope, slug, teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+// M3 — SkillInvocation: record an invocation/use of a SkillPackage by a user
+// in a session. Analytics/auditing row; no FK relations, validated in-app.
+model SkillInvocation {
+  id             String   @id @default(cuid())
+  skillPackageId String
+  userId         String?
+  sessionId      String?
+  createdAt      DateTime @default(now())
+
+  @@index([skillPackageId])
+}

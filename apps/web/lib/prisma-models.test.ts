@@ -25,4 +25,36 @@ describe("M3 models", () => {
     expect(b.mode).toBe("include");
     await prisma.agentSkillBinding.delete({ where: { id: b.id } });
   });
+
+  it("creates a SkillPackage with scope", async () => {
+    const s = await prisma.skillPackage.create({
+      data: {
+        slug: "commit",
+        name: "commit",
+        scope: "global",
+        source: "builtin",
+        filePath: "/skills/commit",
+      },
+    });
+    expect(s.scope).toBe("global");
+    await prisma.skillPackage.delete({ where: { id: s.id } });
+  });
+
+  it("creates a SkillInvocation record", async () => {
+    const s = await prisma.skillPackage.create({
+      data: {
+        slug: "review",
+        name: "review",
+        scope: "global",
+        source: "builtin",
+        filePath: "/skills/review",
+      },
+    });
+    const inv = await prisma.skillInvocation.create({
+      data: { skillPackageId: s.id, userId: "u1" },
+    });
+    expect(inv.skillPackageId).toBe(s.id);
+    await prisma.skillInvocation.delete({ where: { id: inv.id } });
+    await prisma.skillPackage.delete({ where: { id: s.id } });
+  });
 });
