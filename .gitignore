@@ -1,8 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
-/.pnp
+# dependencies (any package in the monorepo, not only repo root)
+node_modules
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -11,14 +11,15 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
+build
+dist
 
 # misc
 .DS_Store
@@ -42,8 +43,13 @@ yarn-error.log*
 next-env.d.ts
 .factory
 
-# Prisma generated SQLite test artifacts (db files inside prisma/data/ are scratch)
-/prisma/data/
+# runtime scratch: top-level data/ holds cwd sandboxes (keep .gitignore/.gitkeep)
+/data/*
+!/data/.gitignore
+!/data/.gitkeep
+
+# Prisma generated sqlite test artifacts (db files inside prisma/data/ are scratch)
+**/prisma/data/
 
 # Comet platform workspace (change state lives in openspec/changes/<name>/.comet/)
 /.comet/
@@ -51,3 +57,10 @@ openspec/changes/*/.comet/
 
 # Local git worktrees
 /.worktrees/
+
+# CodeGraph local index (SQLite knowledge graph)
+/.codegraph/
+
+# build/lock scratch
+*.bak
+test-results/
