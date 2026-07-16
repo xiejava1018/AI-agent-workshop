@@ -91,3 +91,21 @@ model AuditLog {
   @@index([resourceType, resourceId, createdAt])
   @@index([createdAt])
 }
+
+// M3 — Agent (digital employee): a configurable AI agent scoped to a team or
+// personal workspace. `scope` is "team" | "personal"; `model` is the LLM
+// identifier used for this agent. Stored systemPrompt is the base prompt.
+model Agent {
+  id           String   @id @default(cuid())
+  teamId       String?
+  ownerUserId  String?
+  name         String
+  description  String   @default("")
+  systemPrompt String   @default("")
+  model        String   @default("")
+  scope        String   @default("personal")
+  createdAt    DateTime @default(now())
+
+  @@index([teamId])
+  @@index([ownerUserId])
+}
