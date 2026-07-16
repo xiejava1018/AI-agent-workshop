@@ -39,7 +39,7 @@
 - [x] T3.1 实现 `DelegateAgentTool`（`defineTool`）：执行体内部创建子 `createAgentSessionFromServices` 并 `prompt()`，等待结果返回
 - [x] T3.2 Supervisor 发现子 Agent：注入时按 `teamId`（个人按 `ownerUserId`）查出「可用数字员工目录」作为候选上下文
 - [x] T3.3 三种委派模式：同步 / 并行（≤8）/ 异步（task_id + taskOutput 回填）
-- [ ] T3.4 委派护栏：深度 ≤ 3、子 Agent 结果截断 4000 字符、子 Agent 禁用清单（delegate*/remember*/setGoal*/create_employee 等）
+- [x] T3.4 委派护栏：深度 ≤ 3、子 Agent 结果截断 4000 字符、子 Agent 禁用清单（delegate*/remember*/setGoal*/create_employee 等）
 - [ ] T3.5 委派专用池：仅根 Supervisor 会话计入 per-user 上限；派生子会话独立计数、token 滚回根会话
 - [ ] T3.6 `DelegationTree` 持久化：记录委派父子树，支持断点恢复
 - [ ] T3.7 事件回流：子 Agent 的 tool_update/message 经 Supervisor 转发到根会话 SSE
