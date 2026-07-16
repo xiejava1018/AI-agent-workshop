@@ -81,4 +81,13 @@ describe("M3 models", () => {
     expect(inv.token).toBe("tok123");
     await prisma.inviteLink.delete({ where: { id: inv.id } });
   });
+
+  it("creates PlatformApiKey/UserApiKey with encrypted secret", async () => {
+    const p = await prisma.platformApiKey.create({ data: { provider: "anthropic", secretEnc: "ENC" } });
+    const u = await prisma.userApiKey.create({ data: { userId: "u1", provider: "openai", secretEnc: "ENC" } });
+    expect(p.secretEnc).toBe("ENC");
+    expect(u.provider).toBe("openai");
+    await prisma.platformApiKey.delete({ where: { id: p.id } });
+    await prisma.userApiKey.delete({ where: { id: u.id } });
+  });
 });

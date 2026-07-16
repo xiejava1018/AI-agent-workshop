@@ -230,3 +230,30 @@ model InviteLink {
   createdAt      DateTime  @default(now())
   @@index([teamId])
 }
+
+// M3 — PlatformApiKey: platform-level LLM provider credentials (system-wide).
+// `secretEnc` stores the AES-256-GCM ciphertext of the API key — NEVER plaintext.
+// Only one row per provider; rotated by upsert on `provider`.
+model PlatformApiKey {
+  id        String   @id @default(cuid())
+  provider  String
+  secretEnc String   // AES-256-GCM ciphertext, never plaintext
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider])
+}
+
+// M3 — UserApiKey: per-user LLM provider credentials (BYOK). Allows individual
+// users to bring their own API keys for a given provider. `secretEnc` stores
+// the AES-256-GCM ciphertext — NEVER plaintext. Uniquely identified by
+// (userId, provider) so a user has at most one key per provider.
+model UserApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String
+  secretEnc String   // AES-256-GCM ciphertext, never plaintext
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
