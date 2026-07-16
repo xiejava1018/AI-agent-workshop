@@ -1,4 +1,18 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+
+// Mock session-cap BEFORE importing delegate-agent-tool so the mock is active
+// when the module graph is first resolved.
+const { incrementMock } = vi.hoisted(() => {
+  const incrementMock = vi.fn();
+  return { incrementMock };
+});
+
+vi.mock("./session-cap", () => ({
+  incrementUserSessionCap: incrementMock,
+  decrementUserSessionCap: vi.fn(),
+  checkUserSessionCap: vi.fn().mockReturnValue({ allowed: true, current: 0, max: 5 }),
+  getOldestActiveUserIdExcept: vi.fn().mockReturnValue(null),
+}));
 import {
   MAX_DELEGATION_DEPTH,
   DELEGATION_DENYLIST,
@@ -489,6 +503,74 @@ describe("delegate-agent-tool", () => {
       expect(entries).toContain("remember");
       expect(entries).toContain("setGoal");
       expect(entries).toContain("create_employee");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // T3.5 — per-user session cap exemption for delegation children
+  //
+  // Design contract: child sessions (depth > 0) do NOT call incrementUserSessionCap.
+  // Only the root Supervisor session counts toward the per-user session cap (default 5).
+  // Delegation children are short-lived task-execution units, not user-facing sessions.
+  //
+  // This test documents and enforces that contract. Currently `startRpcSession` does
+  // not call `incrementUserSessionCap` in production, so the mock confirms the design
+  // intent is upheld. When `incrementUserSessionCap` is wired into `startRpcSession`,
+  // the implementation MUST skip the call for delegation children (identified by
+  // `agentScope.rootSessionId !== undefined`).
+  // -------------------------------------------------------------------------
+  describe("T3.5 — per-user session cap exemption", () => {
+    it("does NOT call incrementUserSessionCap when spawning a sync child (depth > 0)", async () => {
+      const tool = createDelegateAgentTool({
+        rootSessionId: "root-session-1",
+        userId: "u1",
+        teamId: "t1",
+        depth: 0, // root is depth 0; child will be depth 1
+      });
+
+      incrementMock.mockClear();
+
+      // Trigger the child session to be created
+      mockSessionInner.prompt.mockImplementationOnce(() => {
+        mockSessionInner.getLastAssistantText.mockReturnValue("child result");
+        const cbs = [...mockSessionInner._callbacks];
+        for (const cb of cbs) cb({ type: "agent_end" });
+        return Promise.resolve();
+      });
+
+      await (tool.execute as Function)(
+        "call-1",
+        { agentId: "agent-1", task: "do the thing" },
+        undefined,
+        undefined,
+        { cwd: "/tmp" },
+      );
+
+      // Design contract: incrementUserSessionCap must NOT be called for a delegation child.
+      // The exemption is because child sessions are task-execution units, not interactive sessions.
+      expect(incrementMock).not.toHaveBeenCalled();
+    });
+
+    it("does NOT call incrementUserSessionCap when spawning an async child (depth > 0)", async () => {
+      const tool = createDelegateAgentTool({
+        rootSessionId: "root-session-2",
+        userId: "u1",
+        teamId: "t1",
+        depth: 0,
+      });
+
+      incrementMock.mockClear();
+
+      await (tool.execute as Function)(
+        "call-1",
+        { agentId: "agent-1", task: "do the thing", mode: "async" },
+        undefined,
+        undefined,
+        { cwd: "/tmp" },
+      );
+
+      // Design contract: async children also do not count toward per-user cap.
+      expect(incrementMock).not.toHaveBeenCalled();
     });
   });
 });

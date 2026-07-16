@@ -1317,6 +1317,28 @@ export function notifyRunningChange(): void {
  * Pass `excludeTools` to remove tool names from the session's available set
  * via `createAgentSessionFromServices.excludeTools`. When omitted, no tools
  * are excluded (legacy behavior).
+ *
+ * ---
+ * T3.5 — per-user session cap exemption for delegation children:
+ *
+ * Sessions created as delegation children (i.e., `startRpcSession` is called from
+ * `runSingleChild` / `runAsyncChild` in `delegate-agent-tool.ts`) have
+ * `agentScope.rootSessionId` set to the root Supervisor's sessionId. These sessions
+ * are short-lived task-execution units, NOT user-facing interactive sessions.
+ *
+ * The per-user session cap (default 5, see `lib/session-cap.ts`) limits concurrent
+ * interactive sessions per user. Delegation children MUST NOT consume this slot because:
+ *   - They are scoped to a single task and auto-cleaned after completion
+ *   - A user actively delegating could easily exceed the cap through parallel children
+ *   - Only the root Supervisor session counts toward the cap
+ *
+ * When `agentScope.rootSessionId !== undefined`, the implementation of the cap check
+ * in `startRpcSession` MUST skip the `incrementUserSessionCap` call. The exemption
+ * is identified by the presence of `agentScope.rootSessionId` — if that field is
+ * populated, the session is a delegation child and must not be counted.
+ *
+ * (Currently `incrementUserSessionCap` is not yet called in `startRpcSession`; this
+ * comment documents the contract for when it is added.)
  */
 export async function startRpcSession(
   sessionId: string,

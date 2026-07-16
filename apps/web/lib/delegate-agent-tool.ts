@@ -84,7 +84,17 @@ export const DELEGATION_DENYLIST = ["delegate", "remember", "setGoal", "create_e
 export type DelegateMode = "sync" | "parallel" | "async";
 
 export interface DelegateAgentContext {
-  /** Root Supervisor sessionId — used to scope child session paths and (later) token roll-up. */
+  /**
+   * Root Supervisor sessionId. Used to:
+   * 1. Scope child session paths (session naming prefix)
+   * 2. Link the DelegationTree row to the correct root
+   * 3. (T3.5 design) Exempt child sessions from per-user session cap —
+   *    only the root Supervisor session counts toward the per-user limit;
+   *    delegation children (depth > 0) are independent execution units that
+   *    do NOT consume the user's session slot. The `rootSessionId` is passed
+   *    as `agentScope.rootSessionId` to `startRpcSession` so the session-cap
+   *    gate can distinguish a root from a delegation child.
+   */
   rootSessionId: string;
   /** User owning the delegation chain; flows through to startRpcSession for per-tenant AuthStorage. */
   userId: string;
@@ -451,6 +461,15 @@ export function createDelegateAgentTool(ctx: DelegateAgentContext) {
  * Used by both sync and parallel modes.
  *
  * Returns a DelegateAgentResult with ok=true on success, ok=false on failure.
+ *
+ * Design note (T3.5): Child sessions (depth > 0) do NOT call `incrementUserSessionCap`.
+ * Only the root Supervisor session counts toward the per-user session cap (default 5).
+ * This is because a delegation child is a short-lived execution unit scoped to a
+ * single task; it is not a user-facing interactive session. The cap exists to limit
+ * concurrent interactive sessions per user, not concurrent work items.
+ * The exemption is enforced by passing `rootSessionId` as `agentScope.rootSessionId`
+ * to `startRpcSession` — future implementation of the cap check in `startRpcSession`
+ * will skip `incrementUserSessionCap` when `agentScope.rootSessionId !== undefined`.
  */
 async function runSingleChild(opts: {
   rootSessionId: string;
@@ -596,6 +615,9 @@ async function runParallelChildren(opts: {
 /**
  * Async execution: start child, return taskId immediately, backfill on agent_end.
  * The caller polls via getAsyncDelegateRegistry().poll(taskId).
+ *
+ * Design note (T3.5): Same session-cap exemption as `runSingleChild` — child sessions
+ * (depth > 0) do NOT count toward the per-user session cap. See design note there.
  */
 async function runAsyncChild(opts: {
   rootSessionId: string;
