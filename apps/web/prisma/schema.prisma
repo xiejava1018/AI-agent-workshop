@@ -109,3 +109,38 @@ model Agent {
   @@index([teamId])
   @@index([ownerUserId])
 }
+
+// M3 — Agent skill/mcp/user bindings: configure which skills and MCP servers an
+// agent (or a user) can access, and how. `mode` is "inherit" | "include" |
+// "exclude" — "inherit" defers to the owning scope's default, while "include"
+// / "exclude" override it. The pair (`agentId`+`skillPackageId`) is unique so a
+// binding row is the single source of truth for that (agent, skill) pair.
+model AgentSkillBinding {
+  id             String @id @default(cuid())
+  agentId        String
+  skillPackageId String
+  mode           String @default("inherit") // inherit | include | exclude
+
+  @@unique([agentId, skillPackageId])
+  @@index([agentId])
+}
+
+model AgentMcpBinding {
+  id          String @id @default(cuid())
+  agentId     String
+  mcpServerId String
+  mode        String @default("inherit")
+
+  @@unique([agentId, mcpServerId])
+  @@index([agentId])
+}
+
+model UserSkillBinding {
+  id             String @id @default(cuid())
+  userId         String
+  skillPackageId String
+  mode           String @default("inherit")
+
+  @@unique([userId, skillPackageId])
+  @@index([userId])
+}

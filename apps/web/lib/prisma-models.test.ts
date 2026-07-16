@@ -17,4 +17,12 @@ describe("M3 models", () => {
     expect(agent.scope).toBe("personal");
     await prisma.agent.delete({ where: { id: agent.id } });
   });
+
+  it("creates skill/mcp bindings with mode", async () => {
+    const b = await prisma.agentSkillBinding.create({
+      data: { agentId: "a1", skillPackageId: "s1", mode: "include" },
+    });
+    expect(b.mode).toBe("include");
+    await prisma.agentSkillBinding.delete({ where: { id: b.id } });
+  });
 });
