@@ -206,6 +206,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
                 username: true,
                 mustChangePassword: true,
                 createdBy: true,
+                disabled: true,
               },
             },
           },

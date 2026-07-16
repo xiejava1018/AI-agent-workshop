@@ -41,6 +41,17 @@ function uniqueTeamName(label: string): string {
 
 async function cleanTestRows(): Promise<void> {
   // Clean up teams first (cascade), then users.
+  // NOTE: the POST handler auto-creates a Project bound to the caller's team,
+  // so we must delete projects referencing these teams BEFORE the teams —
+  // otherwise Project_teamId_fkey blocks the team delete on this shared DB.
+  const teams = await prisma.team.findMany({
+    where: { name: { startsWith: TEST_TEAM_PREFIX } },
+    select: { id: true },
+  });
+  const teamIds = teams.map(t => t.id);
+  if (teamIds.length > 0) {
+    await prisma.project.deleteMany({ where: { teamId: { in: teamIds } } });
+  }
   await prisma.teamMember.deleteMany({
     where: { team: { name: { startsWith: TEST_TEAM_PREFIX } } },
   });
@@ -381,14 +392,17 @@ describe("GET /api/admin/users", () => {
       expect(createRes.status).toBe(200);
     }
 
-    // Manually add the two new users as team members so GET can find them
-    // through team membership.
+    // The POST handler already auto-binds each created user to the caller's
+    // team as a TeamMember, so use upsert to stay idempotent — a plain create
+    // would hit the (teamId, userId) unique constraint.
     const createdUsers = await prisma.user.findMany({
       where: { username: { in: [u1, u2] } },
     });
     for (const u of createdUsers) {
-      await prisma.teamMember.create({
-        data: { teamId, userId: u.id, role: "MEMBER" },
+      await prisma.teamMember.upsert({
+        where: { teamId_userId: { teamId, userId: u.id } },
+        update: { role: "MEMBER" },
+        create: { teamId, userId: u.id, role: "MEMBER" },
       });
     }
 
