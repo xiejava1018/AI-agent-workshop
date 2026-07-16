@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
   MAX_DELEGATION_DEPTH,
+  DELEGATION_DENYLIST,
   createDelegateAgentTool,
   truncateChildResult,
   getAsyncDelegateRegistry,
@@ -293,6 +294,35 @@ describe("delegate-agent-tool", () => {
       expect(parsed.ok).toBe(false);
       expect(parsed.error).toContain("aborted");
     });
+
+    it("passes DELEGATION_DENYLIST as excludeTools to startRpcSession", async () => {
+      const tool = createDelegateAgentTool({
+        rootSessionId: "r1",
+        userId: "u1",
+        teamId: "t1",
+        depth: 0,
+      });
+
+      mockSessionInner.prompt.mockImplementationOnce(() => {
+        mockSessionInner.getLastAssistantText.mockReturnValue("sync result");
+        const cbs = [...mockSessionInner._callbacks];
+        for (const cb of cbs) cb({ type: "agent_end" });
+        return Promise.resolve();
+      });
+
+      await (tool.execute as Function)(
+        "call-1",
+        { agentId: "agent-1", task: "do the thing" },
+        undefined,
+        undefined,
+        { cwd: "/tmp" },
+      );
+
+      expect(startRpcSession).toHaveBeenCalledTimes(1);
+      const callArgs = (startRpcSession as ReturnType<typeof vi.fn>).mock.calls[0];
+      // excludeTools is the 8th positional argument
+      expect(callArgs[7]).toEqual(DELEGATION_DENYLIST);
+    });
   });
 
   describe("execute — parallel mode", () => {
@@ -422,6 +452,43 @@ describe("delegate-agent-tool", () => {
       expect(polled).toBeDefined();
       expect(polled?.status).toBe("error");
       expect(polled?.error).toBe("network failure");
+    });
+
+    it("passes DELEGATION_DENYLIST as excludeTools to startRpcSession", async () => {
+      const tool = createDelegateAgentTool({
+        rootSessionId: "r1",
+        userId: "u1",
+        teamId: "t1",
+        depth: 0,
+      });
+
+      await (tool.execute as Function)(
+        "call-1",
+        { agentId: "agent-1", task: "do the thing", mode: "async" },
+        undefined,
+        undefined,
+        { cwd: "/tmp" },
+      );
+
+      expect(startRpcSession).toHaveBeenCalledTimes(1);
+      const callArgs = (startRpcSession as ReturnType<typeof vi.fn>).mock.calls[0];
+      // excludeTools is the 8th positional argument
+      expect(callArgs[7]).toEqual(DELEGATION_DENYLIST);
+    });
+  });
+
+  describe("DELEGATION_DENYLIST", () => {
+    it("is exported as a non-empty readonly tuple", () => {
+      expect(Array.isArray(DELEGATION_DENYLIST)).toBe(true);
+      expect(DELEGATION_DENYLIST.length).toBeGreaterThan(0);
+    });
+
+    it("contains delegate, remember, setGoal, and create_employee prefixes", () => {
+      const entries = [...DELEGATION_DENYLIST];
+      expect(entries).toContain("delegate");
+      expect(entries).toContain("remember");
+      expect(entries).toContain("setGoal");
+      expect(entries).toContain("create_employee");
     });
   });
 });

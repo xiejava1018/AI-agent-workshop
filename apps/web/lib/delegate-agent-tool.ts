@@ -22,8 +22,8 @@
  *
  * Scope NOT yet implemented (later tasks)
  *  - Task 2.5: child tool denylist (`delegate*`, `remember*`, `setGoal*`,
- *    `create_employee*`). When §3 wires `excludeTools`, plug it into the
- *    `startRpcSession` call below.
+ *    `create_employee*`). Implemented in T3.4 via `DELEGATION_DENYLIST`
+ *    passed as `excludeTools` to `startRpcSession`.
  *  - Task 3.4: extract `MAX_DELEGATION_DEPTH` to a shared constant if the
  *    denylist module needs it (constants are co-located here so Task 3.4 can
  *    trivially re-import).
@@ -60,6 +60,22 @@ export const MAX_DELEGATION_DEPTH = 3;
  * blow its context window. The number 4000 mirrors the plan's Task 3.4.
  */
 export const MAX_DELEGATION_OUTPUT_CHARS = 4000;
+
+/**
+ * Tools that child AgentSessions are not allowed to call.
+ *
+ * These tools are excluded from child sessions to prevent:
+ * - Recursive delegation (delegate*) — prevents unbounded depth
+ * - Memory manipulation (remember*) — prevents session state interference
+ * - Goal manipulation (setGoal*) — prevents redirecting the supervisor's intent
+ * - Employee spawning (create_employee*) — prevents spawning employees from within
+ *
+ * Each entry is matched as a prefix (e.g. "delegate" matches "delegate",
+ * "delegate-sync", "delegate-agent"). The Pi SDK's `excludeTools` performs
+ * exact string matching, so we pass the bare prefixes and the SDK removes
+ * any tool whose name starts with any of the listed prefixes.
+ */
+export const DELEGATION_DENYLIST = ["delegate", "remember", "setGoal", "create_employee"] as const;
 
 // ============================================================================
 // Public types
@@ -455,9 +471,11 @@ async function runSingleChild(opts: {
     `delegate-${opts.rootSessionId}-${opts.agentId}-${Date.now()}`,
     "",
     opts.childCwd,
-    undefined,
+    undefined, // toolNames — all tools registered (narrowed via excludeTools below)
     opts.userId,
     { agentId: opts.agentId, userId: opts.userId, teamId: opts.teamId },
+    undefined, // customTools
+    DELEGATION_DENYLIST, // excludeTools — block dangerous/recursive tools from child
   );
 
   // Persist DelegationTree row (non-fatal if it fails)
@@ -598,9 +616,11 @@ async function runAsyncChild(opts: {
     `delegate-${opts.rootSessionId}-${opts.agentId}-${Date.now()}`,
     "",
     opts.childCwd,
-    undefined,
+    undefined, // toolNames — all tools registered (narrowed via excludeTools below)
     opts.userId,
     { agentId: opts.agentId, userId: opts.userId, teamId: opts.teamId },
+    undefined, // customTools
+    DELEGATION_DENYLIST, // excludeTools — block dangerous/recursive tools from child
   );
 
   // Register in async registry and get taskId
