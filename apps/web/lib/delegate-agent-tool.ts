@@ -527,20 +527,6 @@ async function runParallelChildren(opts: {
     return result;
   };
 
-  // Persist DelegationTree row for each child with parentSessionId = root for parallel
-  await Promise.all(
-    tasks.map(({ agentId }) =>
-      createDelegationTreeRow({
-        rootSessionId: opts.rootSessionId,
-        parentSessionId: opts.parentSessionId,
-        childSessionId: `parallel-placeholder-${opts.rootSessionId}-${agentId}-${Date.now()}`,
-        mode: "parallel",
-        depth: opts.depth,
-        status: "running",
-      }),
-    ),
-  );
-
   // Use a semaphore-like approach: start up to maxConcurrent, queue the rest
   let index = 0;
   const running: Promise<void>[] = [];
