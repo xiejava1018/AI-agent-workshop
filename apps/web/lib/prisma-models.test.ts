@@ -73,4 +73,12 @@ describe("M3 models", () => {
     expect(d.depth).toBe(1);
     await prisma.delegationTree.delete({ where: { id: d.id } });
   });
+
+  it("creates an InviteLink", async () => {
+    const inv = await prisma.inviteLink.create({
+      data: { teamId: "t1", token: "tok123", role: "MEMBER", expiresAt: new Date(Date.now() + 86400000), requireAccount: true },
+    });
+    expect(inv.token).toBe("tok123");
+    await prisma.inviteLink.delete({ where: { id: inv.id } });
+  });
 });

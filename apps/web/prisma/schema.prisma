@@ -218,3 +218,15 @@ model DelegationTree {
   @@index([rootSessionId])
   @@index([childSessionId])
 }
+
+model InviteLink {
+  id             String    @id @default(cuid())
+  teamId         String
+  token          String    @unique
+  role           String    @default("MEMBER")
+  expiresAt      DateTime
+  usedBy         String?
+  requireAccount Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  @@index([teamId])
+}
