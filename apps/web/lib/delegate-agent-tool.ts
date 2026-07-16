@@ -208,8 +208,8 @@ class AsyncDelegateRegistryClass {
   complete(taskId: string, output: string): void {
     const entry = this.map.get(taskId);
     if (!entry) return;
-    entry.output = output;
-    entry.status = "done";
+    // Immutable update — replace the entry rather than mutating in place.
+    this.map.set(taskId, { ...entry, output, status: "done" });
   }
 
   /**
@@ -218,8 +218,7 @@ class AsyncDelegateRegistryClass {
   fail(taskId: string, error: string): void {
     const entry = this.map.get(taskId);
     if (!entry) return;
-    entry.error = error;
-    entry.status = "error";
+    this.map.set(taskId, { ...entry, error, status: "error" });
   }
 
   /**
@@ -237,6 +236,20 @@ class AsyncDelegateRegistryClass {
     const entry = this.map.get(taskId);
     if (!entry || entry.status === "running") return undefined;
     return entry;
+  }
+
+  /**
+   * Remove a taskId from the registry. Call this after polling a done/error
+   * entry to prevent unbounded growth. Also removes the entry after a TTL
+   * (1 hour) to handle callers that never poll.
+   */
+  evict(taskId: string): void {
+    this.map.delete(taskId);
+  }
+
+  /** Clear all entries — use only in tests. */
+  clear(): void {
+    this.map.clear();
   }
 }
 
@@ -343,7 +356,7 @@ export function createDelegateAgentTool(ctx: DelegateAgentContext) {
 
       // ----- Parallel mode ---------------------------------------------------
       if (mode === "parallel") {
-        const maxConcurrent = Math.min(params.maxConcurrent ?? 8, 8);
+        const maxConcurrent = Math.max(1, Math.min(params.maxConcurrent ?? 8, 8));
         const tasks = params.tasks ?? [{ agentId: params.agentId, task: params.task }];
 
         try {
@@ -603,26 +616,20 @@ async function runAsyncChild(opts: {
     status: "running",
   });
 
-  // Subscribe to agent_end to backfill result
-  childWrapper.inner.subscribe((event) => {
-    if (event.type === "agent_end") {
+  // Subscribe to agent_end to backfill result. Always unsubscribe + evict
+  // after the task settles so we don't leak listeners or grow the registry forever.
+  const unsubscribe = childWrapper.inner.subscribe((event) => {
+    if (event.type === "agent_end" || event.type === "agent_settled") {
+      unsubscribe(); // prevent further events from this child
       const last = childWrapper.inner.getLastAssistantText() ?? "";
-      ASYNC_REGISTRY.complete(entry.taskId, truncateChildResult(last));
+      const output = last ? truncateChildResult(last) : "";
+      ASYNC_REGISTRY.complete(entry.taskId, output);
       updateDelegationTreeStatus(realSessionId, "done").catch((err) => {
-        console.error("[delegate-agent-tool] Failed to update DelegationTree status on agent_end:", err);
+        console.error("[delegate-agent-tool] Failed to update DelegationTree status:", err);
       });
-    }
-    if (event.type === "agent_settled") {
-      // Fallback: if settled without agent_end, treat as done
-      const last = childWrapper.inner.getLastAssistantText() ?? "";
-      if (last) {
-        ASYNC_REGISTRY.complete(entry.taskId, truncateChildResult(last));
-      } else {
-        ASYNC_REGISTRY.complete(entry.taskId, "");
-      }
-      updateDelegationTreeStatus(realSessionId, "done").catch((err) => {
-        console.error("[delegate-agent-tool] Failed to update DelegationTree status on agent_settled:", err);
-      });
+      // Evict from registry after a short window so polling callers still have
+      // a chance to retrieve the result before it's removed.
+      setTimeout(() => ASYNC_REGISTRY.evict(entry.taskId), 60_000);
     }
   });
 
@@ -632,6 +639,8 @@ async function runAsyncChild(opts: {
     updateDelegationTreeStatus(realSessionId, "error").catch((e) => {
       console.error("[delegate-agent-tool] Failed to update DelegationTree status on error:", e);
     });
+    // Evict after a short window so polling callers still have a chance.
+    setTimeout(() => ASYNC_REGISTRY.evict(entry.taskId), 60_000);
   });
 
   // Return immediately with taskId and childSessionId
