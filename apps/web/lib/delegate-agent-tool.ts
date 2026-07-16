@@ -6,23 +6,24 @@
  *  - docs/superpowers/specs/2026-07-16-m3-vue3-workbench-design.md §4
  *  - docs/superpowers/plans/2026-07-16-m3-vue3-workbench.md Phase 3 (Tasks 3.1–3.4)
  *
- * Scope of THIS file (Task 3.1)
+ * Scope of THIS file (Tasks 3.1 + 3.3)
  *  - Factory `createDelegateAgentTool(ctx)` returning a Pi `ToolDefinition`
  *    via `defineTool` (Pi SDK 0.80.x).
- *  - Default execution mode is `sync`; the task prompt is awaited, the
- *    last assistant text is collected and truncated to MAX_DELEGATION_OUTPUT_CHARS.
+ *  - Three execution modes:
+ *    - `sync` (default): awaits child completion, returns `output` field.
+ *    - `parallel`: spawns up to `maxConcurrent` children concurrently (queue excess),
+ *      waits for ALL to complete, returns `outputs` array.
+ *    - `async`: returns `{ taskId, childSessionId }` immediately, backfills result
+ *      when `agent_end` fires; caller polls via `AsyncDelegateRegistry`.
  *  - Depth is enforced via the factory context: the root session is depth 0,
  *    every nested delegation increments by 1. The actual `execute` rejects with
- *    a clear error once `depth >= MAX_DELEGATION_DEPTH` so callers fail fast.
- *  - `parallel` and `async` modes are explicit stubs that throw — they will be
- *    wired in Task 3.3. We do NOT silently fall back to sync so the LLM knows
- *    the mode it asked for is not yet supported.
+ *    a clear error once `depth >= MAX_DELEGATION_DEPTH`.
+ *  - Each child result is independently truncated to MAX_DELEGATION_OUTPUT_CHARS.
  *
  * Scope NOT yet implemented (later tasks)
  *  - Task 2.5: child tool denylist (`delegate*`, `remember*`, `setGoal*`,
  *    `create_employee*`). When §3 wires `excludeTools`, plug it into the
  *    `startRpcSession` call below.
- *  - Task 3.3: parallel (≤8 + queue) and async (`task_id` + memory backfill).
  *  - Task 3.4: extract `MAX_DELEGATION_DEPTH` to a shared constant if the
  *    denylist module needs it (constants are co-located here so Task 3.4 can
  *    trivially re-import).
@@ -33,7 +34,9 @@ import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 // TextContent lives in @earendil-works/pi-ai/compat (Pi's internal compat shim);
 // pi-coding-agent does not re-export it, so we import from its source.
 import type { TextContent } from "@earendil-works/pi-ai/compat";
+import { randomUUID } from "crypto";
 import { startRpcSession } from "./rpc-manager";
+import { prisma } from "./prisma";
 
 // ============================================================================
 // Constants — co-located so Task 3.4 / Task 2.5 can re-import.
@@ -82,8 +85,19 @@ export interface DelegateAgentInput {
   agentId: string;
   /** Task description / prompt to hand to the child AgentSession. */
   task: string;
-  /** Execution mode. M3 defaults to `sync`; other modes are wired in Task 3.3. */
+  /** Execution mode. M3 defaults to `sync`; parallel/async wired in Task 3.3. */
   mode?: DelegateMode;
+  /**
+   * Maximum number of concurrent children in `parallel` mode (default 8).
+   * Ignored for `sync` and `async` modes.
+   */
+  maxConcurrent?: number;
+  /**
+   * Batch of tasks for `parallel` mode. When provided, `mode` must be
+   * `parallel` and each task is delegated independently. The result is an
+   * array of `DelegateAgentResult` in the `outputs` field.
+   */
+  tasks?: Array<{ agentId: string; task: string }>;
 }
 
 export interface DelegateAgentResult {
@@ -93,6 +107,8 @@ export interface DelegateAgentResult {
   taskId?: string;
   /** Final assistant text from the child session, truncated to MAX_DELEGATION_OUTPUT_CHARS. */
   output?: string;
+  /** Array of results from parallel mode children. */
+  outputs?: DelegateAgentResult[];
   /** True if the child session completed without throwing. */
   ok: boolean;
   /** Human-readable error message when `ok === false`. */
@@ -136,11 +152,146 @@ function buildDelegateParameters(): Record<string, unknown> {
         enum: ["sync", "parallel", "async"],
         default: "sync",
         description:
-          "Execution mode. 'sync' awaits completion (default). 'parallel' / 'async' are wired in Task 3.3.",
+          "Execution mode. 'sync' awaits completion (default). 'parallel' runs up to 8 children concurrently. 'async' returns taskId immediately for polling.",
+      },
+      maxConcurrent: {
+        type: "number",
+        description: "Max concurrent children in parallel mode (default 8, max 8).",
+      },
+      tasks: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            agentId: { type: "string" },
+            task: { type: "string" },
+          },
+          required: ["agentId", "task"],
+        },
+        description: "Batch of tasks for parallel mode. When provided, mode must be 'parallel'.",
       },
     },
     required: ["agentId", "task"],
   };
+}
+
+// ============================================================================
+// Async Delegate Registry (M3 — in-memory, M4 would use a real queue)
+// ============================================================================
+
+/**
+ * Stores async delegate task state for polling by the caller.
+ * M3: in-memory Map. M4: replace with a durable queue (Bull, Kafka, etc.).
+ */
+export interface AsyncDelegateEntry {
+  taskId: string;
+  childSessionId: string;
+  status: "running" | "done" | "error";
+  output?: string;
+  error?: string;
+}
+
+class AsyncDelegateRegistryClass {
+  private map = new Map<string, AsyncDelegateEntry>();
+
+  create(childSessionId: string): AsyncDelegateEntry {
+    const taskId = randomUUID();
+    const entry: AsyncDelegateEntry = { taskId, childSessionId, status: "running" };
+    this.map.set(taskId, entry);
+    return entry;
+  }
+
+  /**
+   * Backfill result when `agent_end` fires for an async child.
+   * Idempotent — safe if called multiple times.
+   */
+  complete(taskId: string, output: string): void {
+    const entry = this.map.get(taskId);
+    if (!entry) return;
+    entry.output = output;
+    entry.status = "done";
+  }
+
+  /**
+   * Record an error for an async child.
+   */
+  fail(taskId: string, error: string): void {
+    const entry = this.map.get(taskId);
+    if (!entry) return;
+    entry.error = error;
+    entry.status = "error";
+  }
+
+  /**
+   * Return the current entry for a taskId. Returns undefined if not found.
+   */
+  get(taskId: string): AsyncDelegateEntry | undefined {
+    return this.map.get(taskId);
+  }
+
+  /**
+   * Poll for result. Returns the entry if the task is done/error, or undefined
+   * if still running.
+   */
+  poll(taskId: string): AsyncDelegateEntry | undefined {
+    const entry = this.map.get(taskId);
+    if (!entry || entry.status === "running") return undefined;
+    return entry;
+  }
+}
+
+/** Module-level singleton — survives across tool invocations within the same process. */
+const ASYNC_REGISTRY = new AsyncDelegateRegistryClass();
+
+export function getAsyncDelegateRegistry(): AsyncDelegateRegistryClass {
+  return ASYNC_REGISTRY;
+}
+
+// ============================================================================
+// DelegationTree persistence helpers
+// ============================================================================
+
+/**
+ * Persist a DelegationTree row for a child session.
+ */
+async function createDelegationTreeRow(opts: {
+  rootSessionId: string;
+  parentSessionId: string | null;
+  childSessionId: string;
+  mode: string;
+  depth: number;
+  status?: string;
+}): Promise<void> {
+  try {
+    await prisma.delegationTree.create({
+      data: {
+        rootSessionId: opts.rootSessionId,
+        parentSessionId: opts.parentSessionId,
+        childSessionId: opts.childSessionId,
+        mode: opts.mode,
+        depth: opts.depth,
+        status: opts.status ?? "running",
+      },
+    });
+  } catch (err) {
+    // Non-fatal: logging and continuing — DelegationTree is for observability,
+    // it must not crash the delegation chain.
+    console.error("[delegate-agent-tool] Failed to persist DelegationTree row:", err);
+  }
+}
+
+/**
+ * Update the status of a DelegationTree row by childSessionId.
+ */
+async function updateDelegationTreeStatus(childSessionId: string, status: string): Promise<void> {
+  try {
+    await prisma.delegationTree.updateMany({
+      where: { childSessionId },
+      data: { status },
+    });
+  } catch (err) {
+    console.error("[delegate-agent-tool] Failed to update DelegationTree status:", err);
+  }
 }
 
 // ============================================================================
@@ -168,7 +319,7 @@ export function createDelegateAgentTool(ctx: DelegateAgentContext) {
     name: "delegate",
     label: "Delegate to sub-agent",
     description:
-      "Delegate a sub-task to a digital employee. Creates a child AgentSession, runs the task, and returns the result. Modes: sync (default, awaits result), parallel / async (Task 3.3).",
+      "Delegate a sub-task to a digital employee. Creates a child AgentSession, runs the task, and returns the result. Modes: sync (default, awaits result), parallel (up to 8 concurrent children), async (returns taskId immediately for polling).",
     parameters: buildDelegateParameters() as unknown as Parameters<typeof defineTool>[0]["parameters"],
 
     execute: async (
@@ -190,87 +341,67 @@ export function createDelegateAgentTool(ctx: DelegateAgentContext) {
       const mode: DelegateMode = params.mode ?? "sync";
       const childCwd = ctx.cwd ?? extensionCtx.cwd;
 
-      // ----- Mode dispatch (sync only is implemented in 3.1) --------------
-      if (mode === "parallel" || mode === "async") {
-        // Task 3.3 wires these. Surface a clear "not implemented" error so
-        // the calling LLM retries with mode=sync (and so we don't silently
-        // downgrade semantics the model explicitly asked for).
-        const reason = `mode='${mode}' is not yet implemented (Task 3.3)`;
-        const result: DelegateAgentResult = { ok: false, error: reason };
-        return textResult(JSON.stringify(result), true);
+      // ----- Parallel mode ---------------------------------------------------
+      if (mode === "parallel") {
+        const maxConcurrent = Math.min(params.maxConcurrent ?? 8, 8);
+        const tasks = params.tasks ?? [{ agentId: params.agentId, task: params.task }];
+
+        try {
+          const result = await runParallelChildren({
+            rootSessionId: ctx.rootSessionId,
+            parentSessionId: ctx.rootSessionId, // parallel children attach to root
+            tasks,
+            depth: ctx.depth + 1,
+            childCwd,
+            userId: ctx.userId,
+            teamId: ctx.teamId,
+            maxConcurrent,
+            signal,
+          });
+          return textResult(JSON.stringify(result), !result.ok);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          const result: DelegateAgentResult = { ok: false, error: message };
+          return textResult(JSON.stringify(result), true);
+        }
+      }
+
+      // ----- Async mode ------------------------------------------------------
+      if (mode === "async") {
+        try {
+          const result = await runAsyncChild({
+            rootSessionId: ctx.rootSessionId,
+            parentSessionId: ctx.rootSessionId,
+            agentId: params.agentId,
+            task: params.task,
+            depth: ctx.depth + 1,
+            childCwd,
+            userId: ctx.userId,
+            teamId: ctx.teamId,
+            signal,
+          });
+          return textResult(JSON.stringify(result), false);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          const result: DelegateAgentResult = { ok: false, error: message };
+          return textResult(JSON.stringify(result), true);
+        }
       }
 
       // ----- Sync execution ----------------------------------------------
       try {
-        if (signal?.aborted) {
-          throw new Error("aborted before delegation started");
-        }
-
-        // Per Task 2.4 / 2.5 / 2.6 plumbing: four-layer scope resolution and
-        // BYOK AuthStorage happen inside startRpcSession via the agentScope
-        // arg. The child session inherits the parent's tenant.
-        //
-        // NOTE: `customTools` is omitted here on purpose — we DO NOT register
-        // another `delegate` tool on the child. Child sessions inherit the
-        // Pi built-in tools only; if the team later wants recursive delegation
-        // we add the tool via a second createDelegateAgentTool({ depth: ctx.depth + 1 })
-        // call wired through a customTools argument.
-        const { session: childWrapper, realSessionId } = await startRpcSession(
-          // sessionId / sessionFile / cwd: child uses its own id, no file (new session), inherits cwd.
-          `delegate-${ctx.rootSessionId}-${params.agentId}-${Date.now()}`,
-          "",
+        const result = await runSingleChild({
+          rootSessionId: ctx.rootSessionId,
+          parentSessionId: ctx.rootSessionId,
+          agentId: params.agentId,
+          task: params.task,
+          depth: ctx.depth + 1,
           childCwd,
-          // toolNames: undefined -> Pi registers all builtins; Task 2.5's
-          // excludeTools for the denylist will be plumbed here in Task 3.4.
-          undefined,
-          ctx.userId,
-          {
-            agentId: params.agentId,
-            userId: ctx.userId,
-            teamId: ctx.teamId,
-          },
-        );
-
-        // Subscribe BEFORE prompting so we don't miss the agent_end event.
-        // For Task 3.1 we only need the last assistant text; Task 3.5 / 3.6
-        // will swap this for the full DelegationTree plumbing.
-        const settled = new Promise<DelegateAgentResult>((resolve) => {
-          const unsubscribe = childWrapper.inner.subscribe((event) => {
-            if (event.type === "agent_end") {
-              unsubscribe();
-              const last = childWrapper.inner.getLastAssistantText() ?? "";
-              resolve({
-                childSessionId: realSessionId,
-                ok: true,
-                output: truncateChildResult(last),
-              });
-            }
-            if (event.type === "agent_settled") {
-              // Fallback: model never produced text but the loop ended.
-              unsubscribe();
-              const last = childWrapper.inner.getLastAssistantText() ?? "";
-              if (last) {
-                resolve({
-                  childSessionId: realSessionId,
-                  ok: true,
-                  output: truncateChildResult(last),
-                });
-              } else {
-                resolve({
-                  childSessionId: realSessionId,
-                  ok: true,
-                  output: "",
-                });
-              }
-            }
-          });
+          userId: ctx.userId,
+          teamId: ctx.teamId,
+          signal,
         });
-
-        // prompt() returns void; the result surfaces via subscribe.
-        await childWrapper.inner.prompt(params.task, { source: "rpc" });
-
-        const result = await settled;
-        return textResult(JSON.stringify(result), false);
+        return textResult(JSON.stringify(result), !result.ok);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         const result: DelegateAgentResult = { ok: false, error: message };
@@ -285,6 +416,241 @@ export function createDelegateAgentTool(ctx: DelegateAgentContext) {
 // ============================================================================
 // Internal helpers
 // ============================================================================
+
+/**
+ * Spawn a single child session and wait for its result.
+ * Used by both sync and parallel modes.
+ *
+ * Returns a DelegateAgentResult with ok=true on success, ok=false on failure.
+ */
+async function runSingleChild(opts: {
+  rootSessionId: string;
+  parentSessionId: string;
+  agentId: string;
+  task: string;
+  depth: number;
+  childCwd: string;
+  userId: string;
+  teamId: string;
+  signal?: AbortSignal;
+}): Promise<DelegateAgentResult> {
+  if (opts.signal?.aborted) {
+    return { ok: false, error: "aborted before delegation started" };
+  }
+
+  const { session: childWrapper, realSessionId } = await startRpcSession(
+    `delegate-${opts.rootSessionId}-${opts.agentId}-${Date.now()}`,
+    "",
+    opts.childCwd,
+    undefined,
+    opts.userId,
+    { agentId: opts.agentId, userId: opts.userId, teamId: opts.teamId },
+  );
+
+  // Persist DelegationTree row (non-fatal if it fails)
+  await createDelegationTreeRow({
+    rootSessionId: opts.rootSessionId,
+    parentSessionId: opts.parentSessionId,
+    childSessionId: realSessionId,
+    mode: "sync",
+    depth: opts.depth,
+    status: "running",
+  });
+
+  const settled = new Promise<DelegateAgentResult>((resolve) => {
+    const unsubscribe = childWrapper.inner.subscribe((event) => {
+      if (event.type === "agent_end") {
+        unsubscribe();
+        const last = childWrapper.inner.getLastAssistantText() ?? "";
+        resolve({
+          childSessionId: realSessionId,
+          ok: true,
+          output: truncateChildResult(last),
+        });
+      }
+      if (event.type === "agent_settled") {
+        unsubscribe();
+        const last = childWrapper.inner.getLastAssistantText() ?? "";
+        if (last) {
+          resolve({
+            childSessionId: realSessionId,
+            ok: true,
+            output: truncateChildResult(last),
+          });
+        } else {
+          resolve({ childSessionId: realSessionId, ok: true, output: "" });
+        }
+      }
+    });
+  });
+
+  await childWrapper.inner.prompt(opts.task, { source: "rpc" });
+  const result = await settled;
+
+  await updateDelegationTreeStatus(realSessionId, result.ok ? "done" : "error");
+  return result;
+}
+
+/**
+ * Parallel execution: run up to maxConcurrent children concurrently.
+ * Queues excess and starts them as slots free up.
+ * Waits for ALL children before returning.
+ */
+async function runParallelChildren(opts: {
+  rootSessionId: string;
+  parentSessionId: string;
+  tasks: Array<{ agentId: string; task: string }>;
+  depth: number;
+  childCwd: string;
+  userId: string;
+  teamId: string;
+  maxConcurrent: number;
+  signal?: AbortSignal;
+}): Promise<DelegateAgentResult> {
+  const { maxConcurrent, tasks } = opts;
+  const results: DelegateAgentResult[] = [];
+  let hasError = false;
+
+  // Helper that spawns a single child and resolves with its result
+  const spawnOne = async (agentId: string, task: string): Promise<DelegateAgentResult> => {
+    const result = await runSingleChild({
+      rootSessionId: opts.rootSessionId,
+      parentSessionId: opts.parentSessionId,
+      agentId,
+      task,
+      depth: opts.depth,
+      childCwd: opts.childCwd,
+      userId: opts.userId,
+      teamId: opts.teamId,
+      signal: opts.signal,
+    });
+    return result;
+  };
+
+  // Persist DelegationTree row for each child with parentSessionId = root for parallel
+  await Promise.all(
+    tasks.map(({ agentId }) =>
+      createDelegationTreeRow({
+        rootSessionId: opts.rootSessionId,
+        parentSessionId: opts.parentSessionId,
+        childSessionId: `parallel-placeholder-${opts.rootSessionId}-${agentId}-${Date.now()}`,
+        mode: "parallel",
+        depth: opts.depth,
+        status: "running",
+      }),
+    ),
+  );
+
+  // Use a semaphore-like approach: start up to maxConcurrent, queue the rest
+  let index = 0;
+  const running: Promise<void>[] = [];
+
+  const enqueue = (): Promise<void> => {
+    if (index >= tasks.length) return Promise.resolve();
+    const { agentId, task } = tasks[index++];
+    const p = spawnOne(agentId, task).then((result) => {
+      results.push(result);
+      if (!result.ok) hasError = true;
+      // After one finishes, start the next in the queue
+      return enqueue();
+    });
+    return p;
+  };
+
+  // Start maxConcurrent initial tasks
+  for (let i = 0; i < Math.min(maxConcurrent, tasks.length); i++) {
+    running.push(enqueue());
+  }
+
+  await Promise.all(running);
+
+  // Build output — if any child failed, top-level ok=false
+  if (hasError) {
+    return {
+      ok: false,
+      error: "One or more parallel children failed",
+      outputs: results,
+    };
+  }
+
+  return { ok: true, outputs: results };
+}
+
+/**
+ * Async execution: start child, return taskId immediately, backfill on agent_end.
+ * The caller polls via getAsyncDelegateRegistry().poll(taskId).
+ */
+async function runAsyncChild(opts: {
+  rootSessionId: string;
+  parentSessionId: string;
+  agentId: string;
+  task: string;
+  depth: number;
+  childCwd: string;
+  userId: string;
+  teamId: string;
+  signal?: AbortSignal;
+}): Promise<DelegateAgentResult> {
+  if (opts.signal?.aborted) {
+    return { ok: false, error: "aborted before delegation started" };
+  }
+
+  const { session: childWrapper, realSessionId } = await startRpcSession(
+    `delegate-${opts.rootSessionId}-${opts.agentId}-${Date.now()}`,
+    "",
+    opts.childCwd,
+    undefined,
+    opts.userId,
+    { agentId: opts.agentId, userId: opts.userId, teamId: opts.teamId },
+  );
+
+  // Register in async registry and get taskId
+  const entry = ASYNC_REGISTRY.create(realSessionId);
+
+  // Persist DelegationTree row with status=running
+  await createDelegationTreeRow({
+    rootSessionId: opts.rootSessionId,
+    parentSessionId: opts.parentSessionId,
+    childSessionId: realSessionId,
+    mode: "async",
+    depth: opts.depth,
+    status: "running",
+  });
+
+  // Subscribe to agent_end to backfill result
+  childWrapper.inner.subscribe((event) => {
+    if (event.type === "agent_end") {
+      const last = childWrapper.inner.getLastAssistantText() ?? "";
+      ASYNC_REGISTRY.complete(entry.taskId, truncateChildResult(last));
+      updateDelegationTreeStatus(realSessionId, "done").catch((err) => {
+        console.error("[delegate-agent-tool] Failed to update DelegationTree status on agent_end:", err);
+      });
+    }
+    if (event.type === "agent_settled") {
+      // Fallback: if settled without agent_end, treat as done
+      const last = childWrapper.inner.getLastAssistantText() ?? "";
+      if (last) {
+        ASYNC_REGISTRY.complete(entry.taskId, truncateChildResult(last));
+      } else {
+        ASYNC_REGISTRY.complete(entry.taskId, "");
+      }
+      updateDelegationTreeStatus(realSessionId, "done").catch((err) => {
+        console.error("[delegate-agent-tool] Failed to update DelegationTree status on agent_settled:", err);
+      });
+    }
+  });
+
+  // Fire and forget — do NOT await
+  childWrapper.inner.prompt(opts.task, { source: "rpc" }).catch((err) => {
+    ASYNC_REGISTRY.fail(entry.taskId, err instanceof Error ? err.message : String(err));
+    updateDelegationTreeStatus(realSessionId, "error").catch((e) => {
+      console.error("[delegate-agent-tool] Failed to update DelegationTree status on error:", e);
+    });
+  });
+
+  // Return immediately with taskId and childSessionId
+  return { taskId: entry.taskId, childSessionId: realSessionId, ok: true };
+}
 
 /**
  * Wrap a JSON-serialized delegate result into the Pi `AgentToolResult`

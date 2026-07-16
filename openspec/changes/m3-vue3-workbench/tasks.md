@@ -8,20 +8,20 @@
 
 ## 0. Spike 与基线（必须先做）
 
-- [ ] T0.1 C1 Spike：验证 `pi-mcp-extension` 在 Node 22 + Pi Agent 0.80.6 下的安装、stdio/SSE/Streamable HTTP 三传输、许可证兼容性，输出结论到 `docs/spikes/2026-07-16-pi-mcp-extension.md`
-- [ ] T0.2 C2 Spike：验证 `apps/web` 现有 agent 流式端点（SSE/WS 事件格式）可被 Vue3 真实消费，确认 dashboard `src/mock` 占比，输出结论到 `docs/spikes/2026-07-16-vue3-api-spike.md`
-- [ ] T0.3 基线门禁：`pnpm install` 通过、`pnpm --filter @ai-agent-workshop/web build` 通过、`pnpm --filter @ai-agent-workshop/dashboard build` 通过（若基线已坏，先停下来确认是否仓库既有问题）
+- [x] T0.1 C1 Spike：验证 `pi-mcp-extension` 在 Node 22 + Pi Agent 0.80.6 下的安装、stdio/SSE/Streamable HTTP 三传输、许可证兼容性，输出结论到 `docs/spikes/2026-07-16-pi-mcp-extension.md`
+- [x] T0.2 C2 Spike：验证 `apps/web` 现有 agent 流式端点（SSE/WS 事件格式）可被 Vue3 真实消费，确认 dashboard `src/mock` 占比，输出结论到 `docs/spikes/2026-07-16-vue3-api-spike.md`
+- [x] T0.3 基线门禁：`pnpm install` 通过、`pnpm --filter @ai-agent-workshop/web build` 通过、`pnpm --filter @ai-agent-workshop/dashboard build` 通过（若基线已坏，先停下来确认是否仓库既有问题）
 
 ## 1. 数据模型（Prisma + PostgreSQL）
 
-- [ ] T1.1 新增 `Agent` 表（数字员工：`id / teamId(nullable) / ownerUserId / name / description / systemPrompt / model / scope(team|personal) / createdAt`）
-- [ ] T1.2 新增 `AgentSkillBinding` / `AgentMcpBinding` / `UserSkillBinding` 表（mode: inherit/include/exclude）
-- [ ] T1.3 新增 `SkillPackage` / `SkillInvocation` 表（scope: global/team/user）
-- [ ] T1.4 新增 `McpServer` 表（scope: global/team/user，config 加密存储）
-- [ ] T1.5 新增 `DelegationTree` 表（rootSessionId / parentSessionId / childSessionIds / mode / depth / status）
-- [ ] T1.6 新增 `InviteLink` 表（teamId / token / role / expiresAt / usedBy / requireAccount）
-- [ ] T1.7 新增 `PlatformApiKey` / `UserApiKey` 表（AES-256-GCM 加密，主密钥由环境变量持有）
-- [ ] T1.8 扩展 `Quota`（或并入 User/Team）：tokenDailyLimit / maxConcurrentSessions（=活跃会话数）
+- [x] T1.1 新增 `Agent` 表（数字员工：`id / teamId(nullable) / ownerUserId / name / description / systemPrompt / model / scope(team|personal) / createdAt`）
+- [x] T1.2 新增 `AgentSkillBinding` / `AgentMcpBinding` / `UserSkillBinding` 表（mode: inherit/include/exclude）
+- [x] T1.3 新增 `SkillPackage` / `SkillInvocation` 表（scope: global/team/user）
+- [x] T1.4 新增 `McpServer` 表（scope: global/team/user，config 加密存储）
+- [x] T1.5 新增 `DelegationTree` 表（rootSessionId / parentSessionId / childSessionIds / mode / depth / status）
+- [x] T1.6 新增 `InviteLink` 表（teamId / token / role / expiresAt / usedBy / requireAccount）
+- [x] T1.7 新增 `PlatformApiKey` / `UserApiKey` 表（AES-256-GCM 加密，主密钥由环境变量持有）
+- [x] T1.8 扩展 `Quota`（或并入 User/Team）：tokenDailyLimit / maxConcurrentSessions（=活跃会话数）
 - [ ] T1.9 `Session` 确认已挂 `userId + projectId`（若缺 projectId 则补迁移）
 - [ ] T1.10 编写并运行 `prisma migrate dev` 生成 PostgreSQL 迁移，回滚可复现
 
