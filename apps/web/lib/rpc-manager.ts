@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "crypto";
 import { cacheSessionPath } from "./session-reader";
 import { decrementUserSessionCap } from "./session-cap";
 import { resolveAgentMcpServers, resolveAgentSkills } from "./scope-resolve";
-import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { SlashCommandInfo, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 
@@ -1155,6 +1155,15 @@ export function notifyRunningChange(): void {
  * resolved ids as `resourceLoaderOptions` on `createAgentSessionServices`. When
  * omitted, the session falls back to the legacy behavior (`scopeHash = ""`,
  * no resource loader overrides).
+ *
+ * Pass `customTools` to register additional `ToolDefinition`s on the session
+ * via `createAgentSessionFromServices.customTools`. These are additive: they
+ * layer on top of any tools the resource loader registers. When omitted, no
+ * extra custom tools are added (legacy behavior).
+ *
+ * Pass `excludeTools` to remove tool names from the session's available set
+ * via `createAgentSessionFromServices.excludeTools`. When omitted, no tools
+ * are excluded (legacy behavior).
  */
 export async function startRpcSession(
   sessionId: string,
@@ -1162,7 +1171,9 @@ export async function startRpcSession(
   cwd: string,
   toolNames?: string[],
   userId?: string | null,
-  agentScope?: AgentScopeResolveInput
+  agentScope?: AgentScopeResolveInput,
+  customTools?: ToolDefinition[],
+  excludeTools?: string[],
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
@@ -1243,6 +1254,8 @@ export async function startRpcSession(
       services,
       sessionManager,
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
+      ...(customTools !== undefined ? { customTools } : {}),
+      ...(excludeTools !== undefined ? { excludeTools } : {}),
     });
 
     // If specific tool names were requested (non-empty), set the active tools to the
