@@ -52,7 +52,7 @@
 - [x] T4.4 `/api/admin/models`：模型清单 + 默认 + 回退顺序 + 平台密钥池（复用 `/api/models-config` 文件式配置）
 - [x] T4.5 `/api/admin/mcp`：MCP Server CRUD + 按团队/Agent 绑定
 - [x] T4.6 `/api/admin/audit`：审计日志查询（身份/鉴权/配额/绑定变更 + MCP 调用 + 技能安装）
-- [ ] T4.7 `/api/auth/refresh` 复用：Vue3 登录页对接 refresh 续期
+- [x] T4.7 `/api/auth/refresh` 复用：Vue3 登录页对接 refresh 续期
 
 ## 5. 后端：技能系统多租户化
 
