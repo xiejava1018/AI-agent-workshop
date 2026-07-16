@@ -1,8 +1,18 @@
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, SessionManager, Theme, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
-import { createHash, randomUUID } from "crypto";
+import {
+  createAgentSessionFromServices,
+  createAgentSessionServices,
+  getAgentDir,
+  AuthStorage,
+  SessionManager,
+  SettingsManager,
+  Theme,
+  type AgentSessionServices,
+} from "@earendil-works/pi-coding-agent";
+import { createDecipheriv, createHash, randomUUID } from "crypto";
 import { cacheSessionPath } from "./session-reader";
 import { decrementUserSessionCap } from "./session-cap";
 import { resolveAgentMcpServers, resolveAgentSkills } from "./scope-resolve";
+import { prisma } from "./prisma";
 import type { SlashCommandInfo, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
@@ -992,14 +1002,148 @@ function getServicesCache(): Map<string, Promise<AgentSessionServices>> {
 }
 type AgentServices = AgentSessionServices;
 
+// ----------------------------------------------------------------------------
+// Per-tenant AuthStorage + SettingsManager (Task 2.6)
+//
+// Every spawn gets its own InMemory AuthStorage + InMemory SettingsManager.
+// AuthStorage is populated from the calling user's `UserApiKey` rows (BYOK)
+// decrypted with AES-256-GCM. SettingsManager is empty for now — per-request
+// settings (e.g. default model) come from session-start overrides in the UI
+// layer, not from disk.
+//
+// Backward compatibility: when `userId === null` (legacy callers, e.g. tests
+// and SSE reconnect paths that don't have a request context yet), both
+// helpers fall back to empty InMemory instances. Sessions for users without
+// any BYOK keys still start — the SDK's `getApiKey()` chain will fall
+// through to env vars / OAuth / platform keys, matching the documented
+// resolution priority.
+// ----------------------------------------------------------------------------
+
+/**
+ * Decrypt one AES-256-GCM ciphertext stored in `UserApiKey.secretEnc`.
+ *
+ * The cipher format is `<iv-hex>:<authTag-hex>:<ciphertext-hex>` — same
+ * envelope used by T7.1 (the dedicated encryption module). We re-implement
+ * the unwrap here so T2.6 does not have to wait for T7.1 to land; once T7.1
+ * ships its `decryptSecret()` helper we will route this through it.
+ *
+ * Throws on any decode / decrypt failure so a misconfigured deploy fails
+ * closed rather than silently passing ciphertext through as an "API key".
+ */
+function decryptUserApiKey(secretEnc: string): string {
+  const masterKeyHex = process.env.APP_ENCRYPTION_KEY;
+  if (!masterKeyHex) {
+    throw new Error(
+      "APP_ENCRYPTION_KEY env var is required to decrypt UserApiKey rows",
+    );
+  }
+  const masterKey = Buffer.from(masterKeyHex, "hex");
+  if (masterKey.length !== 32) {
+    throw new Error(
+      `APP_ENCRYPTION_KEY must decode to 32 bytes (got ${masterKey.length})`,
+    );
+  }
+  const parts = secretEnc.split(":");
+  if (parts.length !== 3) {
+    throw new Error(
+      "UserApiKey.secretEnc must be `<iv-hex>:<authTag-hex>:<ciphertext-hex>`",
+    );
+  }
+  const [ivHex, authTagHex, ciphertextHex] = parts;
+  const iv = Buffer.from(ivHex, "hex");
+  const authTag = Buffer.from(authTagHex, "hex");
+  const ciphertext = Buffer.from(ciphertextHex, "hex");
+  const decipher = createDecipheriv("aes-256-gcm", masterKey, iv);
+  decipher.setAuthTag(authTag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return plaintext.toString("utf8");
+}
+
+/**
+ * Load the calling user's BYOK API keys from the database and decrypt them.
+ *
+ * Returns an empty array when `userId === null` so legacy callers (no auth
+ * context) still work — the resulting InMemory AuthStorage will simply have
+ * no per-user credentials and the SDK's resolution chain falls through to
+ * env vars / OAuth / platform keys.
+ *
+ * Decryption failures are surfaced as a thrown error so the spawn fails
+ * fast; we never silently substitute a placeholder or fall back to a
+ * leaked ciphertext-as-key.
+ */
+export async function loadUserApiKeys(
+  userId: string | null,
+): Promise<Array<{ provider: string; apiKey: string }>> {
+  if (!userId) return [];
+  const rows = await prisma.userApiKey.findMany({
+    where: { userId },
+    select: { provider: true, secretEnc: true },
+  });
+  return rows.map((row) => ({
+    provider: row.provider,
+    apiKey: decryptUserApiKey(row.secretEnc),
+  }));
+}
+
+/**
+ * Build a per-request InMemory AuthStorage pre-populated with the calling
+ * user's BYOK keys. When the user has no BYOK, the storage is still valid
+ * (just empty) so the SDK's `getApiKey()` resolution chain continues to
+ * env vars / OAuth / platform keys.
+ */
+export async function buildInMemoryAuthStorage(
+  userApiKeys: Array<{ provider: string; apiKey: string }>,
+): Promise<AuthStorage> {
+  // Dynamic import keeps `AuthStorage` out of the module-graph until we
+  // actually need it; also gives us a single import point to swap with
+  // the real static import on first call.
+  const data = Object.fromEntries(
+    userApiKeys.map((k) => [k.provider, { type: "api_key" as const, key: k.apiKey }]),
+  );
+  return AuthStorage.inMemory(data);
+}
+
+/**
+ * Build a per-request InMemory SettingsManager. Empty by design — per-user
+ * preferences (default model, theme, etc.) live in the dedicated settings
+ * UI (T6.8) and will be passed as `applyOverrides` once that lands. For
+ * now the SDK's defaults are correct.
+ */
+export async function buildInMemorySettingsManager(): Promise<SettingsManager> {
+  return SettingsManager.inMemory();
+}
+
+/**
+ * Bootstrap both per-tenant services in one go. Used by
+ * `getOrCreateServices` so the cache key can include `userId` and the
+ * BYOK fetch + AuthStorage/SettingsManager construction only happens once
+ * per (cwd, scope, userId) tuple.
+ */
+async function bootstrapTenantServices(
+  userId: string | null,
+): Promise<{ authStorage: AuthStorage; settingsManager: SettingsManager }> {
+  const [userApiKeys, settingsManager] = await Promise.all([
+    loadUserApiKeys(userId),
+    buildInMemorySettingsManager(),
+  ]);
+  const authStorage = await buildInMemoryAuthStorage(userApiKeys);
+  return { authStorage, settingsManager };
+}
+
 function getOrCreateServices(
   cwd: string,
   scopeHash: string,
   agentDir: string,
-  scope: AgentScopeInput
+  scope: AgentScopeInput,
+  userId: string | null
 ): Promise<AgentServices> {
   const cache = getServicesCache();
-  const cacheKey = `${cwd}::${scopeHash}`;
+  // Task 2.6: include the userId in the cache key so two users with the
+  // same cwd + same skill/MCP scope still get distinct AuthStorage /
+  // SettingsManager instances (BYOK keys are user-scoped and MUST NOT
+  // leak across sessions). userId === null falls back to the legacy
+  // shared-services path (legacy callers with no auth context).
+  const cacheKey = `${cwd}::${scopeHash}::${userId ?? "_legacy"}`;
   const existing = cache.get(cacheKey);
   if (existing) return existing;
   // Task 2.4: fold the resolved skill/MCP scope into the resource loader so
@@ -1008,11 +1152,20 @@ function getOrCreateServices(
   // cache miss (the cache key includes scopeHash so different scopes never
   // share an entry, so we never rebuild for the same scope).
   const resourceLoaderOptions = buildResourceLoaderOptions(scope);
-  const fresh: Promise<AgentServices> = createAgentSessionServices({
-    cwd,
-    agentDir,
-    resourceLoaderOptions,
-  });
+  // Task 2.6: per-tenant BYOK AuthStorage + per-request SettingsManager.
+  // Both are InMemory — they never touch disk (no global auth.json, no
+  // project settings.json), and they are scoped to this single spawn so
+  // one user's BYOK keys can never bleed into another user's session.
+  const tenantBootstrap = bootstrapTenantServices(userId);
+  const fresh: Promise<AgentServices> = tenantBootstrap.then(({ authStorage, settingsManager }) =>
+    createAgentSessionServices({
+      cwd,
+      agentDir,
+      authStorage,
+      settingsManager,
+      resourceLoaderOptions,
+    })
+  );
   cache.set(cacheKey, fresh);
   // If the first build throws, drop the cached rejection so the next
   // caller can retry instead of propagating a stale failure forever.
@@ -1248,8 +1401,9 @@ export async function startRpcSession(
     // sessions in quick succession — each reload costs ~250MB in the SDK,
     // which is the primary driver of the OOM kills observed on 2026-07-14.
     // scopeHash is included in the cache key so two agents with different
-    // skill/MCP bindings never share a cached services object.
-    const services = await getOrCreateServices(cwd, scopeHash, agentDir, resolvedScope);
+    // skill/MCP bindings never share a cached services object. userId is
+    // included so BYOK AuthStorage never leaks across tenants (Task 2.6).
+    const services = await getOrCreateServices(cwd, scopeHash, agentDir, resolvedScope, userId ?? null);
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
