@@ -96,4 +96,12 @@ describe("M3 models", () => {
     expect(u.tokenDailyLimit).toBe(100000);
     await prisma.user.delete({ where: { id: u.id } });
   });
+
+  it("creates a Session metadata row", async () => {
+    const s = await prisma.session.create({
+      data: { userId: "u1", teamId: "t1", projectId: "p1", title: "s", status: "active", jsonlPath: "/x.jsonl" },
+    });
+    expect(s.projectId).toBe("p1");
+    await prisma.session.delete({ where: { id: s.id } });
+  });
 });
