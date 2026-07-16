@@ -36,6 +36,15 @@ export const useUserStore = defineStore(
     const getWorktabState = computed(() => useWorktabStore().$state)
 
     /**
+     * @deprecated AI-agent-workshop 使用 HttpOnly Cookie 认证（pw_at / pw_rt），
+     * 客户端不持有访问令牌。保留此 getter 仅为兼容模板自带代码对
+     * `userStore.accessToken` 的引用；它始终返回空字符串，因此任何
+     * `Authorization: Bearer <token>` 注入都会退化为无认证头（由浏览器
+     * 通过 withCredentials 自动携带 Cookie 完成认证）。新代码请勿使用。
+     */
+    const accessToken = computed(() => '')
+
+    /**
      * 设置用户信息
      * @param newInfo 新的用户信息
      */
@@ -143,6 +152,7 @@ export const useUserStore = defineStore(
       getUserInfo,
       getSettingState,
       getWorktabState,
+      accessToken,
       setUserInfo,
       setLoginStatus,
       setSearchHistory,

@@ -74,14 +74,16 @@ declare namespace Api {
       captcha_key: string
       captcha_image: string
     }
-
-    /** 登录响应 */
+    /**
+     * 登录响应
+     * AI-agent-workshop 后端 POST /api/auth/user-login 返回
+     * `{ id, username, mustChangePassword }`；访问令牌通过 HttpOnly Cookie
+     * （pw_at / pw_rt）下发，不在响应体中暴露。
+     */
     interface LoginResponse {
-      access_token: string
-      refresh_token: string
-      token_type: string
-      expires_in: number
-      user: UserInfo
+      id: number | string
+      username: string
+      mustChangePassword: boolean
     }
 
     /** 用户信息 */

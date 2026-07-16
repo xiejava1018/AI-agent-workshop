@@ -46,10 +46,6 @@
           </div>
         </div>
         <ul class="py-4 mt-3 border-t border-g-300/80">
-          <li class="btn-item" @click="editUserInfo">
-            <ArtSvgIcon icon="ri:user-settings-line" />
-            <span>修改个人信息</span>
-          </li>
           <li class="btn-item" @click="lockScreen()">
             <ArtSvgIcon icon="ri:lock-line" />
             <span>锁屏</span>
@@ -109,11 +105,6 @@
     const info = userInfo.value
     return info?.account || info?.username || info?.userName || ''
   })
-
-  const editUserInfo = () => {
-    closeUserMenu()
-    mittBus.emit('openEditInfoDialog')
-  }
 
   /**
    * 打开锁屏功能

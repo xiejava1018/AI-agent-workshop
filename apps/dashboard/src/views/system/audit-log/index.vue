@@ -83,13 +83,10 @@
   import { ElMessage } from 'element-plus'
   import axios from 'axios'
   import { getAuditLogList, getAuditLogDetail } from '@/api/audit-log'
-  import { useUserStore } from '@/store/modules/user'
   import { useTable } from '@/composables/useTable'
   import type { SearchFormItem } from '@/types'
 
   defineOptions({ name: 'AuditLog' })
-
-  const userStore = useUserStore()
 
   // 操作类型下拉
   const actionOptions = [
@@ -350,16 +347,12 @@
       })
 
       const { VITE_API_URL } = import.meta.env
-      // 直接通过 axios 调用，避免被全局 response 拦截器解析
+      // 直接通过 axios 调用，避免被全局 response 拦截器解析。
+      // AI-agent-workshop 使用 HttpOnly Cookie 认证，withCredentials 让浏览器
+      // 自动携带 Cookie，无需注入 Authorization 头。
       const res = await axios.post(`${VITE_API_URL}/api/v1/audit-logs/export`, params, {
         responseType: 'blob',
-        headers: {
-          Authorization: userStore.accessToken
-            ? /^Bearer\s+/i.test(userStore.accessToken)
-              ? userStore.accessToken
-              : `Bearer ${userStore.accessToken}`
-            : '',
-        },
+        withCredentials: true,
         timeout: 30000,
       })
 

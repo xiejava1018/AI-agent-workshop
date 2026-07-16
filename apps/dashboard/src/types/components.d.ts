@@ -26,7 +26,6 @@ declare module 'vue' {
     ArtDonutChartCard: typeof import('./../components/core/cards/art-donut-chart-card/index.vue')['default']
     ArtDragVerify: typeof import('./../components/core/forms/art-drag-verify/index.vue')['default']
     ArtDualBarCompareChart: typeof import('./../components/core/charts/art-dual-bar-compare-chart/index.vue')['default']
-    ArtEditInfo: typeof import('./../components/core/layouts/art-edit-info/index.vue')['default']
     ArtExcelExport: typeof import('./../components/core/forms/art-excel-export/index.vue')['default']
     ArtExcelImport: typeof import('./../components/core/forms/art-excel-import/index.vue')['default']
     ArtException: typeof import('./../components/core/views/exception/ArtException.vue')['default']

@@ -313,8 +313,8 @@
     return d.toLocaleString('zh-CN', { hour12: false })
   }
 
-  const getLevelType = (level?: number): 'danger' | 'warning' | 'info' | '' => {
-    if (!level && level !== 0) return ''
+  const getLevelType = (level?: number): 'danger' | 'warning' | 'info' => {
+    if (!level && level !== 0) return 'info'
     if (level >= 12) return 'danger'
     if (level >= 8) return 'warning'
     return 'info'

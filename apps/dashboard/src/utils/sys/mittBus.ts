@@ -55,8 +55,6 @@ type Events = {
   openChat: void
   // 打开锁屏事件 - 无参数
   openLockScreen: void
-  // 打开编辑信息对话框事件 - 无参数
-  openEditInfoDialog: void
   // 打开通知面板事件 - 无参数
   openNotice: void
 }

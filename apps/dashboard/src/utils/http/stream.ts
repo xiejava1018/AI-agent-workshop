@@ -10,8 +10,6 @@
  *   // 中途取消：stop()
  */
 
-import { useUserStore } from '@/store/modules/user'
-
 export interface StreamHandlers {
   onDelta?: (piece: string) => void
   onError?: (err: Error) => void
@@ -40,7 +38,6 @@ export function postStream<T = unknown>(
   body: T,
   opts: StreamOptions = {}
 ): () => void {
-  const userStore = useUserStore()
   const fullUrl = url.startsWith('http') ? url : `${API_PREFIX}${url}`
 
   const controller = new AbortController()
@@ -51,10 +48,12 @@ export function postStream<T = unknown>(
 
   fetch(fullUrl, {
     method: 'POST',
+    // AI-agent-workshop 使用 HttpOnly Cookie 认证，浏览器随请求自动携带
+    // Cookie（credentials: 'include'），无需注入 Authorization 头。
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      ...(userStore.accessToken ? { Authorization: `Bearer ${userStore.accessToken}` } : {})
+      Accept: 'text/event-stream'
     },
     body: JSON.stringify(body),
     signal: controller.signal

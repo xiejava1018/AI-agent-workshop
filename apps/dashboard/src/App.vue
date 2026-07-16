@@ -42,7 +42,7 @@
     toggleTransition(false)
     systemUpgrade()
     // 登录态时启动站内通知 WebSocket + 拉未读数
-    if (userStore.accessToken) {
+    if (userStore.isLogin) {
       notifStore.connect()
       // 字典走 Pinia 内存缓存(page refresh → lost)，已登录态下若缓存为空则自动加载
       if (!dictStore.loaded) {
@@ -53,15 +53,15 @@
 
   // 登录/登出变化时联动 WS
   watch(
-    () => userStore.accessToken,
-    (token, old) => {
-      if (token && !old) {
+    () => userStore.isLogin,
+    (loggedIn, wasLoggedIn) => {
+      if (loggedIn && !wasLoggedIn) {
         notifStore.connect()
         // 新登录态下若字典未加载则自动加载
         if (!dictStore.loaded) {
           dictStore.loadAll()
         }
-      } else if (!token && old) {
+      } else if (!loggedIn && wasLoggedIn) {
         notifStore.disconnect()
       }
     }
