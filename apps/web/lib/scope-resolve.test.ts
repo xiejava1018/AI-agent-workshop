@@ -1,6 +1,6 @@
 // lib/scope-resolve.test.ts
 import { describe, it, expect } from "vitest";
-import { resolveAgentSkills } from "./scope-resolve";
+import { resolveAgentSkills, resolveAgentMcpServers } from "./scope-resolve";
 
 describe("resolveAgentSkills", () => {
   it("resolves skills across four layers with agent-layer mode convergence", async () => {
@@ -16,5 +16,17 @@ describe("resolveAgentSkills", () => {
       scope: "personal",
     });
     expect(resolved.layersApplied).not.toContain("team");
+  });
+});
+
+describe("resolveAgentMcpServers", () => {
+  it("resolves MCP servers across layers, filters disabled", async () => {
+    const resolved = await resolveAgentMcpServers({ agentId: "a1", userId: "u1", teamId: "t1" });
+    expect(Array.isArray(resolved.mcpServers)).toBe(true);
+  });
+
+  it("denies credentialed MCP at global scope", async () => {
+    const resolved = await resolveAgentMcpServers({ agentId: "a1", userId: "u1", teamId: "t1" });
+    expect(Array.isArray(resolved.deniedGlobalCredential)).toBe(true);
   });
 });
