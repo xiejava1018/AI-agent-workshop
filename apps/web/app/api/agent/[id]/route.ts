@@ -7,6 +7,33 @@ import { assertCanReadSessionScoped } from "@/lib/team-auth";
 import { auditLog } from "@/lib/audit-log";
 import { getUserHighestRole } from "@/lib/user-role";
 import { enforceNotMustChange } from "@/lib/must-change-password";
+import { invokeSkill } from "@/lib/skill-invoke";
+
+/**
+ * Expand a DB-backed `/skill:<slug>` command in a prompt-type body.
+ *
+ * The pi SDK auto-expands `/skill:name` from FILESYSTEM skills inside
+ * `prompt()`. For the M3 multi-tenant SkillPackage table (T5.4) we resolve the
+ * slug against the caller's visible scopes here and rewrite `body.message`
+ * with the expanded `<skill>` block before handing it to the session. When the
+ * message is not a skill command, `invokeSkill` returns null and the body is
+ * forwarded unchanged; an unknown slug throws so the caller gets a 500 with a
+ * clear "Skill not found" message instead of a literal `/skill:foo` prompt.
+ */
+async function maybeExpandSkillCommand(
+  body: Record<string, unknown> & { type: string },
+  userId: string,
+  teamId: string | null,
+  sessionId: string,
+): Promise<Record<string, unknown> & { type: string }> {
+  const isPromptLike =
+    body.type === "prompt" || body.type === "steer" || body.type === "follow_up";
+  if (!isPromptLike || typeof body.message !== "string") return body;
+
+  const result = await invokeSkill({ text: body.message, userId, teamId, sessionId });
+  if (!result) return body;
+  return { ...body, message: result.expandedText };
+}
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -40,7 +67,8 @@ export async function POST(
   }
 
   try {
-    const body = await req.json() as { type: string; [key: string]: unknown };
+    const rawBody = await req.json() as { type: string; [key: string]: unknown };
+    const body = await maybeExpandSkillCommand(rawBody, userId, meta?.teamId ?? null, id);
 
     // Fast path: already-running session
     const existing = getRpcSession(id);
