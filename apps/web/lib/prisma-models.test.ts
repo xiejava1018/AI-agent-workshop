@@ -65,4 +65,12 @@ describe("M3 models", () => {
     expect(m.configEnc).toBe("ENCRYPTED");
     await prisma.mcpServer.delete({ where: { id: m.id } });
   });
+
+  it("creates a DelegationTree node", async () => {
+    const d = await prisma.delegationTree.create({
+      data: { rootSessionId: "r1", parentSessionId: "r1", childSessionId: "c1", mode: "sync", depth: 1, status: "running" },
+    });
+    expect(d.depth).toBe(1);
+    await prisma.delegationTree.delete({ where: { id: d.id } });
+  });
 });

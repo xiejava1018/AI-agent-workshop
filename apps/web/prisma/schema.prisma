@@ -200,3 +200,21 @@ model McpServer {
   @@index([teamId])
   @@index([userId])
 }
+
+// M3 — DelegationTree: a node in an agent-session delegation tree. Records a
+// parent→child session delegation under a shared root session. `mode` is the
+// delegation strategy; `depth` is the level below root; `status` tracks the
+// child session's lifecycle. No FK relations — references validated in-app.
+model DelegationTree {
+  id              String   @id @default(cuid())
+  rootSessionId   String
+  parentSessionId String?
+  childSessionId  String
+  mode            String   @default("sync") // sync | parallel | async
+  depth           Int      @default(0)
+  status          String   @default("running") // running | done | error
+  createdAt       DateTime @default(now())
+
+  @@index([rootSessionId])
+  @@index([childSessionId])
+}
