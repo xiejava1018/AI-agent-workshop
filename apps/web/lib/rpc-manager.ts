@@ -1,5 +1,5 @@
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, SessionManager, Theme, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { cacheSessionPath } from "./session-reader";
 import { decrementUserSessionCap } from "./session-cap";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
@@ -56,6 +56,31 @@ type ExtensionBindingOptions = {
 };
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+
+// ============================================================================
+// Scope hashing
+//
+// A "scope" identifies the set of skills + MCP servers an agent is bound to.
+// Two sessions with the same scope share the same services cache; sessions
+// with different scopes must NOT share a cache entry (otherwise agent-bound
+// skills/MCP bleed across agents that happen to share a cwd).
+//
+// The hash is order-independent (sorted before hashing) so that
+// { skills: ["a","b"] } and { skills: ["b","a"] } collide.
+// ============================================================================
+
+export interface ScopeSet {
+  skills: string[];
+  mcpServers: string[];
+}
+
+export function computeScopeHash(scope: ScopeSet): string {
+  const norm = JSON.stringify({
+    skills: [...scope.skills].sort(),
+    mcpServers: [...scope.mcpServers].sort(),
+  });
+  return createHash("sha256").update(norm).digest("hex");
+}
 
 // Extensions require a complete Theme, while the web UI applies its own styling.
 class PlainTextTheme extends Theme {
@@ -898,16 +923,18 @@ type AgentServices = AgentSessionServices;
 
 function getOrCreateServices(
   cwd: string,
+  scopeHash: string,
   agentDir: string
 ): Promise<AgentServices> {
   const cache = getServicesCache();
-  const existing = cache.get(cwd);
+  const cacheKey = `${cwd}::${scopeHash}`;
+  const existing = cache.get(cacheKey);
   if (existing) return existing;
   const fresh: Promise<AgentServices> = createAgentSessionServices({ cwd, agentDir });
-  cache.set(cwd, fresh);
+  cache.set(cacheKey, fresh);
   // If the first build throws, drop the cached rejection so the next
   // caller can retry instead of propagating a stale failure forever.
-  fresh.catch(() => cache.delete(cwd));
+  fresh.catch(() => cache.delete(cacheKey));
   return fresh;
 }
 
@@ -1081,7 +1108,7 @@ export async function startRpcSession(
     // sessions in quick succession — each reload costs ~250MB in the
     // SDK, which is the primary driver of the OOM kills observed on
     // 2026-07-14.
-    const services = await getOrCreateServices(cwd, agentDir);
+    const services = await getOrCreateServices(cwd, "", agentDir);
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
