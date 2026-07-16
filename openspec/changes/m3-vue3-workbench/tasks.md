@@ -58,7 +58,7 @@
 
 - [x] T5.1 扩展 `/api/skills/install`：支持 global/team/user 作用域（现有仅 global/project）
 - [x] T5.2 扩展 `/api/skills/search`：返回作用域过滤后的技能列表
-- [ ] T5.3 扩展 `/api/plugins`：按 global/team/user/agent 解析并强制按 tenant 过滤
+- [x] T5.3 扩展 `/api/plugins`：按 global/team/user/agent 解析并强制按 tenant 过滤
 - [ ] T5.4 对话中 `/<skill>` 显式调用：映射到 `disableModelInvocation` 技能
 - [ ] T5.5 模型自决 `<skill>` 块：经 `parseSkillBlock` 解析并注入指令，前端可视化提示
 
