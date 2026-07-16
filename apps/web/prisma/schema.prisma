@@ -179,3 +179,24 @@ model SkillInvocation {
 
   @@index([skillPackageId])
 }
+
+// M3 — McpServer: an MCP server registration scoped to global/team/user.
+// `transport` is "stdio" | "sse" | "http"; `endpoint` holds the URL for sse/
+// http transports. `configEnc` stores the AES-256-GCM ciphertext of the
+// server config (env vars, args, secrets) — NEVER plaintext. `scope` mirrors
+// SkillPackage scoping. No FK relations; references validated in-app.
+model McpServer {
+  id        String  @id @default(cuid())
+  name      String
+  transport String  @default("stdio") // stdio | sse | http
+  endpoint  String  @default("")
+  command   String  @default("")
+  configEnc String  @default("") // AES-256-GCM ciphertext, never plaintext
+  scope     String  @default("global") // global | team | user
+  teamId    String?
+  userId    String?
+  enabled   Boolean @default(true)
+
+  @@index([teamId])
+  @@index([userId])
+}

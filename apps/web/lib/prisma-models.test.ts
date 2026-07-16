@@ -57,4 +57,12 @@ describe("M3 models", () => {
     await prisma.skillInvocation.delete({ where: { id: inv.id } });
     await prisma.skillPackage.delete({ where: { id: s.id } });
   });
+
+  it("creates an McpServer with encrypted config field", async () => {
+    const m = await prisma.mcpServer.create({
+      data: { name: "fs", transport: "stdio", command: "npx fs-mcp", scope: "team", teamId: "t1", configEnc: "ENCRYPTED" },
+    });
+    expect(m.configEnc).toBe("ENCRYPTED");
+    await prisma.mcpServer.delete({ where: { id: m.id } });
+  });
 });
