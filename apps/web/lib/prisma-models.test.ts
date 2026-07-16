@@ -90,4 +90,10 @@ describe("M3 models", () => {
     await prisma.platformApiKey.delete({ where: { id: p.id } });
     await prisma.userApiKey.delete({ where: { id: u.id } });
   });
+
+  it("reads user quota fields", async () => {
+    const u = await prisma.user.create({ data: { username: `q_${Date.now()}`, passwordHash: "x", tokenDailyLimit: 100000, maxConcurrentSessions: 5 } });
+    expect(u.tokenDailyLimit).toBe(100000);
+    await prisma.user.delete({ where: { id: u.id } });
+  });
 });

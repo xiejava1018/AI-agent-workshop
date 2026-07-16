@@ -16,6 +16,8 @@ model User {
   createdBy          String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  tokenDailyLimit      Int @default(0)  // 0 = 不限
+  maxConcurrentSessions Int @default(5)
   teams              TeamMember[]
 }
 
@@ -24,6 +26,8 @@ model Team {
   name        String
   ownerUserId String
   createdAt   DateTime @default(now())
+  tokenDailyLimit      Int @default(0)
+  maxConcurrentSessions Int @default(0) // 0 = 用全局默认
   members     TeamMember[]
   projects    Project[]
 }
