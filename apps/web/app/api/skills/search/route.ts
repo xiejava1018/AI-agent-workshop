@@ -1,10 +1,63 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUserContext } from "@/lib/server-user";
 import { runNpx } from "@/lib/npx";
 import type { SkillSearchResult } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
 
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
+
+// -----------------------------------------------------------------------------
+// Helpers for DB-backed scope-filtered search (T5.2)
+// -----------------------------------------------------------------------------
+
+const VALID_SCOPES = ["global", "team", "user"] as const;
+
+function unauthorizedResponse(): NextResponse {
+  return NextResponse.json({ error: "auth required" }, { status: 401 });
+}
+
+/**
+ * Build a Prisma `where` clause for the SkillPackage search.
+ *
+ * - `q` (optional): fuzzy search over name and description (case-insensitive contains).
+ * - `scope` (optional): one of "global" | "team" | "user". When team scope is
+ *   selected, only packages belonging to teams the caller is a member of are
+ *   returned. When user scope is selected, only the caller's own packages are
+ *   returned.
+ */
+async function buildSearchWhere(
+  callerId: string,
+  q: string | null,
+  scope: string | null,
+  teamIds: string[],
+): Promise<Record<string, unknown>> {
+  const where: Record<string, unknown> = {};
+
+  // Text search
+  if (q) {
+    where.OR = [
+      { name: { contains: q, mode: "insensitive" } },
+      { description: { contains: q, mode: "insensitive" } },
+    ];
+  }
+
+  // Scope filtering
+  if (scope && (VALID_SCOPES as readonly string[]).includes(scope)) {
+    if (scope === "global") {
+      where.scope = "global";
+    } else if (scope === "team") {
+      where.scope = "team";
+      where.teamId = { in: teamIds };
+    } else if (scope === "user") {
+      where.scope = "user";
+      where.userId = callerId;
+    }
+  }
+
+  return where;
+}
 const DEFAULT_LIMIT = 50;
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 50;
@@ -85,6 +138,38 @@ function parseInstallCount(installs: string): number {
   if (!Number.isFinite(value)) return 0;
   const multiplier = match[2] === "B" ? 1_000_000_000 : match[2] === "M" ? 1_000_000 : match[2] === "K" ? 1_000 : 1;
   return value * multiplier;
+}
+
+// -----------------------------------------------------------------------------
+// GET /api/skills/search — scope-filtered DB-backed skill package search
+// Query params:
+//   q       — text search (name / description, case-insensitive contains)
+//   scope   — "global" | "team" | "user" (default: all scopes)
+//
+// RBAC: any authenticated user.
+// -----------------------------------------------------------------------------
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const callerId = req.headers.get("x-user-id");
+  if (!callerId) return unauthorizedResponse();
+
+  const ctx = await getCurrentUserContext(callerId);
+  if (!ctx) return unauthorizedResponse();
+
+  const { searchParams } = new URL(req.url);
+  const q = searchParams.get("q");
+  const scope = searchParams.get("scope");
+
+  try {
+    const where = await buildSearchWhere(callerId, q, scope, ctx.teamIds);
+    const skills = await prisma.skillPackage.findMany({
+      where,
+      orderBy: { name: "asc" },
+    });
+    return NextResponse.json({ skills });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }
 
 // POST /api/skills/search  body: { query: string, limit?: number }
