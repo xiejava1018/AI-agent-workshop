@@ -1,0 +1,10 @@
+schema_version: comet.v1
+name: m3-vue3-workbench
+workflow: full
+phase: open
+language: zh-CN
+auto_transition: true
+review_mode: standard
+context_compression: off
+created: "2026-07-16"
+updated: "2026-07-16"
