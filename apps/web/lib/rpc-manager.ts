@@ -370,10 +370,6 @@ export class AgentSessionWrapper {
     }
   }
 
-  private emit(event: AgentEvent): void {
-    for (const l of this.listeners) l(event);
-  }
-
   private resetIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => this.destroy(), 10 * 60 * 1000);
@@ -386,6 +382,15 @@ export class AgentSessionWrapper {
       const i = this.listeners.indexOf(listener);
       if (i !== -1) this.listeners.splice(i, 1);
     };
+  }
+
+  /**
+   * Public emit — allows external callers (e.g. the delegate-agent-tool) to
+   * broadcast events into this session's SSE listener chain without subscribing.
+   * Used by T3.7 to forward child-agent progress events to the root SSE.
+   */
+  emit(event: AgentEvent): void {
+    for (const l of this.listeners) l(event);
   }
 
   onDestroy(cb: () => void): void {

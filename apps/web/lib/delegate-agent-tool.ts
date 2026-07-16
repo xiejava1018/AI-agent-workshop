@@ -35,7 +35,7 @@ import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 // pi-coding-agent does not re-export it, so we import from its source.
 import type { TextContent } from "@earendil-works/pi-ai/compat";
 import { randomUUID } from "crypto";
-import { startRpcSession } from "./rpc-manager";
+import { startRpcSession, getRpcSession } from "./rpc-manager";
 import { prisma } from "./prisma";
 
 // ============================================================================
@@ -507,8 +507,31 @@ async function runSingleChild(opts: {
     status: "running",
   });
 
+  // T3.7: Forward child progress events to root session SSE so Vue3 orchestration
+  // screen sees live tool_update / message / tool_result / agent_message stream.
+  // getRpcSession is safe to call but may be undefined in test environments or
+  // if the session registry hasn't been initialized. Guard both the lookup and
+  // the emit to ensure a missing root session never crashes delegation.
+  let rootWrapper: ReturnType<typeof getRpcSession> = undefined;
+  try {
+    rootWrapper = typeof getRpcSession === "function" ? getRpcSession(opts.rootSessionId) : undefined;
+  } catch {
+    rootWrapper = undefined;
+  }
+
   const settled = new Promise<DelegateAgentResult>((resolve) => {
     const unsubscribe = childWrapper.inner.subscribe((event) => {
+      // Forward non-final progress events to root session SSE.
+      // agent_end is already handled for resolution; agent_settled too.
+      // T3.7 events: tool_update, message, tool_result, agent_message.
+      if (rootWrapper && event.type !== "agent_end" && event.type !== "agent_settled") {
+        try {
+          rootWrapper.emit({ ...event, _delegatedFrom: realSessionId });
+        } catch (err) {
+          // Non-fatal: root session may be gone; don't crash the delegation.
+          console.warn("[delegate-agent-tool] Failed to forward event to root:", err);
+        }
+      }
       if (event.type === "agent_end") {
         unsubscribe();
         const last = childWrapper.inner.getLastAssistantText() ?? "";
@@ -658,9 +681,30 @@ async function runAsyncChild(opts: {
     status: "running",
   });
 
+  // T3.7: Forward child progress events to root session SSE so Vue3 orchestration
+  // screen sees live tool_update / message / tool_result / agent_message stream.
+  // getRpcSession is safe to call but may be undefined in test environments or
+  // if the session registry hasn't been initialized. Guard both the lookup and
+  // the emit to ensure a missing root session never crashes delegation.
+  let rootWrapper: ReturnType<typeof getRpcSession> = undefined;
+  try {
+    rootWrapper = typeof getRpcSession === "function" ? getRpcSession(opts.rootSessionId) : undefined;
+  } catch {
+    rootWrapper = undefined;
+  }
+
   // Subscribe to agent_end to backfill result. Always unsubscribe + evict
   // after the task settles so we don't leak listeners or grow the registry forever.
   const unsubscribe = childWrapper.inner.subscribe((event) => {
+    // Forward non-final progress events to root session SSE.
+    if (rootWrapper && event.type !== "agent_end" && event.type !== "agent_settled") {
+      try {
+        rootWrapper.emit({ ...event, _delegatedFrom: realSessionId });
+      } catch (err) {
+        // Non-fatal: root session may be gone; don't crash the delegation.
+        console.warn("[delegate-agent-tool] Failed to forward event to root:", err);
+      }
+    }
     if (event.type === "agent_end" || event.type === "agent_settled") {
       unsubscribe(); // prevent further events from this child
       const last = childWrapper.inner.getLastAssistantText() ?? "";
