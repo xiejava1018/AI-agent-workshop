@@ -3,10 +3,11 @@ import { describe, it, expect } from "vitest";
 import { prisma } from "./prisma";
 
 describe("prisma singleton", () => {
-  it("connects to SQLite dev.db", async () => {
-    const result = await prisma.$queryRaw<Array<{ ok: bigint }>>`SELECT 1 as ok`;
+  it("connects to PostgreSQL database", async () => {
+    const result = await prisma.$queryRaw<Array<{ ok: number }>>`SELECT 1 as ok`;
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].ok).toBe(BigInt(1));
+    // PostgreSQL returns integer literals as JS number (not BigInt like SQLite).
+    expect(result[0].ok).toBe(1);
   });
   it("reuses same instance across imports", async () => {
     // The singleton memoizes on globalThis.__prisma (non-prod). A freshly
