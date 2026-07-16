@@ -50,7 +50,7 @@
 - [ ] T4.2 `/api/admin/users` 扩展：停用/启用/重置密码/删除（现有仅创建）
 - [ ] T4.3 `/api/admin/teams`：团队混合生命周期（创建/成员管理/配额/邀请链接）
 - [ ] T4.4 `/api/admin/models`：模型清单 + 默认 + 回退顺序 + 平台密钥池（复用 `/api/models-config` 文件式配置）
-- [ ] T4.5 `/api/admin/mcp`：MCP Server CRUD + 按团队/Agent 绑定
+- [x] T4.5 `/api/admin/mcp`：MCP Server CRUD + 按团队/Agent 绑定
 - [ ] T4.6 `/api/admin/audit`：审计日志查询（身份/鉴权/配额/绑定变更 + MCP 调用 + 技能安装）
 - [ ] T4.7 `/api/auth/refresh` 复用：Vue3 登录页对接 refresh 续期
 
