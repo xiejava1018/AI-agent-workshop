@@ -47,3 +47,33 @@ export interface PluginsResponse {
   totals: PluginResourceCounts;
   diagnostics: PluginDiagnostic[];
 }
+
+// -----------------------------------------------------------------------------
+// M3 T5.3 — tenant-scoped plugin listing.
+//
+// When `/api/plugins` is called with a `scope` query param it returns a
+// DB-backed, tenant-filtered list of plugins (skill packages + MCP servers)
+// resolved for the caller. This is distinct from the legacy filesystem-based
+// `PluginsResponse` returned when `cwd` is supplied.
+// -----------------------------------------------------------------------------
+
+export type PluginTenantScope = "global" | "team" | "user" | "agent";
+
+export type ScopedPluginKind = "skill" | "mcp";
+
+export interface ScopedPluginInfo {
+  id: string;
+  kind: ScopedPluginKind;
+  name: string;
+  scope: string; // owning scope of the underlying row: global | team | user
+  slug?: string; // skills only
+  transport?: string; // MCP only
+  teamId?: string | null;
+  userId?: string | null;
+}
+
+export interface ScopedPluginsResponse {
+  scope: PluginTenantScope;
+  tenantId: string | null;
+  plugins: ScopedPluginInfo[];
+}
