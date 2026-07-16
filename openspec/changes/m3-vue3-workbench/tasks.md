@@ -47,7 +47,7 @@
 ## 4. 后端：API 端点
 
 - [x] T4.1 `/api/digital-employees`：数字员工 CRUD + 绑定技能/MCP（避开现有 `/api/agent/*` 会话端点）
-- [ ] T4.2 `/api/admin/users` 扩展：停用/启用/重置密码/删除（现有仅创建）
+- [x] T4.2 `/api/admin/users` 扩展：停用/启用/重置密码/删除（现有仅创建）
 - [ ] T4.3 `/api/admin/teams`：团队混合生命周期（创建/成员管理/配额/邀请链接）
 - [ ] T4.4 `/api/admin/models`：模型清单 + 默认 + 回退顺序 + 平台密钥池（复用 `/api/models-config` 文件式配置）
 - [x] T4.5 `/api/admin/mcp`：MCP Server CRUD + 按团队/Agent 绑定
