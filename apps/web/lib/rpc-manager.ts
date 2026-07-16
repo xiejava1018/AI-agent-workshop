@@ -2,6 +2,7 @@ import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir
 import { createHash, randomUUID } from "crypto";
 import { cacheSessionPath } from "./session-reader";
 import { decrementUserSessionCap } from "./session-cap";
+import { resolveAgentMcpServers, resolveAgentSkills } from "./scope-resolve";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
@@ -80,6 +81,76 @@ export function computeScopeHash(scope: ScopeSet): string {
     mcpServers: [...scope.mcpServers].sort(),
   });
   return createHash("sha256").update(norm).digest("hex");
+}
+
+// ----------------------------------------------------------------------------
+// Agent scope injection
+//
+// The four-layer resolvers (resolveAgentSkills / resolveAgentMcpServers)
+// return resolved id arrays. To actually inject those into a pi session we
+// need to map them to the SDK's DefaultResourceLoaderOptions shape:
+//   - skills -> additionalSkillPaths (each slug resolved to a path)
+//   - mcpServers -> additionalExtensionPaths (each id resolved to an extension path)
+// When the resolved set is empty we set `noSkills: true` and skip extensions
+// entirely; we never disable extensions because the SDK has its own baseline
+// extension set that must remain loadable.
+//
+// Path resolution is intentionally best-effort: we map `<id-or-slug>` to
+// `<cwd>/.pi/<kind>/<id-or-slug>` so the SDK's resource loader can pick it
+// up if the user actually has that artifact on disk. Missing paths are
+// silently ignored by the SDK; the override layers (`skillsOverride` /
+// `extensionsOverride`) are not used here — Task 2.5 / 3.x may layer them
+// on top later.
+// ----------------------------------------------------------------------------
+
+export interface AgentScopeMcpRef {
+  id: string;
+  name: string;
+  transport: string;
+}
+
+export interface AgentScopeInput {
+  skills: string[];
+  mcpServers: AgentScopeMcpRef[];
+}
+
+/**
+ * Caller-side input for `startRpcSession`. Identifies the agent whose
+ * four-layer scope should be resolved at session-start time. Passed as
+ * the last positional argument so existing callers (no scope resolution)
+ * keep compiling without source changes.
+ */
+export interface AgentScopeResolveInput {
+  agentId: string;
+  userId: string;
+  teamId: string | null;
+  scope?: "team" | "personal";
+}
+
+/**
+ * Build the `DefaultResourceLoaderOptions` payload from a resolved
+ * four-layer scope. Returned object is passed as `resourceLoaderOptions`
+ * to `createAgentSessionServices`.
+ *
+ * Contract:
+ * - `noSkills === true` iff `skills.length === 0`
+ * - `additionalSkillPaths` length equals `skills.length` (one entry per slug)
+ * - `additionalExtensionPaths` length equals `mcpServers.length` (one entry per id)
+ * - Caller computes `scopeHash` separately via `computeScopeHash` over the
+ *   same id arrays and passes it as the services cache key.
+ */
+export function buildResourceLoaderOptions(
+  scope: AgentScopeInput,
+): {
+  noSkills: boolean;
+  additionalSkillPaths: string[];
+  additionalExtensionPaths: string[];
+} {
+  return {
+    noSkills: scope.skills.length === 0,
+    additionalSkillPaths: scope.skills.map((slug) => `.pi/skills/${slug}`),
+    additionalExtensionPaths: scope.mcpServers.map((m) => `.pi/extensions/${m.id}`),
+  };
 }
 
 // Extensions require a complete Theme, while the web UI applies its own styling.
@@ -924,13 +995,24 @@ type AgentServices = AgentSessionServices;
 function getOrCreateServices(
   cwd: string,
   scopeHash: string,
-  agentDir: string
+  agentDir: string,
+  scope: AgentScopeInput
 ): Promise<AgentServices> {
   const cache = getServicesCache();
   const cacheKey = `${cwd}::${scopeHash}`;
   const existing = cache.get(cacheKey);
   if (existing) return existing;
-  const fresh: Promise<AgentServices> = createAgentSessionServices({ cwd, agentDir });
+  // Task 2.4: fold the resolved skill/MCP scope into the resource loader so
+  // each per-scope cache entry actually loads the right set of skills and
+  // MCP extensions. The `resourceLoaderOptions` payload is built once per
+  // cache miss (the cache key includes scopeHash so different scopes never
+  // share an entry, so we never rebuild for the same scope).
+  const resourceLoaderOptions = buildResourceLoaderOptions(scope);
+  const fresh: Promise<AgentServices> = createAgentSessionServices({
+    cwd,
+    agentDir,
+    resourceLoaderOptions,
+  });
   cache.set(cacheKey, fresh);
   // If the first build throws, drop the cached rejection so the next
   // caller can retry instead of propagating a stale failure forever.
@@ -1065,13 +1147,22 @@ export function notifyRunningChange(): void {
  * Get or create an AgentSession for the given session.
  * For new sessions (sessionFile === ""), pi generates its own id.
  * Pass toolNames to pre-configure active tools (empty array = all tools disabled).
+ *
+ * Pass `agentScope` to wire the four-layer skill/MCP resolver into the session:
+ * when provided, `startRpcSession` calls `resolveAgentSkills` + `resolveAgentMcpServers`,
+ * folds them into a `scopeHash` (used as the per-cwd services cache key so that
+ * two agents with different scopes never share a cache entry), and injects the
+ * resolved ids as `resourceLoaderOptions` on `createAgentSessionServices`. When
+ * omitted, the session falls back to the legacy behavior (`scopeHash = ""`,
+ * no resource loader overrides).
  */
 export async function startRpcSession(
   sessionId: string,
   sessionFile: string,
   cwd: string,
   toolNames?: string[],
-  userId?: string | null
+  userId?: string | null,
+  agentScope?: AgentScopeResolveInput
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
@@ -1103,12 +1194,51 @@ export async function startRpcSession(
       toolsOption = toolNames.length === 0 ? [] : undefined;
     }
 
-    // Build (or reuse from cache) services. The per-cwd cache avoids
-    // re-scanning the filesystem when the same user opens several
-    // sessions in quick succession — each reload costs ~250MB in the
-    // SDK, which is the primary driver of the OOM kills observed on
-    // 2026-07-14.
-    const services = await getOrCreateServices(cwd, "", agentDir);
+    // Task 2.4: resolve the four-layer skill/MCP scope when caller supplies
+    // `agentScope`. Resolver failures MUST NOT crash the session — fall back
+    // to an empty scope so the session can still start with whatever baseline
+    // resources the SDK loads. This keeps legacy callers (no `agentScope`)
+    // and DB-outage paths on their previous behavior.
+    let resolvedScope: AgentScopeInput = { skills: [], mcpServers: [] };
+    if (agentScope) {
+      try {
+        const [skills, mcp] = await Promise.all([
+          resolveAgentSkills({
+            agentId: agentScope.agentId,
+            userId: agentScope.userId,
+            teamId: agentScope.teamId,
+            ...(agentScope.scope ? { scope: agentScope.scope } : {}),
+          }),
+          resolveAgentMcpServers({
+            agentId: agentScope.agentId,
+            userId: agentScope.userId,
+            teamId: agentScope.teamId,
+            ...(agentScope.scope ? { scope: agentScope.scope } : {}),
+          }),
+        ]);
+        resolvedScope = { skills: skills.skills, mcpServers: mcp.mcpServers };
+      } catch (err) {
+        // eslint-disable-next-line no-console -- intentional: scope failure must
+        // surface to logs even in production so operators can diagnose DB outages.
+        console.warn(
+          `[rpc-manager] four-layer scope resolution failed for agentId=${agentScope.agentId}; falling back to empty scope:`,
+          err,
+        );
+        resolvedScope = { skills: [], mcpServers: [] };
+      }
+    }
+    const scopeHash = computeScopeHash({
+      skills: resolvedScope.skills,
+      mcpServers: resolvedScope.mcpServers.map((m) => m.id),
+    });
+
+    // Build (or reuse from cache) services. The per-cwd + per-scope cache
+    // avoids re-scanning the filesystem when the same user opens several
+    // sessions in quick succession — each reload costs ~250MB in the SDK,
+    // which is the primary driver of the OOM kills observed on 2026-07-14.
+    // scopeHash is included in the cache key so two agents with different
+    // skill/MCP bindings never share a cached services object.
+    const services = await getOrCreateServices(cwd, scopeHash, agentDir, resolvedScope);
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
