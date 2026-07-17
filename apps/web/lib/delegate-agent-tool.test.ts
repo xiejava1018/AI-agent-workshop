@@ -82,6 +82,7 @@ vi.mock("./rpc-manager", () => {
 });
 
 import { startRpcSession } from "./rpc-manager";
+import { prisma } from "./prisma";
 
 describe("delegate-agent-tool", () => {
   beforeEach(() => {
@@ -226,6 +227,101 @@ describe("delegate-agent-tool", () => {
       expect(polled?.status).toBe("error");
       expect(polled?.error).toBe("failed");
     });
+
+    it("evict removes the entry from the registry", () => {
+      const registry = getAsyncDelegateRegistry();
+      const entry = registry.create("child-session-evict");
+      expect(registry.get(entry.taskId)).toBeDefined();
+      registry.evict(entry.taskId);
+      expect(registry.get(entry.taskId)).toBeUndefined();
+    });
+
+    it("evict is idempotent — calling twice does not throw", () => {
+      const registry = getAsyncDelegateRegistry();
+      const entry = registry.create("child-session-evict2");
+      registry.evict(entry.taskId);
+      expect(() => registry.evict(entry.taskId)).not.toThrow();
+    });
+
+    it("clear removes all entries from the registry", () => {
+      const registry = getAsyncDelegateRegistry();
+      const e1 = registry.create("child-a");
+      const e2 = registry.create("child-b");
+      // Entries exist (get returns the entry while running)
+      expect(registry.get(e1.taskId)).toBeDefined();
+      expect(registry.get(e2.taskId)).toBeDefined();
+      registry.clear();
+      // After clear, entries are gone
+      expect(registry.get(e1.taskId)).toBeUndefined();
+      expect(registry.get(e2.taskId)).toBeUndefined();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // textResult helper — covered via execute results above, but explicitly
+  // test isError=true vs isError=false branches here for complete branch cover.
+  // -------------------------------------------------------------------------
+  describe("textResult (via execute result shape)", () => {
+    it("returned content has ok=true when isError=false", async () => {
+      const tool = createDelegateAgentTool({
+        rootSessionId: "r1",
+        userId: "u1",
+        teamId: "t1",
+        depth: 0,
+      });
+
+      mockSessionInner.prompt.mockImplementationOnce(() => {
+        mockSessionInner.getLastAssistantText.mockReturnValue("ok output");
+        const cbs = [...mockSessionInner._callbacks];
+        for (const cb of cbs) cb({ type: "agent_end" });
+        return Promise.resolve();
+      });
+
+      const result = await (tool.execute as Function)(
+        "call-1",
+        { agentId: "agent-1", task: "do the thing" },
+        undefined,
+        undefined,
+        { cwd: "/tmp" },
+      );
+
+      const parsed = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
+      expect(parsed.ok).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // agent_settled with empty last text — the empty-string branch
+  // -------------------------------------------------------------------------
+  describe("execute — agent_settled empty-text branch", () => {
+    it("resolves with empty output when agent_settled fires with no assistant text", async () => {
+      const tool = createDelegateAgentTool({
+        rootSessionId: "r1",
+        userId: "u1",
+        teamId: "t1",
+        depth: 0,
+      });
+
+      mockSessionInner.prompt.mockImplementationOnce(() => {
+        // Fire agent_settled with empty lastAssistantText — triggers the else branch
+        mockSessionInner.getLastAssistantText.mockReturnValue("");
+        const cbs = [...mockSessionInner._callbacks];
+        for (const cb of cbs) cb({ type: "agent_settled" });
+        return Promise.resolve();
+      });
+
+      const result = await (tool.execute as Function)(
+        "call-1",
+        { agentId: "agent-1", task: "do the thing" },
+        undefined,
+        undefined,
+        { cwd: "/tmp" },
+      );
+
+      const parsed = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
+      expect(parsed.ok).toBe(true);
+      expect(parsed.output).toBe("");
+    });
   });
 
   describe("execute — sync mode", () => {
@@ -307,6 +403,40 @@ describe("delegate-agent-tool", () => {
       const parsed = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
       expect(parsed.ok).toBe(false);
       expect(parsed.error).toContain("aborted");
+    });
+
+    it("createDelegationTreeRow error is caught and does not crash delegation", async () => {
+      // Force createDelegationTree to throw — the catch block should swallow it
+      vi.mocked(prisma.delegationTree.create).mockRejectedValueOnce(
+        new Error("DB write failure"),
+      );
+
+      const tool = createDelegateAgentTool({
+        rootSessionId: "r1",
+        userId: "u1",
+        teamId: "t1",
+        depth: 0,
+      });
+
+      mockSessionInner.prompt.mockImplementationOnce(() => {
+        mockSessionInner.getLastAssistantText.mockReturnValue("result despite DB error");
+        const cbs = [...mockSessionInner._callbacks];
+        for (const cb of cbs) cb({ type: "agent_end" });
+        return Promise.resolve();
+      });
+
+      const result = await (tool.execute as Function)(
+        "call-1",
+        { agentId: "agent-1", task: "do the thing" },
+        undefined,
+        undefined,
+        { cwd: "/tmp" },
+      );
+
+      const parsed = JSON.parse((result as { content: Array<{ text: string }> }).content[0].text);
+      // Delegation succeeds despite DB error — error is non-fatal
+      expect(parsed.ok).toBe(true);
+      expect(parsed.output).toBe("result despite DB error");
     });
 
     it("passes DELEGATION_DENYLIST as excludeTools to startRpcSession", async () => {
