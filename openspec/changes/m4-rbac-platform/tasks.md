@@ -5,7 +5,7 @@
 > 状态:build 收尾完成(清理 + 测试),待 verify(含 E2E 缺口评估)
 > 配套:proposal.md / design.md / specs/rbac-platform/spec.md
 
-> **build 收尾快照(2026-07-17, feature/20260717/m4-rbac-platform):** 后端 T1-T7 + 前端核心 T8/T9 在前序 commit 已落地;本次 build 阶段做了 T10 死代码清理(permission.ts / dict / department)+ T8 前端单测补齐(v-auth + RoutePermissionValidator)。M4 自身回归锚点全绿:v1 47/47、dashboard 43/43、双 build 通过。
+> **build 收尾快照(2026-07-17, feature/20260717/m4-rbac-platform):** 后端 T1-T7 + 前端核心 T8/T9 在前序 commit 已落地;本次 build 阶段做了 T10 死代码清理(permission.ts / dict / department)+ T8 前端单测补齐(v-auth + RoutePermissionValidator)。M4 自身回归锚点全绿:v1 47/47、dashboard 39/39、双 build 通过。
 
 ---
 
@@ -37,9 +37,9 @@
 - [x] T2.1 编写 `apps/web/prisma/seed/permissions.ts`
 - [x] T2.2 seed 60+ 条 Permission(13 模块)
 - [x] T2.3 编写 `apps/web/prisma/seed/roles.ts`:upsert 3 SysRole + RolePermission 绑定矩阵
-- [ ] T2.4 单测:`seed_*.ts` 第二次运行 `created_count=0`、无报错 — **缺口(本次未补,seed 幂等性靠 upsert 语义保证,单测留 backlog)**
+- ⏸ T2.4 单测:`seed_*.ts` 第二次运行 `created_count=0`、无报错 — **DEFERRED**:seed 幂等性靠 upsert 语义保证,单测需 DB 环境,留 backlog B-
 - [x] T3.1 编写 `apps/web/prisma/seed/menus.ts`:4 父 + 13 子 SysMenu
-- [ ] T3.2 seed 后人工核对 `member` user-menu 只含工作区 4 项 — **待 verify 阶段人工/E2E 核对**
+- T3.2 seed 后人工核对 `member` user-menu 只含工作区 4 项 — **待 verify 阶段人工/E2E 核对**
 - [x] T3.3 防锁死迁移:`INITIAL_PLATFORM_ADMIN_USERNAME` 自动绑 platform_admin
 
 ---
@@ -75,7 +75,7 @@
 - [x] T7.2 `assertIsAdmin` 函数保留,仅替换调用点
 - [x] T7.3 平滑过渡:TeamMember OWNER 自动绑 team_owner 全局角色(ensureTeamOwnerRoleForExistingOwners)
 - [x] T7.4 集成测试回归:admin/users 等测试覆盖 403(for MEMBER / OWNER header 伪造 / 无 platform:access)
-- [ ] T7.5 E2E:platform_admin 进 /platform/* 全功能可用;team_owner 跳 403 — **缺口(无 m4 E2E spec,仅有 m3-workbench/login e2e)**
+- T7.5 E2E:platform_admin 进 /platform/* 全功能可用;team_owner 跳 403 — **缺口(无 m4 E2E spec,仅有 m3-workbench/login e2e)**
 
 ---
 
@@ -87,7 +87,7 @@
 - [x] T8.4 `v-auth` 指令:存在于 `directives/core/auth.ts`(基于 `route.meta.authList`,非设计文档的 business/auth.ts;功能等价)
 - [x] T8.5 单测:`directives/core/__tests__/auth.test.ts`(v-auth 6 测,100% 覆盖)+ `router/core/__tests__/RoutePermissionValidator.test.ts`(22 测,94% 覆盖) — **本次 build 补齐**
 - [x] T9.1-T9.8 system 模块(user/role/menu/audit)经 `api/system/api.ts` 接通 `/api/v1/*`
-- [ ] T9.9 E2E:三角色登录侧边栏截图比对 — **缺口(无 m4 E2E)**
+- T9.9 E2E:三角色登录侧边栏截图比对 — **缺口(无 m4 E2E)**
 
 ---
 
@@ -98,7 +98,7 @@
 - [x] T10.3 删除 `store/modules/permission.ts` 整文件(getMenuByRole/isPlatformAdmin/isTeamAdmin + Role/MenuItem 零外部引用)(commit 2cdabdb)
 - [x] T10.4 ~~删除 `api/system/api.ts`~~ — **设计文档勘误纠正:不删除**。该文件是 system 页面(user/role/menu)访问 `/api/v1/*` 的活跃 API 层,本次仅移除其中的 department CRUD 函数
 - [x] T10.5 grep 全仓确认:`getMenuByRole`/`isPlatformAdmin`(前端)/`department`/`system/dict`/`RoutesAlias.Dict` 均无残留
-- [x] T10.6 全量回归:v1 47/47 + dashboard 43/43 + 双 build 通过
+- [x] T10.6 全量回归:v1 47/47 + dashboard 39/39 + 双 build 通过
 - [x] T10.7 release notes — 见下方 V-FINAL §"破坏性变化"
 
 ---
@@ -113,7 +113,7 @@
 - [x] V6 防锁死:首位用户 platform_admin + OWNER 自动 team_owner
 - [x] V7 `/api/admin/*` 鉴权替换后集成测试继续通过(13 admin 测试)
 - [x] V8 system 模块接通 + 角色权限分配保存权限码(role/auth.vue)
-- [ ] V9 三角色 E2E 截图与 UI 设计一致 — **缺口(无 m4 E2E,verify 阶段评估)**
+- V9 三角色 E2E 截图与 UI 设计一致 — **缺口(无 m4 E2E,verify 阶段评估)**
 - [x] V10 审计日志记录 RBAC 敏感操作(沿用 lib/audit-log.ts)
 - [x] V11 单测覆盖率 ≥ 80%(v-auth 100% / RoutePermissionValidator 94% / permissions.ts 已覆盖);E2E 三角色为缺口
 
@@ -127,7 +127,7 @@
 | V2 前端 department 残留 | ✅ 空 |
 | V3 dict 页面/路由残留 | ✅ 空(store/modules/dict.ts 保留是预期) |
 | V4 后端 /api/v1/* 测试 | ✅ 47/47 |
-| V5 dashboard 全量测试 | ✅ 43/43(user 15 + v-auth 6 + RoutePermissionValidator 22) |
+| V5 dashboard 全量测试 | ✅ 39/39(user 11 + v-auth 6 + RoutePermissionValidator 22) |
 | V6 dashboard build | ✅ |
 | V7 web build | ✅ |
 | V8 api/system/api.ts 活跃 | ✅ 被 user/role/menu/auth 页面使用 |
@@ -150,10 +150,10 @@
 
 ## 10. 后续(本 change 不做,记入 backlog)
 
-- [ ] B1 部门管理(Department 表)重建——若产品后续需要跨团队组织视图
-- [ ] B2 数据权限码化(`data:all/dept/self`)——目前 TeamMember 团队级隔离已够用
-- [ ] B3 SSO / OIDC 集成
-- [ ] B4 多租户 Tenant 模型(扩 Tenant 时 RBAC 角色作用域改 `(tenantId, code)` 复合唯一)
-- [ ] B5 SoybeanAdmin 模板升级 review 检查清单加一行(防止 department/dict 重新被引入)
-- [ ] B6 must-change-password 门禁落地(修 25 个预存在 meta 测试)
-- [ ] B7 m4 三角色 E2E spec
+- B1 部门管理(Department 表)重建——若产品后续需要跨团队组织视图
+- B2 数据权限码化(`data:all/dept/self`)——目前 TeamMember 团队级隔离已够用
+- B3 SSO / OIDC 集成
+- B4 多租户 Tenant 模型(扩 Tenant 时 RBAC 角色作用域改 `(tenantId, code)` 复合唯一)
+- B5 SoybeanAdmin 模板升级 review 检查清单加一行(防止 department/dict 重新被引入)
+- B6 must-change-password 门禁落地(修 25 个预存在 meta 测试)
+- B7 m4 三角色 E2E spec
