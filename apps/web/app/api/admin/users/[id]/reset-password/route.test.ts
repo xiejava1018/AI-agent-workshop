@@ -52,6 +52,20 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** M4:resolve platform_admin SysRole(由 seed 提供);不存在则失败。 */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
+
 async function makeUser(
   role: "OWNER" | "ADMIN" | "MEMBER",
   label: string
@@ -69,6 +83,11 @@ async function makeUser(
   await prisma.teamMember.create({
     data: { teamId: team.id, userId: user.id, role },
   });
+  // M4 RBAC 平台中台:OWNER/ADMIN 测试用例需要绑 platform_admin 才能通过鉴权
+  if (role === "OWNER" || role === "ADMIN") {
+    const roleId = await getPlatformAdminRoleId();
+    await prisma.userRole.create({ data: { userId: user.id, roleId } });
+  }
   return { userId: user.id, teamId: team.id };
 }
 
@@ -131,16 +150,9 @@ describe("POST /api/admin/users/[id]/reset-password", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 403 when ADMIN targets an OWNER", async () => {
-    const { POST } = await import("./route");
-    const { userId: callerId } = await makeUser("ADMIN", "caller");
-    const { userId: targetId } = await makeUser("OWNER", "t");
-    const res = await POST(
-      makeReq(targetId, { callerId, callerRole: "ADMIN" }),
-      { params: Promise.resolve({ id: targetId }) }
-    );
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"ADMIN 不能 reset OWNER 密码"的 outrank 约束已放开——
+  // 任何 platform_admin 都能重置任何用户密码。
+  // "禁止自己 reset 自己"的保护仍保留(见下面 self-reset 测试)。
 
   it("OWNER resets a MEMBER: returns initialPassword, stores hash, sets mustChangePassword=true", async () => {
     const { POST } = await import("./route");

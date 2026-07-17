@@ -17,7 +17,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getUserHighestRole } from "@/lib/server-user";
 import { canAdministerTeam } from "@/lib/team-admin";
 
 export const dynamic = "force-dynamic";

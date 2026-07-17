@@ -64,6 +64,20 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** M4:resolve platform_admin SysRole(由 seed 提供);不存在则失败。 */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
+
 async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<{ userId: string; teamId: string }> {
   const username = uniqueName(role.toLowerCase());
   const user = await prisma.user.create({
@@ -73,6 +87,11 @@ async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<{ userId: s
     data: { name: uniqueName(`team-${role.toLowerCase()}`), ownerUserId: user.id },
   });
   await prisma.teamMember.create({ data: { teamId: team.id, userId: user.id, role } });
+  // M4 RBAC 平台中台:OWNER/ADMIN 测试用例需要绑 platform_admin 才能通过鉴权
+  if (role === "OWNER" || role === "ADMIN") {
+    const roleId = await getPlatformAdminRoleId();
+    await prisma.userRole.create({ data: { userId: user.id, roleId } });
+  }
   return { userId: user.id, teamId: team.id };
 }
 
@@ -134,15 +153,8 @@ describe("GET /api/admin/mcp/[id]", () => {
 });
 
 describe("PUT /api/admin/mcp/[id]", () => {
-  it("returns 403 for ADMIN (write is OWNER-only)", async () => {
-    const { PUT } = await import("./route");
-    const { userId } = await makeUser("ADMIN");
-    const id = await makeServer();
-    const res = await PUT(makeReq("PUT", id, { callerId: userId, body: { name: "X" } }), {
-      params: Promise.resolve({ id }),
-    });
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"write is OWNER-only"约束已放开。
+  // 任何绑了 platform_admin 角色的用户(OWNER 或 ADMIN)都可写。
 
   it("updates fields and strips configEnc from response", async () => {
     const { PUT } = await import("./route");
@@ -182,15 +194,7 @@ describe("PUT /api/admin/mcp/[id]", () => {
 });
 
 describe("DELETE /api/admin/mcp/[id]", () => {
-  it("returns 403 for ADMIN (write is OWNER-only)", async () => {
-    const { DELETE } = await import("./route");
-    const { userId } = await makeUser("ADMIN");
-    const id = await makeServer();
-    const res = await DELETE(makeReq("DELETE", id, { callerId: userId }), {
-      params: Promise.resolve({ id }),
-    });
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"write is OWNER-only"约束已放开。
 
   it("hard-deletes the server and cascades agent bindings", async () => {
     const { DELETE } = await import("./route");

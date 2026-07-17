@@ -11,15 +11,14 @@
  *     store it verbatim. It is NEVER returned in any response.
  *
  * GET /api/admin/mcp
- *   - Admin-only (OWNER or ADMIN via assertIsAdmin). Returns all MCP servers.
+ *   - Admin-only (platform:access via assertPlatformAdmin). Returns all MCP servers.
  *   - Query params: scope?, teamId? for filtering.
  *   - ALWAYS strips `configEnc` from every row in the response.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { assertIsAdmin } from "@/lib/server-user";
-import { getUserHighestRole } from "@/lib/user-role";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -50,23 +49,23 @@ function badRequestResponse(msg: string): NextResponse {
 }
 
 /**
- * Gate write operations to platform admin (OWNER role only). The task spec
- * restricts create/update/delete of MCP servers to the platform admin.
+ * Gate write operations to platform admin (校验 platform:access 权限码)。
+ * M4 RBAC 平台中台:替换原"任意团队 OWNER"的松散检查为严格平台管理员身份。
  *
- * SECURITY: role is derived from the database via `getUserHighestRole` — the
- * `x-user-role` request header is never trusted.
+ * SECURITY: 通过 assertPlatformAdmin(req) 校验权限码,以 DB 为准,
+ * 不信任 x-user-role header。
  *
- * Returns `{ ok: true, userId }` when the caller is OWNER, `{ ok: false,
- * authed: true }` when authenticated-but-not-owner (→ 403), and `{ ok: false,
- * authed: false }` when no auth header is present (→ 401).
+ * Returns `{ ok: true, userId }` when caller has platform:access,
+ * `{ ok: false, authed: true }` when authenticated-but-not-platform-admin (→ 403),
+ * and `{ ok: false, authed: false }` when no auth header (→ 401).
  */
-async function checkOwner(req: NextRequest): Promise<
+async function checkPlatformAdmin(req: NextRequest): Promise<
   { ok: true; userId: string } | { ok: false; authed: boolean }
 > {
   const userId = req.headers.get("x-user-id");
   if (!userId) return { ok: false, authed: false };
-  const role = await getUserHighestRole(userId);
-  if (role !== "OWNER") return { ok: false, authed: true };
+  const admin = await assertPlatformAdmin(req);
+  if (!admin) return { ok: false, authed: true };
   return { ok: true, userId };
 }
 
@@ -89,7 +88,7 @@ function stripConfig<T extends { configEnc?: string }>(server: T): Omit<T, "conf
 // -----------------------------------------------------------------------------
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const owner = await checkOwner(req);
+  const owner = await checkPlatformAdmin(req);
   if (!owner.ok) {
     return owner.authed ? forbiddenResponse() : unauthorizedResponse();
   }
@@ -160,7 +159,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 // -----------------------------------------------------------------------------
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const admin = await assertIsAdmin(req);
+  const admin = await assertPlatformAdmin(req);
   if (!admin) {
     if (!req.headers.get("x-user-id")) return unauthorizedResponse();
     return forbiddenResponse();

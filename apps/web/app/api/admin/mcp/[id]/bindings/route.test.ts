@@ -68,6 +68,20 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** M4:resolve platform_admin SysRole(由 seed 提供);不存在则失败。 */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
+
 async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<{ userId: string; teamId: string }> {
   const username = uniqueName(role.toLowerCase());
   const user = await prisma.user.create({
@@ -77,6 +91,11 @@ async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<{ userId: s
     data: { name: uniqueName(`team-${role.toLowerCase()}`), ownerUserId: user.id },
   });
   await prisma.teamMember.create({ data: { teamId: team.id, userId: user.id, role } });
+  // M4 RBAC 平台中台:OWNER/ADMIN 测试用例需要绑 platform_admin 才能通过鉴权
+  if (role === "OWNER" || role === "ADMIN") {
+    const roleId = await getPlatformAdminRoleId();
+    await prisma.userRole.create({ data: { userId: user.id, roleId } });
+  }
   return { userId: user.id, teamId: team.id };
 }
 
@@ -107,15 +126,8 @@ describe("PATCH /api/admin/mcp/[id]/bindings", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 for ADMIN (OWNER-only)", async () => {
-    const { PATCH } = await import("./route");
-    const { userId } = await makeUser("ADMIN");
-    const id = await makeServer();
-    const res = await PATCH(makePatchReq(id, { callerId: userId, body: { bindings: [] } }), {
-      params: Promise.resolve({ id }),
-    });
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"ADMIN 调 PATCH 应 403(OWNER-only)"约束已放开——
+  // 任何绑 platform_admin 的用户都可调 PATCH,见 route.ts ownerGate → assertPlatformAdmin。
 
   it("returns 404 when server does not exist", async () => {
     const { PATCH } = await import("./route");

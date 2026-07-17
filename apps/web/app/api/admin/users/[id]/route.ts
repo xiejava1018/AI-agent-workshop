@@ -26,12 +26,16 @@
 //   - Returns: { id, deleted: true }
 //
 // SECURITY: `x-user-id` is trusted (set by middleware from the verified JWT),
-// but `x-user-role` is NEVER trusted — the caller's role is always re-derived
-// from the database via `getUserHighestRole`.
+// but `x-user-role` is NEVER trusted — the caller's identity is always re-derived
+// from the database via assertPlatformAdmin (校验 platform:access 权限码)。
+//
+// M4 RBAC 平台中台:用户 disable/enable 收紧为 platform_admin 专属操作
+// (与 /api/v1/users/[id]/disable 一致)。原先"团队 OWNER/ADMIN 可管本团队用户启停"
+// 的能力由 /api/team/* 团队内成员管理接口保留;此路由是平台层面的治理动作。
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getUserHighestRole } from "@/lib/server-user";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 function unauthorizedResponse(): NextResponse {
   return NextResponse.json({ error: "auth required" }, { status: 401 });
@@ -50,44 +54,17 @@ function notFoundResponse(): NextResponse {
 }
 
 /**
- * Resolve the caller from `x-user-id`, returning { callerId, callerRole } for
- * an admin, or null (with a flag distinguishing 401 vs 403) otherwise.
- *
- * SECURITY: `x-user-id` is the only trusted header. The role is re-derived
- * from the DB so a forged `x-user-role` cannot elevate a non-admin.
+ * Resolve the caller and require platform admin (校验 platform:access)。
+ * SECURITY: x-user-id 是唯一可信 header,角色以 DB 为准。
  */
 async function resolveAdmin(
   req: NextRequest
-): Promise<
-  | { ok: true; callerId: string; callerRole: "OWNER" | "ADMIN" }
-  | { ok: false; status: 401 | 403 }
-> {
+): Promise<{ ok: true; callerId: string } | { ok: false; status: 401 | 403 }> {
   const callerId = req.headers.get("x-user-id");
   if (!callerId) return { ok: false, status: 401 };
-  const callerRole = await getUserHighestRole(callerId);
-  if (callerRole !== "OWNER" && callerRole !== "ADMIN") {
-    return { ok: false, status: 403 };
-  }
-  return { ok: true, callerId, callerRole };
-}
-
-/**
- * Role rank for outranking comparisons: OWNER(2) > ADMIN(1) > MEMBER(0).
- * A caller may only act on a target whose rank is strictly less than or equal
- * to their own, EXCEPT on destructive/disable actions where an ADMIN may not
- * touch an OWNER at all.
- */
-function roleRank(role: "OWNER" | "ADMIN" | "MEMBER" | null): number {
-  switch (role) {
-    case "OWNER":
-      return 2;
-    case "ADMIN":
-      return 1;
-    case "MEMBER":
-      return 0;
-    default:
-      return -1;
-  }
+  const admin = await assertPlatformAdmin(req);
+  if (!admin) return { ok: false, status: 403 };
+  return { ok: true, callerId };
 }
 
 export async function PATCH(
@@ -98,7 +75,7 @@ export async function PATCH(
   if (!admin.ok) {
     return admin.status === 401 ? unauthorizedResponse() : forbiddenResponse();
   }
-  const { callerId, callerRole } = admin;
+  const { callerId } = admin;
 
   const { id: targetId } = await params;
 
@@ -116,8 +93,8 @@ export async function PATCH(
     return badRequestResponse("action must be 'disable' or 'enable'");
   }
 
-  // Prevent self-disable/self-enable: an admin managing their own status this
-  // way is a footgun (self-disable = lockout). Block it explicitly.
+  // Prevent self-disable/self-enable: a platform admin managing their own
+  // status this way is a footgun (self-disable = lockout). Block it explicitly.
   if (targetId === callerId) {
     return badRequestResponse("cannot change your own status");
   }
@@ -128,11 +105,20 @@ export async function PATCH(
   });
   if (!target) return notFoundResponse();
 
-  // Authorization: an ADMIN must not disable/enable an OWNER. An OWNER can
-  // act on anyone except themselves (already blocked above).
-  const targetRole = await getUserHighestRole(targetId);
-  if (callerRole === "ADMIN" && roleRank(targetRole) >= roleRank(callerRole)) {
-    return forbiddenResponse();
+  // M4 RBAC 平台中台:platform_admin 可 disable/enable 任何用户,但不允许
+  // 把自己 disable(防锁死,已在上文拦截),也不允许 disable 另一位 platform_admin
+  // (避免治理层全被误禁导致无平台管理员)。enable 不限制。
+  const platformAdminRole = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (action === "disable" && platformAdminRole) {
+    const isTargetPlatformAdmin = await prisma.userRole.findUnique({
+      where: { userId_roleId: { userId: targetId, roleId: platformAdminRole.id } },
+    });
+    if (isTargetPlatformAdmin) {
+      return forbiddenResponse();
+    }
   }
 
   const disabled = action === "disable";
@@ -153,7 +139,7 @@ export async function DELETE(
   if (!admin.ok) {
     return admin.status === 401 ? unauthorizedResponse() : forbiddenResponse();
   }
-  const { callerId, callerRole } = admin;
+  const { callerId } = admin;
 
   const { id: targetId } = await params;
 
@@ -169,16 +155,19 @@ export async function DELETE(
   });
   if (!target) return notFoundResponse();
 
-  // Never delete an OWNER — preserves the "at least one owner" invariant
-  // without a fragile count-based check. OWNER deletion is a transfer-role-
-  // first operation, not a direct delete.
-  const targetRole = await getUserHighestRole(targetId);
-  if (targetRole === "OWNER") {
-    return forbiddenResponse();
-  }
-  // An ADMIN may not delete another ADMIN either (equal rank).
-  if (callerRole === "ADMIN" && targetRole === "ADMIN") {
-    return forbiddenResponse();
+  // M4 RBAC 平台中台:保护"最后一位 platform_admin"——不允许删
+  // 持有 platform_admin 角色的用户(防治理层被自己误删导致锁死)。
+  const platformAdminRole = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (platformAdminRole) {
+    const isTargetPlatformAdmin = await prisma.userRole.findUnique({
+      where: { userId_roleId: { userId: targetId, roleId: platformAdminRole.id } },
+    });
+    if (isTargetPlatformAdmin) {
+      return forbiddenResponse();
+    }
   }
 
   // Hard delete. TeamMember.userId has ON DELETE RESTRICT, so remove the

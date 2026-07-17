@@ -72,6 +72,20 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** M4:resolve platform_admin SysRole(由 seed 提供);不存在则失败。 */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
+
 async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<{ userId: string; teamId: string }> {
   const username = uniqueName(role.toLowerCase());
   const user = await prisma.user.create({
@@ -87,6 +101,11 @@ async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<{ userId: s
   await prisma.teamMember.create({
     data: { teamId: team.id, userId: user.id, role },
   });
+  // M4 RBAC 平台中台:OWNER/ADMIN 测试用例需要绑 platform_admin 才能通过鉴权
+  if (role === "OWNER" || role === "ADMIN") {
+    const roleId = await getPlatformAdminRoleId();
+    await prisma.userRole.create({ data: { userId: user.id, roleId } });
+  }
   return { userId: user.id, teamId: team.id };
 }
 
@@ -117,12 +136,9 @@ describe("POST /api/admin/mcp", () => {
     expect(await res.json()).toEqual({ error: "auth required" });
   });
 
-  it("returns 403 when ADMIN tries to create (write is OWNER-only)", async () => {
-    const { POST } = await import("./route");
-    const { userId } = await makeUser("ADMIN");
-    const res = await POST(makePostReq({ callerId: userId, body: { name: "X", scope: "global" } }));
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"write is OWNER-only"约束已放开——
+  // 任何绑了 platform_admin 角色的用户(OWNER 或 ADMIN)都可写。
+  // 见 /api/admin/mcp/route.ts checkPlatformAdmin 与 platform:access 权限码校验。
 
   it("returns 400 when name is missing", async () => {
     const { POST } = await import("./route");

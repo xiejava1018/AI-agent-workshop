@@ -25,7 +25,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getUserHighestRole } from "@/lib/server-user";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -45,20 +45,16 @@ function notFoundResponse(): NextResponse {
   return NextResponse.json({ error: "not found" }, { status: 404 });
 }
 
-/** Resolve the caller and require platform OWNER or ADMIN. */
+/** Resolve the caller and require platform admin (校验 platform:access 权限码)。
+ * M4 RBAC 平台中台:替换原"任意团队 OWNER/ADMIN"的松散检查为严格平台管理员身份。 */
 async function resolvePlatformAdmin(
   req: NextRequest
-): Promise<
-  | { ok: true; callerId: string; callerRole: "OWNER" | "ADMIN" }
-  | { ok: false; status: 401 | 403 }
-> {
+): Promise<{ ok: true; callerId: string } | { ok: false; status: 401 | 403 }> {
   const callerId = req.headers.get("x-user-id");
   if (!callerId) return { ok: false, status: 401 };
-  const callerRole = await getUserHighestRole(callerId);
-  if (callerRole !== "OWNER" && callerRole !== "ADMIN") {
-    return { ok: false, status: 403 };
-  }
-  return { ok: true, callerId, callerRole };
+  const admin = await assertPlatformAdmin(req);
+  if (!admin) return { ok: false, status: 403 };
+  return { ok: true, callerId };
 }
 
 // -----------------------------------------------------------------------------
@@ -129,10 +125,12 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
-  const callerId = req.headers.get("x-user-id");
-  if (!callerId) return unauthorizedResponse();
-  const callerRole = await getUserHighestRole(callerId);
-  if (callerRole !== "OWNER") return forbiddenResponse();
+  // M4 RBAC 平台中台:平台管理员才能更新团队(原"任意团队 OWNER"已收紧)
+  const admin = await resolvePlatformAdmin(req);
+  if (!admin.ok) {
+    return admin.status === 401 ? unauthorizedResponse() : forbiddenResponse();
+  }
+  const callerId = admin.callerId;
 
   const { id: teamId } = await params;
 
@@ -194,10 +192,11 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
-  const callerId = req.headers.get("x-user-id");
-  if (!callerId) return unauthorizedResponse();
-  const callerRole = await getUserHighestRole(callerId);
-  if (callerRole !== "OWNER") return forbiddenResponse();
+  // M4 RBAC 平台中台:平台管理员才能删除团队
+  const admin = await resolvePlatformAdmin(req);
+  if (!admin.ok) {
+    return admin.status === 401 ? unauthorizedResponse() : forbiddenResponse();
+  }
 
   const { id: teamId } = await params;
 

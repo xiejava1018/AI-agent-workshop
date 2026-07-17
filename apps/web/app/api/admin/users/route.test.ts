@@ -58,6 +58,10 @@ async function cleanTestRows(): Promise<void> {
   await prisma.team.deleteMany({
     where: { name: { startsWith: TEST_TEAM_PREFIX } },
   });
+  // M4:先清 UserRole 绑定的测试用户
+  await prisma.userRole.deleteMany({
+    where: { user: { username: { startsWith: TEST_USERNAME_PREFIX } } },
+  });
   await prisma.user.deleteMany({
     where: { username: { startsWith: TEST_USERNAME_PREFIX } },
   });
@@ -71,6 +75,23 @@ afterAll(async () => {
   await cleanTestRows();
   await prisma.$disconnect();
 });
+
+/**
+ * Helper:resolve platform_admin SysRole(由 prisma/seed/roles.ts seed,
+ * 已存在);不存在则失败(说明种子未跑)。
+ */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
 
 async function makeAdminUser(): Promise<{ userId: string; teamId: string }> {
   const username = uniqueUsername("admin");
@@ -90,6 +111,9 @@ async function makeAdminUser(): Promise<{ userId: string; teamId: string }> {
   await prisma.teamMember.create({
     data: { teamId: team.id, userId: user.id, role: "OWNER" },
   });
+  // M4 RBAC 平台中台:admin 必须绑 platform_admin 全局角色(原"任意团队 OWNER"已收紧)
+  const roleId = await getPlatformAdminRoleId();
+  await prisma.userRole.create({ data: { userId: user.id, roleId } });
   return { userId: user.id, teamId: team.id };
 }
 

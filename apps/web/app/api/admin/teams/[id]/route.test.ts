@@ -47,6 +47,20 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** M4:resolve platform_admin SysRole(由 seed 提供);不存在则失败。 */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
+
 async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<string> {
   const user = await prisma.user.create({
     data: {
@@ -59,6 +73,11 @@ async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<string> {
     data: { name: uniqueName(`home-${role.toLowerCase()}`), ownerUserId: user.id },
   });
   await prisma.teamMember.create({ data: { teamId: team.id, userId: user.id, role } });
+  // M4 RBAC 平台中台:OWNER/ADMIN 测试用例需要绑 platform_admin 才能通过鉴权
+  if (role === "OWNER" || role === "ADMIN") {
+    const roleId = await getPlatformAdminRoleId();
+    await prisma.userRole.create({ data: { userId: user.id, roleId } });
+  }
   return user.id;
 }
 
@@ -115,14 +134,7 @@ describe("GET /api/admin/teams/[id]", () => {
 });
 
 describe("PUT /api/admin/teams/[id]", () => {
-  it("returns 403 for ADMIN (OWNER-only)", async () => {
-    const { PUT } = await import("./route");
-    const adminId = await makeUser("ADMIN");
-    const ownerId = await makeUser("OWNER");
-    const teamId = await makeTeam(ownerId);
-    const res = await PUT(req("PUT", adminId, { name: "New" }), paramsFor(teamId));
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"修改团队是 OWNER-only"约束已放开。
 
   it("updates name and quota fields", async () => {
     const { PUT } = await import("./route");
@@ -157,14 +169,7 @@ describe("PUT /api/admin/teams/[id]", () => {
 });
 
 describe("DELETE /api/admin/teams/[id]", () => {
-  it("returns 403 for ADMIN (OWNER-only)", async () => {
-    const { DELETE } = await import("./route");
-    const adminId = await makeUser("ADMIN");
-    const ownerId = await makeUser("OWNER");
-    const teamId = await makeTeam(ownerId);
-    const res = await DELETE(req("DELETE", adminId), paramsFor(teamId));
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"删除团队是 OWNER-only"约束已放开。
 
   it("hard-deletes team and cascades members/projects/invite-links", async () => {
     const { DELETE } = await import("./route");

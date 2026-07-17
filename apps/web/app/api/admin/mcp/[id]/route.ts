@@ -14,8 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { assertIsAdmin } from "@/lib/server-user";
-import { getUserHighestRole } from "@/lib/user-role";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -49,20 +48,18 @@ function stripConfig<T extends { configEnc?: string }>(server: T): Omit<T, "conf
   return rest;
 }
 
-/** Read access: admin (OWNER or ADMIN) via assertIsAdmin. */
+/** Read access: platform admin (platform:access) via assertPlatformAdmin. */
 async function readGate(req: NextRequest): Promise<{ ok: true } | { authed: boolean }> {
-  const admin = await assertIsAdmin(req);
+  const admin = await assertPlatformAdmin(req);
   if (admin) return { ok: true };
   return { authed: Boolean(req.headers.get("x-user-id")) };
 }
 
-/** Write access: platform admin (OWNER) only. */
+/** Write access: platform admin only (同 readGate,统一语义)。 */
 async function ownerGate(req: NextRequest): Promise<{ ok: true; userId: string } | { authed: boolean }> {
-  const userId = req.headers.get("x-user-id");
-  if (!userId) return { authed: false };
-  const role = await getUserHighestRole(userId);
-  if (role !== "OWNER") return { authed: true };
-  return { ok: true, userId };
+  const admin = await assertPlatformAdmin(req);
+  if (admin) return { ok: true, userId: admin.userId };
+  return { authed: Boolean(req.headers.get("x-user-id")) };
 }
 
 function isMcpScope(v: unknown): v is McpScope {

@@ -4,14 +4,16 @@
  * Task 4.5 — MCP Server CRUD: agent-to-MCP binding management.
  *
  * PATCH /api/admin/mcp/[id]/bindings
- *   - OWNER-only. Replace ALL AgentMcpBinding rows for this McpServer.
+ *   - Platform admin only (platform:access via assertPlatformAdmin).
+ *     M4 RBAC 平台中台:替换原"任意团队 OWNER"的松散检查。
+ *   - Replace ALL AgentMcpBinding rows for this McpServer.
  *   - Body: { bindings: [{ agentId, mode: "inherit" | "include" | "exclude" }] }
  *   - Returns the resulting bindings for the server.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getUserHighestRole } from "@/lib/user-role";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +41,9 @@ function badRequestResponse(msg: string): NextResponse {
 }
 
 async function ownerGate(req: NextRequest): Promise<{ ok: true; userId: string } | { authed: boolean }> {
-  const userId = req.headers.get("x-user-id");
-  if (!userId) return { authed: false };
-  const role = await getUserHighestRole(userId);
-  if (role !== "OWNER") return { authed: true };
-  return { ok: true, userId };
+  const admin = await assertPlatformAdmin(req);
+  if (admin) return { ok: true, userId: admin.userId };
+  return { authed: Boolean(req.headers.get("x-user-id")) };
 }
 
 function isBindingMode(v: unknown): v is BindingMode {

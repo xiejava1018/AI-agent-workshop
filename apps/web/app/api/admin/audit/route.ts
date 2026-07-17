@@ -4,7 +4,7 @@
  * Task 4.6 — Audit log query & append API.
  *
  * GET /api/admin/audit
- *   - Admin-only (OWNER or ADMIN via assertIsAdmin). Read-only, low risk.
+ *   - Admin-only (platform:access via assertPlatformAdmin). Read-only, low risk.
  *   - Query params (all optional):
  *       userId, action, resourceType, resourceId,
  *       from (ISO date), to (ISO date),
@@ -31,7 +31,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { assertIsAdmin } from "@/lib/server-user";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -84,7 +84,7 @@ function parseIsoDate(raw: string | null): Date | null {
 // -----------------------------------------------------------------------------
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const admin = await assertIsAdmin(req);
+  const admin = await assertPlatformAdmin(req);
   if (!admin) {
     if (!req.headers.get("x-user-id")) return unauthorizedResponse();
     return forbiddenResponse();

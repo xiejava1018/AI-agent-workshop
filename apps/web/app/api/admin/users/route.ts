@@ -26,7 +26,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { assertIsAdmin, getUserHighestRole } from "@/lib/server-user";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 const BCRYPT_COST = 10;
 const PASSWORD_BYTES = 16; // 16 random bytes → 22-char base64url string
@@ -45,18 +45,13 @@ function generateInitialPassword(): string {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Mirror the M2.x convention: distinguish 401 (no auth headers) from 403
-  // (authenticated but not admin) so legitimate clients can tell whether to
-  // re-login vs. escalate.
-  //
-  // SECURITY: `x-user-role` on the request is never trusted. We derive the
-  // caller's role from the database via `getUserHighestRole`, matching the
-  // pattern used in `app/api/agent/[id]/route.ts`. An attacker who appends
-  // `x-user-role: OWNER` to a request cannot bypass the gate.
+  // M4 RBAC 平台中台:鉴权从 assertIsAdmin(任意团队 OWNER/ADMIN)切换到
+  // assertPlatformAdmin(校验 platform:access 权限码)。
+  // 修复了"任何团队 owner 都能调 /api/admin/*"的隔离缺口。
   const callerId = req.headers.get("x-user-id");
   if (!callerId) return unauthorizedResponse();
-  const callerRole = await getUserHighestRole(callerId);
-  if (callerRole !== "OWNER" && callerRole !== "ADMIN") return forbiddenResponse();
+  const callerIsPlatformAdmin = await assertPlatformAdmin(req);
+  if (!callerIsPlatformAdmin) return forbiddenResponse();
 
   let body: unknown;
   try {
@@ -178,7 +173,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const admin = await assertIsAdmin(req);
+  const admin = await assertPlatformAdmin(req);
   if (!admin) {
     // Distinguish missing-auth (401) from non-admin (403) for clarity.
     if (!req.headers.get("x-user-id")) return unauthorizedResponse();

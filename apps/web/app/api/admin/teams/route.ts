@@ -4,7 +4,7 @@
  * Task 4.3 — Team hybrid lifecycle (create / list).
  *
  * POST /api/admin/teams — create a team
- *   - RBAC: platform OWNER only (getUserHighestRole === "OWNER").
+ *   - RBAC: platform admin (platform:access via assertPlatformAdmin).
  *   - Body: { name, ownerUserId }
  *   - Creates the Team with ownerUserId as its owner AND an OWNER-role
  *     TeamMember row for that user, so downstream team-level admin checks
@@ -13,17 +13,18 @@
  *   - Returns the created team (201).
  *
  * GET /api/admin/teams — list teams
- *   - RBAC: platform admin (OWNER or ADMIN via assertIsAdmin).
+ *   - RBAC: platform admin (platform:access via assertPlatformAdmin).
  *   - Query params: page? (1-based), limit? (default 50, max 100).
  *   - Returns teams with member count and owner info.
  *
  * SECURITY: `x-user-id` is trusted (middleware sets it from the verified JWT);
- * `x-user-role` is NEVER trusted — the caller's role is re-derived from the DB.
+ * `x-user-role` is NEVER trusted — the caller's platform admin status is
+ * re-derived from the DB via assertPlatformAdmin.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { assertIsAdmin, getUserHighestRole } from "@/lib/server-user";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -49,8 +50,9 @@ function badRequestResponse(msg: string): NextResponse {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const callerId = req.headers.get("x-user-id");
   if (!callerId) return unauthorizedResponse();
-  const callerRole = await getUserHighestRole(callerId);
-  if (callerRole !== "OWNER") return forbiddenResponse();
+  // M4 RBAC 平台中台:平台管理员才能创建团队(原"任意团队 OWNER"已收紧)
+  const callerIsPlatformAdmin = await assertPlatformAdmin(req);
+  if (!callerIsPlatformAdmin) return forbiddenResponse();
 
   let body: unknown;
   try {
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 // -----------------------------------------------------------------------------
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const admin = await assertIsAdmin(req);
+  const admin = await assertPlatformAdmin(req);
   if (!admin) {
     if (!req.headers.get("x-user-id")) return unauthorizedResponse();
     return forbiddenResponse();

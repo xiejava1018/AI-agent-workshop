@@ -67,6 +67,20 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** M4:resolve platform_admin SysRole(由 seed 提供);不存在则失败。 */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
+
 async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<string> {
   const username = `${USER_PREFIX}${role.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`;
   const user = await prisma.user.create({
@@ -80,6 +94,11 @@ async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<string> {
     data: { name: `${USER_PREFIX}team-${Math.random().toString(36).slice(2, 8)}`, ownerUserId: user.id },
   });
   await prisma.teamMember.create({ data: { teamId: team.id, userId: user.id, role } });
+  // M4 RBAC 平台中台:OWNER/ADMIN 测试用例需要绑 platform_admin 才能通过鉴权
+  if (role === "OWNER" || role === "ADMIN") {
+    const roleId = await getPlatformAdminRoleId();
+    await prisma.userRole.create({ data: { userId: user.id, roleId } });
+  }
   return user.id;
 }
 

@@ -52,6 +52,20 @@ afterAll(async () => {
 });
 
 /** Create a standalone user with a given platform role (via a throwaway team). */
+/** M4:resolve platform_admin SysRole(由 seed 提供);不存在则失败。 */
+async function getPlatformAdminRoleId(): Promise<string> {
+  const r = await prisma.sysRole.findUnique({
+    where: { code: "platform_admin" },
+    select: { id: true },
+  });
+  if (!r) {
+    throw new Error(
+      "platform_admin SysRole not seeded; run `pnpm tsx prisma/seed/roles.ts` first"
+    );
+  }
+  return r.id;
+}
+
 async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<string> {
   const user = await prisma.user.create({
     data: {
@@ -66,6 +80,12 @@ async function makeUser(role: "OWNER" | "ADMIN" | "MEMBER"): Promise<string> {
   await prisma.teamMember.create({
     data: { teamId: team.id, userId: user.id, role },
   });
+  // M4 RBAC 平台中台:OWNER/ADMIN 测试用例需要绑 platform_admin 才能通过鉴权
+  // (原"任意团队 OWNER/ADMIN"已收紧为"校验 platform:access")
+  if (role === "OWNER" || role === "ADMIN") {
+    const roleId = await getPlatformAdminRoleId();
+    await prisma.userRole.create({ data: { userId: user.id, roleId } });
+  }
   return user.id;
 }
 
@@ -107,15 +127,8 @@ describe("POST /api/admin/teams", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when caller is ADMIN (OWNER-only)", async () => {
-    const { POST } = await import("./route");
-    const adminId = await makeUser("ADMIN");
-    const ownerTarget = await makePlainUser();
-    const res = await POST(
-      makePostReq({ callerId: adminId, body: { name: uniqueName("t"), ownerUserId: ownerTarget } }),
-    );
-    expect(res.status).toBe(403);
-  });
+  // M4 RBAC 平台中台:旧"创建团队是 OWNER-only"约束已放开——
+  // 任何绑了 platform_admin 角色的用户(OWNER 或 ADMIN)都可创建团队。
 
   it("returns 400 when name is missing", async () => {
     const { POST } = await import("./route");

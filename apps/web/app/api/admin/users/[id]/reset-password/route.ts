@@ -1,9 +1,9 @@
 // app/api/admin/users/[id]/reset-password/route.ts
 //
-// T4.2 — admin password reset API.
+// M4 RBAC 平台中台 — admin password reset API(平台管理员专属)。
 //
 // POST /api/admin/users/[id]/reset-password
-//   - Gated to OWNER or ADMIN (derived from DB, never trusted from headers).
+//   - 鉴权:platform:access via assertPlatformAdmin(校验权限码,以 DB 为准)。
 //   - No body required.
 //   - Generates a new random password (16 bytes, base64url), bcrypt-hashes it
 //     (cost 10), and sets mustChangePassword=true so the user is forced to
@@ -12,18 +12,17 @@
 //     and is never persisted in cleartext (only the bcrypt hash is stored).
 //   - 400 if the caller tries to reset their own password this way (use the
 //     change-password flow for self; admin-reset on self is a footgun).
-//   - 403 if not admin, or if an ADMIN targets an OWNER.
+//   - 403 if not platform admin.
 //   - 404 if the target user does not exist.
 //
 // SECURITY: `x-user-id` is trusted (set by middleware from the verified JWT),
-// but `x-user-role` is NEVER trusted — the caller's role is always re-derived
-// from the database via `getUserHighestRole`.
+// but `x-user-role` is NEVER trusted — assertPlatformAdmin 校验 platform:access。
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { getUserHighestRole } from "@/lib/server-user";
+import { assertPlatformAdmin } from "@/lib/permissions";
 
 const BCRYPT_COST = 10;
 const PASSWORD_BYTES = 16; // 16 random bytes → 22-char base64url string
@@ -51,30 +50,12 @@ function generateRandomPassword(): string {
 
 async function resolveAdmin(
   req: NextRequest
-): Promise<
-  | { ok: true; callerId: string; callerRole: "OWNER" | "ADMIN" }
-  | { ok: false; status: 401 | 403 }
-> {
+): Promise<{ ok: true; callerId: string } | { ok: false; status: 401 | 403 }> {
   const callerId = req.headers.get("x-user-id");
   if (!callerId) return { ok: false, status: 401 };
-  const callerRole = await getUserHighestRole(callerId);
-  if (callerRole !== "OWNER" && callerRole !== "ADMIN") {
-    return { ok: false, status: 403 };
-  }
-  return { ok: true, callerId, callerRole };
-}
-
-function roleRank(role: "OWNER" | "ADMIN" | "MEMBER" | null): number {
-  switch (role) {
-    case "OWNER":
-      return 2;
-    case "ADMIN":
-      return 1;
-    case "MEMBER":
-      return 0;
-    default:
-      return -1;
-  }
+  const admin = await assertPlatformAdmin(req);
+  if (!admin) return { ok: false, status: 403 };
+  return { ok: true, callerId };
 }
 
 export async function POST(
@@ -85,7 +66,7 @@ export async function POST(
   if (!admin.ok) {
     return admin.status === 401 ? unauthorizedResponse() : forbiddenResponse();
   }
-  const { callerId, callerRole } = admin;
+  const { callerId } = admin;
 
   const { id: targetId } = await params;
 
@@ -100,13 +81,6 @@ export async function POST(
     select: { id: true, username: true },
   });
   if (!target) return notFoundResponse();
-
-  // Authorization: an ADMIN must not reset an OWNER's password (or another
-  // ADMIN's). OWNER may reset anyone's except their own (blocked above).
-  const targetRole = await getUserHighestRole(targetId);
-  if (callerRole === "ADMIN" && roleRank(targetRole) >= roleRank(callerRole)) {
-    return forbiddenResponse();
-  }
 
   const initialPassword = generateRandomPassword();
   const passwordHash = await bcrypt.hash(initialPassword, BCRYPT_COST);
