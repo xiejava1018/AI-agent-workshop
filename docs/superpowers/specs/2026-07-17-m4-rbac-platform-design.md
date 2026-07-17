@@ -2,6 +2,8 @@
 comet_change: m4-rbac-platform
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-17-m4-rbac-platform
+status: final
 ---
 
 # 技术设计：M4 RBAC 平台中台 — 用户/角色/权限码/菜单管理

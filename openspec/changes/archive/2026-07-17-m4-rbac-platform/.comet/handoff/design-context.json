@@ -1,0 +1,14 @@
+{
+  "change": "m4-rbac-platform",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "711b469cf5382a553e10d0b57bbe0b72a9c56590371a71d0593abb1888edec56",
+  "files": [
+    { "path": "openspec/changes/m4-rbac-platform/proposal.md", "sha256": "aa192a4084dfc1c8bf0b420594ba6d965ebc474d90dde33f23b36141f2bb31cc" },
+    { "path": "openspec/changes/m4-rbac-platform/design.md", "sha256": "571a9eb9107d15557e59235481aff67f03c5c53d3e2d517b0288a96dd4f9b829" },
+    { "path": "openspec/changes/m4-rbac-platform/tasks.md", "sha256": "1e2b66ca9c88272a4408335fea7ec4b695ab7e46a593580f10dbbee00523de12" },
+    { "path": "openspec/changes/m4-rbac-platform/specs/rbac-platform/spec.md", "sha256": "435b22a293557f57215d12e656d8cfb5ec304acb23b2d9b3f6867b351d1c0b2d" }
+  ]
+}

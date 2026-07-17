@@ -1,0 +1,9 @@
+{
+  "openspec_proposal": "openspec/changes/m4-rbac-platform/proposal.md",
+  "openspec_design": "openspec/changes/m4-rbac-platform/design.md",
+  "openspec_tasks": "openspec/changes/m4-rbac-platform/tasks.md",
+  "openspec_delta_spec": "openspec/changes/m4-rbac-platform/specs/rbac-platform/spec.md",
+  "handoff_context": "openspec/changes/m4-rbac-platform/.comet/handoff/design-context.json",
+  "handoff_markdown": "openspec/changes/m4-rbac-platform/.comet/handoff/design-context.md",
+  "archive_directory": "openspec/changes/archive/2026-07-17-m4-rbac-platform"
+}
