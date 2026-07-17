@@ -102,15 +102,16 @@ export async function buildSkillInjection(
 
   // Read skill file content from filePath (validated against SKILLS_ROOT)
   let skillContent = "";
-  if (resolvedSkill.filePath) {
-    skillContent = safeReadSkillFile(resolvedSkill.filePath) ?? "";
+  const skillRecord2 = resolvedSkill as { filePath: string | null; [key: string]: unknown };
+  if (skillRecord2.filePath) {
+    skillContent = safeReadSkillFile(skillRecord2.filePath) ?? "";
   }
 
   // Write SkillInvocation audit log
   try {
     await prisma.skillInvocation.create({
       data: {
-        skillPackageId: resolvedSkill.id,
+        skillPackageId: (resolvedSkill as { id: string }).id,
         userId: userId ?? null,
         sessionId: sessionId ?? null,
       },
@@ -123,9 +124,9 @@ export async function buildSkillInjection(
   // Build injection string
   // Format compatible with disableModelInvocation skill pattern
   return [
-    `<skill>${resolvedSkill.slug}</skill>`,
-    `Skill: ${resolvedSkill.name}`,
+    `<skill>${(resolvedSkill as any).slug}</skill>`,
+    `Skill: ${(resolvedSkill as any).name}`,
     skillContent,
-    `You must follow the ${resolvedSkill.name} instructions above.`,
+    `You must follow the ${(resolvedSkill as any).name} instructions above.`,
   ].join("\n");
 }

@@ -75,7 +75,7 @@ export const MAX_DELEGATION_OUTPUT_CHARS = 4000;
  * exact string matching, so we pass the bare prefixes and the SDK removes
  * any tool whose name starts with any of the listed prefixes.
  */
-export const DELEGATION_DENYLIST = ["delegate", "remember", "setGoal", "create_employee"] as const;
+export const DELEGATION_DENYLIST: string[] = ["delegate", "remember", "setGoal", "create_employee"];
 
 // ============================================================================
 // Public types
