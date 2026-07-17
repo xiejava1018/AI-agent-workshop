@@ -27,12 +27,115 @@
 //   4. `describeSkillBlocks` — lightweight metadata for the frontend skill
 //      center visualization (T6.7 / T6.4), no file bodies attached.
 
-import {
-  buildSkillBlock,
-  readDisableModelInvocation,
-  resolveSkillPackageBySlug,
-  type SkillTenant,
-} from "./skill-invoke";
+import { readFileSync } from "fs";
+import { prisma } from "./prisma";
+import { buildSkillInjection, parseSkillCommand } from "./skill-invoke";
+
+// ---------------------------------------------------------------------------
+// Local helpers that were previously imported from skill-invoke (T5.4 era)
+// ---------------------------------------------------------------------------
+
+/** Tenant context for skill resolution. */
+export interface SkillTenant {
+  userId: string;
+  teamId: string | null;
+}
+
+/**
+ * Read the `disable-model-invocation` flag from a skill file's YAML frontmatter.
+ * Returns false when the file cannot be read.
+ */
+function readDisableModelInvocation(filePath: string): boolean {
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!match) return false;
+    const fm = match[1];
+    return /disable-model-invocation:\s*true/i.test(fm);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve a skill slug against the caller's tenant scopes.
+ * Priority: user > team > global.
+ * Returns null when the skill is not found or not visible.
+ */
+async function resolveSkillPackageBySlug(
+  slug: string,
+  tenant: SkillTenant,
+): Promise<{
+  id: string;
+  slug: string;
+  name: string;
+  filePath: string;
+  scope: string;
+  userId: string | null;
+  teamId: string | null;
+} | null> {
+  const scopesToTry: Array<{
+    scope: "user" | "team" | "global";
+    teamId: string | null;
+    userId: string | null;
+  }> = [
+    { scope: "user", teamId: null, userId: tenant.userId },
+    { scope: "team", teamId: tenant.teamId, userId: null },
+    { scope: "global", teamId: null, userId: null },
+  ];
+  for (const filter of scopesToTry) {
+    const pkg = await prisma.skillPackage.findFirst({
+      where: {
+        slug,
+        enabled: true,
+        scope: filter.scope,
+        teamId: filter.teamId,
+        userId: filter.userId,
+      },
+    });
+    if (pkg) return pkg as unknown as { id: string; slug: string; name: string; filePath: string; scope: string; userId: string | null; teamId: string | null };
+  }
+  return null;
+}
+
+/**
+ * Build an authoritative `<skill>` injection block from a skill file on disk.
+ * Reads the file content and wraps it in a `<skill>` tag.
+ */
+function buildSkillBlock(opts: { name: string; filePath: string; args: string }): string {
+  try {
+    const content = readFileSync(opts.filePath, "utf-8");
+    return `<skill name="${opts.name}">\n${content}\n</skill>`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Handle the explicit `/skill:<slug>` command path (T5.4).
+ * Parses the text for a slash-or-at prefix, resolves the skill, and returns
+ * the expanded text. Returns null when the text is not a skill command.
+ *
+ * NOTE: this function is kept in skill-block.ts rather than skill-invoke.ts to
+ * avoid a circular dependency (skill-invoke.ts does not import skill-block.ts).
+ */
+export async function invokeSkill(opts: {
+  text: string;
+  userId: string;
+  teamId: string | null;
+  sessionId: string;
+}): Promise<{ expandedText: string } | null> {
+  const parsed = parseSkillCommand(opts.text);
+  if (!parsed) return null;
+  const injection = await buildSkillInjection({
+    skillName: parsed.skillName,
+    teamId: opts.teamId,
+    userId: opts.userId,
+    sessionId: opts.sessionId,
+  });
+  if (!injection) return null;
+  return { expandedText: injection };
+}
 
 /** A single `<skill>` block parsed out of a message. */
 export interface ParsedSkillBlock {

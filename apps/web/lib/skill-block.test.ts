@@ -16,6 +16,14 @@ const { skillRows } = vi.hoisted(() => ({
 vi.mock("./prisma", () => ({
   prisma: {
     skillPackage: {
+      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        return skillRows.find((row) => {
+          for (const [k, v] of Object.entries(where)) {
+            if (row[k] !== v) return false;
+          }
+          return true;
+        }) ?? null;
+      }),
       findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
         return skillRows.filter((row) => {
           for (const [k, v] of Object.entries(where)) {

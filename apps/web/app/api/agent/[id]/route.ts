@@ -7,7 +7,7 @@ import { assertCanReadSessionScoped } from "@/lib/team-auth";
 import { auditLog } from "@/lib/audit-log";
 import { getUserHighestRole } from "@/lib/user-role";
 import { enforceNotMustChange } from "@/lib/must-change-password";
-import { invokeSkill } from "@/lib/skill-invoke";
+import { invokeSkill } from "@/lib/skill-block";
 import { expandModelSkillBlocks, type SkillBlockHint } from "@/lib/skill-block";
 
 interface SkillExpansion {
@@ -91,7 +91,7 @@ export async function POST(
 
   try {
     const rawBody = await req.json() as { type: string; [key: string]: unknown };
-    const body = await maybeExpandSkillCommand(rawBody, userId, meta?.teamId ?? null, id);
+    const { body } = await maybeExpandSkillCommand(rawBody, userId, meta?.teamId ?? null, id);
 
     // Fast path: already-running session
     const existing = getRpcSession(id);
