@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-17
+goal: 为 AI Agent Workshop 提供标准 RBAC 中台能力(用户/角色/权限码/菜单管理),前端动态菜单 + v-auth 按钮级权限,与
+  M3 Vue3 工作台正交
