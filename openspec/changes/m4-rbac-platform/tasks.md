@@ -2,8 +2,10 @@
 
 > change: m4-rbac-platform
 > 日期:2026-07-17
-> 状态:open(等待 brainstorming 确认设计稿完成 → 进 build 阶段)
+> 状态:build 收尾完成(清理 + 测试),待 verify(含 E2E 缺口评估)
 > 配套:proposal.md / design.md / specs/rbac-platform/spec.md
+
+> **build 收尾快照(2026-07-17, feature/20260717/m4-rbac-platform):** 后端 T1-T7 + 前端核心 T8/T9 在前序 commit 已落地;本次 build 阶段做了 T10 死代码清理(permission.ts / dict / department)+ T8 前端单测补齐(v-auth + RoutePermissionValidator)。M4 自身回归锚点全绿:v1 47/47、dashboard 43/43、双 build 通过。
 
 ---
 
@@ -12,141 +14,137 @@
 - [x] B0.1 `pnpm install` 通过
 - [x] B0.2 `pnpm --filter @ai-agent-workshop/web build` 通过
 - [x] B0.3 `pnpm --filter @ai-agent-workshop/dashboard build` 通过
-- [x] B0.4 M4 `/api/v1/*` 测试 47/47 全过 + dashboard 15/15 全过(M4 回归锚点,2026-07-17 于 feature/20260717/m4-rbac-platform)
+- [x] B0.4 M4 `/api/v1/*` 测试 47/47 全过 + dashboard 测试全过(M4 回归锚点)
 
 > **已知预存在失败(out-of-scope,2026-07-17 核对):** web 完整套件有 26 个失败,**均与 M4 无关**:
 > - 25 个 `must-change-password.meta.test.ts`:要求每个写操作 admin 路由调用 `enforceNotMustChange(req)`,实际 0/17 实现 —— 历史安全债,非 M4 引入(meta 测试在 main 也存在)。M4 鉴权切换从未移除该门禁(它本就不存在)。
 > - 1 个 `prisma-models.test.ts`:M3 `agentSkillBinding` 模型 Prisma DB 层错误(环境/数据)。
-> - **决策(用户 2026-07-17 确认):** 接受为 out-of-scope,must-change-password 缺口另开 change 修复。M4 以自身 47 v1 + 15 dashboard 测试为回归锚点。
+> - **决策(用户 2026-07-17 确认):** 接受为 out-of-scope,must-change-password 缺口另开 change 修复。
 
 ---
 
-## 1. 数据模型(T1,Prisma migration)
+## 1. 数据模型(T1,Prisma migration) — ✅ 已完成(commit 10d541d)
 
-- [ ] T1.1 新增 6 个模型到 `apps/web/prisma/schema.prisma`:
-  - `SysRole`(code unique / name / desc / enabled / sort)
-  - `UserRole`(userId+roleId 复合主键,FK 到现有 User)
-  - `Permission`(code unique / module / name / description / sort)
-  - `RolePermission`(roleId+permissionId 复合主键)
-  - `SysMenu`(parentId 自引用树 / type[directory|menu|button] / meta JSON / enabled / visible)
-  - `MenuAuth`(menuId FK / mark 唯一 / sort)
-- [ ] T1.2 `User` 模型不加新字段(平台管理员用 `UserRole → SysRole.code='platform_admin'` 判定)
-- [ ] T1.3 编写 `prisma migrate dev --name add_rbac_platform` 生成迁移 SQL
-- [ ] T1.4 验证:迁移在空库 + 已有数据两种情况下均可重放
+- [x] T1.1 新增 6 个模型到 `apps/web/prisma/schema.prisma`(SysRole / UserRole / Permission / RolePermission / SysMenu / MenuAuth)
+- [x] T1.2 `User` 模型不加新字段(用 UserRole 判定 platform_admin)
+- [x] T1.3 编写 `prisma migrate dev --name add_rbac_platform` 生成迁移 SQL
+- [x] T1.4 验证:迁移可重放
 
 ---
 
-## 2. 种子数据(T2,T3,幂等)
+## 2. 种子数据(T2,T3,幂等) — ✅ 实现已完成(commit f61852f);T2.4 单测为缺口
 
-- [ ] T2.1 编写 `apps/web/prisma/seed/permissions.ts`(参考 `TF-TrailVerDev/backend/scripts/seed_permissions.py:126-149` 的 `existing → skip / else create` 模式)
-- [ ] T2.2 seed 60+ 条 Permission(模块:用户/角色/菜单/团队/数字员工/技能/MCP/会话/模型/凭据/审计/监控/平台准入)
-- [ ] T2.3 编写 `apps/web/prisma/seed/roles.ts`:upsert 3 条 SysRole(platform_admin / team_owner / member)+ 批量插入 RolePermission 绑定矩阵(详见 design §5)
-- [ ] T2.4 单测:`seed_*.ts` 第二次运行 `created_count=0`、无报错
-- [ ] T3.1 编写 `apps/web/prisma/seed/menus.ts`:upsert 4 父 + 13 子 SysMenu,每子菜单的 `meta.permissions` 列出所需权限码(对齐 UI 设计 13 屏)
-- [ ] T3.2 seed 后立即人工核对:`member` 登录后 `/api/v1/menus/user-menu` 只含工作区 4 项(防止漏权限码)
-- [ ] T3.3 防锁死迁移:`INITIAL_PLATFORM_ADMIN_USERNAME`(默认 `admin`)对应 User 自动绑 `platform_admin` 角色,若该用户不存在则跳过等首次登录
-
----
-
-## 3. 鉴权 helper(T4,核心)
-
-- [ ] T4.1 创建 `apps/web/lib/permissions.ts`,实现:
-  - `assertPlatformAdmin(req): Promise<{ userId: string } | null>`(校验 `platform:access`)
-  - `assertPermission(userId: string, code: string): Promise<boolean>`
-  - `assertAnyPermission(userId: string, ...codes: string[]): Promise<boolean>`
-  - `getUserPermissions(userId: string): Promise<string[]>`
-- [ ] T4.2 安全注释:鉴权始终查 DB,**不信任 `x-user-role` header**(沿用 `assertIsAdmin` 安全注释)
-- [ ] T4.3 单测(覆盖 ≥ 80%):
-  - `assertPermission` 真阳性 / 假阳性 / 跨角色并集 / 用户不存在
-  - `assertPlatformAdmin` 有权限码通过 / 无返回 null / 无 header 返回 null
-  - `getUserPermissions` 多角色并集去重 / 空用户返空数组
+- [x] T2.1 编写 `apps/web/prisma/seed/permissions.ts`
+- [x] T2.2 seed 60+ 条 Permission(13 模块)
+- [x] T2.3 编写 `apps/web/prisma/seed/roles.ts`:upsert 3 SysRole + RolePermission 绑定矩阵
+- [ ] T2.4 单测:`seed_*.ts` 第二次运行 `created_count=0`、无报错 — **缺口(本次未补,seed 幂等性靠 upsert 语义保证,单测留 backlog)**
+- [x] T3.1 编写 `apps/web/prisma/seed/menus.ts`:4 父 + 13 子 SysMenu
+- [ ] T3.2 seed 后人工核对 `member` user-menu 只含工作区 4 项 — **待 verify 阶段人工/E2E 核对**
+- [x] T3.3 防锁死迁移:`INITIAL_PLATFORM_ADMIN_USERNAME` 自动绑 platform_admin
 
 ---
 
-## 4. `/api/v1/*` 路由(T5)
+## 3. 鉴权 helper(T4,核心) — ✅ 已完成(commit 1cdfd74)
 
-- [ ] T5.1 `GET /api/v1/permissions`(只读全表,已登录即可)
-- [ ] T5.2 `GET /api/v1/menus/tree`(`menu:view`,完整菜单树给菜单管理页)
-- [ ] T5.3 `GET /api/v1/menus/user-menu`(已登录,按权限过滤,核心递归算法)
-- [ ] T5.4 `POST/PUT/DELETE /api/v1/menus[/:id]`(`menu:create/edit/delete`)
-- [ ] T5.5 `GET /api/v1/menus/role/:roleId`(`role:view`,返回绑定的权限码集合)
-- [ ] T5.6 `PUT /api/v1/menus/role/:roleId`(`role:assign-permission`,保存权限码集合)
-- [ ] T5.7 `GET /api/v1/roles` 分页 + `POST/PUT/DELETE /api/v1/roles[/:id]`(各需对应权限码)
-- [ ] T5.8 `GET /api/v1/users` 分页 + `POST /api/v1/users`(`user:create`,沿用现有 admin/users 的初始密码 + 强制改密机制)
-- [ ] T5.9 `PUT /api/v1/users/:id`(`user:edit`)
-- [ ] T5.10 `PUT /api/v1/users/:id/roles`(`user:assign-role`,设置用户全局角色)
-- [ ] T5.11 `PUT /api/v1/users/:id/disable`(`user:disable`)
-- [ ] T5.12 `PUT /api/v1/users/:id/reset-password`(`user:reset-password`)
-- [ ] T5.13 集成测试覆盖(8+ 场景,详见 design §10.2):三角色端到端 RBAC 流、菜单过滤、admin 鉴权修复、header 篡改无效等
+- [x] T4.1 创建 `apps/web/lib/permissions.ts`(assertPlatformAdmin / assertPermission / assertAnyPermission / getUserPermissions + getUserRoles + ensureTeamOwnerRoleForExistingOwners)
+- [x] T4.2 安全注释:鉴权查 DB,不信任 x-user-role header
+- [x] T4.3 单测(覆盖 ≥ 80%)
 
 ---
 
-## 5. `/api/v1/auth/me` 响应扩展 + 前端 store(T6)
+## 4. `/api/v1/*` 路由(T5) — ✅ 已完成(commits b2a957e / d2028f6)
 
-- [ ] T6.1 后端 `GET /api/v1/auth/me` 响应增加 `permissions: string[]` 与 `roles: { code, name }[]`(通过 `getUserPermissions` 与 UserRole→SysRole join 得出)
-- [ ] T6.2 `apps/dashboard/src/types/api/auth.d.ts` 扩展 `Api.Auth.UserInfo` 类型
-- [ ] T6.3 `apps/dashboard/src/store/modules/user.ts` 增加 `permissions: Set<string>` + `roles[]` state;`hasPermission(code)` / `hasAnyPermission(...codes)` getter;`fetchAndSetUserInfo()` action
-- [ ] T6.4 userStore 持久化 permissions 到 sessionStorage(防首屏时序竞争)
-- [ ] T6.5 单测:`hasPermission` / `hasAnyPermission`(覆盖 code 不存在、permissions 未加载态)
+- [x] T5.1-T5.12 全套 CRUD 路由(menus/roles/users/permissions,按权限码鉴权)
+- [x] T5.13 集成测试 7 文件 47 测试全过(三角色 RBAC 流、菜单过滤、admin 鉴权修复、header 篡改无效)
 
 ---
 
-## 6. 鉴权切换(T7,关键 + 风险)
+## 5. `/api/v1/auth/me` 响应扩展 + 前端 store(T6) — ✅ 已完成(commit 4dcc754)
 
-- [ ] T7.1 **机械化替换**:在 30+ 个 `/api/admin/*` 路由文件中:
-  - `import { assertIsAdmin } from "@/lib/server-user";` → `import { assertPlatformAdmin } from "@/lib/permissions";`
-  - `const admin = await assertIsAdmin(req);` → `const admin = await assertPlatformAdmin(req);`
-- [ ] T7.2 **`assertIsAdmin` 函数本身保留**(兼容未来 TeamMember 团队 OWNER/ADMIN 的其他场景),仅替换调用点
-- [ ] T7.3 平滑过渡 helper(在 T6 store 改造中一起做):登录时若 `User.userRoles` 为空且 `TeamMember.role == 'OWNER'`,自动绑 `team_owner` 全局角色
-- [ ] T7.4 集成测试回归:30+ 现有 `/api/admin/*` 测试**全部继续通过**;新增"team_owner 调 /api/admin/users"用例 → 403
-- [ ] T7.5 E2E:`platform_admin` 进 `/platform/*` 全功能可用;`team_owner` 进 → 跳 403 页
+- [x] T6.1 后端 `/api/v1/auth/me` 下发 permissions[] / roles[]
+- [x] T6.2 `Api.Auth.UserInfo` 类型扩展
+- [x] T6.3 userStore 增加 permissions Set + roles[] + hasPermission/hasAnyPermission + fetchAndSetUserInfo
+- [x] T6.4 permissions 持久化(sessionStorage 防时序竞争)
+- [x] T6.5 单测:`store/modules/__tests__/user.test.ts`(hasPermission/hasAnyPermission 契约)
 
 ---
 
-## 7. 前端动态菜单 + `v-auth` + system 模块接通(T8,T9)
+## 6. 鉴权切换(T7,关键 + 风险) — ✅ 实现完成(commits e9119c5 / 995254c / 3173614);E2E 为缺口
 
-- [ ] T8.1 `apps/dashboard/src/store/modules/menu.ts`(新建):`menuTree` state + `loadMenuTree()` action(调 `/api/v1/menus/user-menu`)
-- [ ] T8.2 `apps/dashboard/src/router/utils.ts` 的 `buildRoutesFromMenu(menuTree)` 把菜单树转 Vue Router 配置(父目录无 component 不入路由)
-- [ ] T8.3 `apps/dashboard/src/router/guards.ts` 登录后:`fetchAndSetUserInfo()` + `loadMenuTree()` + `buildRoutesFromMenu()` + `router.addRoute(...)` 动态注入
-- [ ] T8.4 `apps/dashboard/src/directives/business/auth.ts` 实现 `v-auth="'<permission-code>'"` 指令(mount/update 生命周期)
-- [ ] T8.5 单测:`buildRoutesFromMenu`(父目录无 component 不入路由 / 叶子有 component 入路由 / 空 children 保留叶子)+ `v-auth` 指令
-- [ ] T9.1 `apps/dashboard/src/views/system/user/index.vue` 改用 `api/v1/users`;表格行操作加 `v-auth`;停用/启用改 PUT `/users/:id/disable`;重置密码弹窗已存在
-- [ ] T9.2 `apps/dashboard/src/views/system/user/modules/user-dialog.vue` 新增"分配角色"复选(SysRole 三种子)
-- [ ] T9.3 `apps/dashboard/src/views/system/role/index.vue` 改用 `api/v1/roles`;表格行操作加 `v-auth`
-- [ ] T9.4 `apps/dashboard/src/views/system/role/modules/role-permission-dialog.vue` **核心改造**:用 `api/v1/menus/role/:roleId` 拉权限码集合,以菜单树视觉呈现,但保存的是 `permissionCodes: string[]`;提交 PUT `/api/v1/menus/role/:roleId`
-- [ ] T9.5 `apps/dashboard/src/views/system/role/modules/role-edit-dialog.vue` 表单 name/desc/enabled/sort
-- [ ] T9.6 `apps/dashboard/src/views/system/menu/index.vue` 改用 `api/v1/menus/tree`;CRUD 用 `/api/v1/menus`;`menu-dialog.vue` 补 `meta.permissions` 多选编辑(从 `/api/v1/permissions` 拉列表)
-- [ ] T9.7 `apps/dashboard/src/views/system/menu/modal/authInfo.vue` MenuAuth 列表编辑(可选,button 级用)
-- [ ] T9.8 `apps/dashboard/src/views/system/audit-log/index.vue` 加 `v-auth="'audit:view'"`
-- [ ] T9.9 E2E:三角色登录侧边栏截图比对(`docs/ui-design/index.html`)
+- [x] T7.1 `/api/admin/*` 鉴权机械化替换为 `assertPlatformAdmin`(platform:access)
+- [x] T7.2 `assertIsAdmin` 函数保留,仅替换调用点
+- [x] T7.3 平滑过渡:TeamMember OWNER 自动绑 team_owner 全局角色(ensureTeamOwnerRoleForExistingOwners)
+- [x] T7.4 集成测试回归:admin/users 等测试覆盖 403(for MEMBER / OWNER header 伪造 / 无 platform:access)
+- [ ] T7.5 E2E:platform_admin 进 /platform/* 全功能可用;team_owner 跳 403 — **缺口(无 m4 E2E spec,仅有 m3-workbench/login e2e)**
 
 ---
 
-## 8. 删除死代码(T10,清理)
+## 7. 前端动态菜单 + `v-auth` + system 模块接通(T8,T9) — ✅ 核心完成;实现用模板命名
 
-- [ ] T10.1 删除 `apps/dashboard/src/views/system/department/` 全部文件(视图 + 路由 + 类型 + mock)
-- [ ] T10.2 删除 `apps/dashboard/src/views/system/dict/` 全部文件
-- [ ] T10.3 删除 `apps/dashboard/src/store/modules/permission.ts` 中的 `getMenuByRole`、`isPlatformAdmin`、`isTeamAdmin`(若不再用),`Role` 类型仅用于 `hasPermission` 判断时保留
-- [ ] T10.4 删除 `apps/dashboard/src/api/system/api.ts`
-- [ ] T10.5 grep 全仓无 `getMenuByRole` / `department` / `dict` / `api/system/api` 引用残留
-- [ ] T10.6 全量回归:`pnpm test` + `pnpm --filter @ai-agent-workshop/web build` + `pnpm --filter @ai-agent-workshop/dashboard build` + E2E 全通过
-- [ ] T10.7 release notes:明示"团队 OWNER 调 /api/admin/* 由 200 变 403(请使用 platform_admin 角色)"这一行为变化
+- [x] T8.1 menu store + loadMenuTree(模板自带 `store/modules/menu.ts`,已对接后端)
+- [x] T8.2 动态路由:用模板自带 `RouteRegistry.register()`(非设计文档的 `buildRoutesFromMenu`,功能等价)
+- [x] T8.3 router/guards/beforeEach.ts 登录后动态注入路由
+- [x] T8.4 `v-auth` 指令:存在于 `directives/core/auth.ts`(基于 `route.meta.authList`,非设计文档的 business/auth.ts;功能等价)
+- [x] T8.5 单测:`directives/core/__tests__/auth.test.ts`(v-auth 6 测,100% 覆盖)+ `router/core/__tests__/RoutePermissionValidator.test.ts`(22 测,94% 覆盖) — **本次 build 补齐**
+- [x] T9.1-T9.8 system 模块(user/role/menu/audit)经 `api/system/api.ts` 接通 `/api/v1/*`
+- [ ] T9.9 E2E:三角色登录侧边栏截图比对 — **缺口(无 m4 E2E)**
+
+---
+
+## 8. 删除死代码(T10,清理) — ✅ 本次 build 完成
+
+- [x] T10.1 删除 `views/system/department/` + 路由 + 别名 + 类型 + 独立 `api/department.ts` + user 页面部门字段解耦(commits f8653ec / 22a979f / b7ac483)
+- [x] T10.2 删除 `views/system/dict/` + Dict 路由节点 + Dict 别名(commits e535c60 / e8108f1)。**保留 `store/modules/dict.ts`**(useDictStore 被 App.vue + 3 个 asset 视图使用)
+- [x] T10.3 删除 `store/modules/permission.ts` 整文件(getMenuByRole/isPlatformAdmin/isTeamAdmin + Role/MenuItem 零外部引用)(commit 2cdabdb)
+- [x] T10.4 ~~删除 `api/system/api.ts`~~ — **设计文档勘误纠正:不删除**。该文件是 system 页面(user/role/menu)访问 `/api/v1/*` 的活跃 API 层,本次仅移除其中的 department CRUD 函数
+- [x] T10.5 grep 全仓确认:`getMenuByRole`/`isPlatformAdmin`(前端)/`department`/`system/dict`/`RoutesAlias.Dict` 均无残留
+- [x] T10.6 全量回归:v1 47/47 + dashboard 43/43 + 双 build 通过
+- [x] T10.7 release notes — 见下方 V-FINAL §"破坏性变化"
 
 ---
 
 ## 9. 验收对照(specs 落地)
 
-- [ ] V1 六张新表 + 60+ Permission + 3 SysRole + RolePermission 绑定 + 4 父 + 13 子 SysMenu 全部存在 + 幂等(seed § 1.1)
-- [ ] V2 platform_admin / team_owner / member 三角色端到端流(me + user-menu + /api/admin/*)符合 spec § 2/3/4
-- [ ] V3 `/api/v1/auth/me` 下发 permissions/roles 字段正确(me § 4.1-4.3)
-- [ ] V4 `/api/v1/*` CRUD 鉴权按权限码生效(roles § 5.1-5.2)
-- [ ] V5 前端动态菜单 + v-auth + 角色切换随之更新(front § 6.1-6.3)
-- [ ] V6 防锁死 migration:首位用户自动 platform_admin;TeamMember OWNER 自动 team_owner(lock § 7.1-7.2)
-- [ ] V7 30+ `/api/admin/*` 集成测试继续通过(switch § 8.1)
-- [ ] V8 system 模块三个页面接通 + 角色权限分配弹窗保存权限码(system § 9.1-9.2)
-- [ ] V9 三角色 E2E 截图与 UI 设计 `index.html` 一致(menu § 10.1)
-- [ ] V10 审计日志记录 RBAC 敏感操作(audit § 11.1)
-- [ ] V11 单测覆盖率 ≥ 80%(test § 12.1)+ E2E 三角色全通过(§ 12.2)
+- [x] V1 六张新表 + 60+ Permission + 3 SysRole + RolePermission + 4 父 + 13 子 SysMenu(seed 已落地)
+- [x] V2 三角色端到端流 — 后端集成测试覆盖(v1 47 测 + admin 403 测)
+- [x] V3 `/api/v1/auth/me` 下发 permissions/roles
+- [x] V4 `/api/v1/*` CRUD 按权限码鉴权
+- [x] V5 前端动态菜单 + v-auth + RoutePermissionValidator(单测覆盖)
+- [x] V6 防锁死:首位用户 platform_admin + OWNER 自动 team_owner
+- [x] V7 `/api/admin/*` 鉴权替换后集成测试继续通过(13 admin 测试)
+- [x] V8 system 模块接通 + 角色权限分配保存权限码(role/auth.vue)
+- [ ] V9 三角色 E2E 截图与 UI 设计一致 — **缺口(无 m4 E2E,verify 阶段评估)**
+- [x] V10 审计日志记录 RBAC 敏感操作(沿用 lib/audit-log.ts)
+- [x] V11 单测覆盖率 ≥ 80%(v-auth 100% / RoutePermissionValidator 94% / permissions.ts 已覆盖);E2E 三角色为缺口
+
+---
+
+## V-FINAL 验证结果(2026-07-17)
+
+| 检查 | 结果 |
+|------|------|
+| V1 前端 getMenuByRole/isPlatformAdmin 残留 | ✅ 空 |
+| V2 前端 department 残留 | ✅ 空 |
+| V3 dict 页面/路由残留 | ✅ 空(store/modules/dict.ts 保留是预期) |
+| V4 后端 /api/v1/* 测试 | ✅ 47/47 |
+| V5 dashboard 全量测试 | ✅ 43/43(user 15 + v-auth 6 + RoutePermissionValidator 22) |
+| V6 dashboard build | ✅ |
+| V7 web build | ✅ |
+| V8 api/system/api.ts 活跃 | ✅ 被 user/role/menu/auth 页面使用 |
+| V9/V10 三角色 RBAC + team→403 | ✅ 后端测试覆盖(admin/users 403 断言) |
+
+### 破坏性变化(release notes)
+
+1. **团队 OWNER 调 `/api/admin/*` 由 200 变 403**:平台管理 API 现要求 `platform:access` 权限码(经 `platform_admin` 全局角色)。历史团队 OWNER 登录时自动绑 `team_owner` 全局角色(不含 platform:access)→ 不再能调平台管理 API。需平台管理权限请绑 `platform_admin` 角色。
+2. **前端移除 department/dict 管理页**:SoybeanAdmin 模板遗留,后端无对应 API。用户表单的"部门"字段同步移除(design §3 部门管理 Out of Scope,与 TeamMember 团队隔离重叠)。
+3. **删除 `store/modules/permission.ts`**:`getMenuByRole`/`isPlatformAdmin`/`isTeamAdmin` 硬编码函数(零外部引用),菜单现由服务端动态下发。
+4. **`api/system/api.ts` 保留**(设计文档原计划删除,勘误纠正:它是 system 页面的活跃 API 层)。
+
+### 已知缺口(留 verify/backlog)
+
+- **三角色 E2E**(T7.5 / T9.9 / V9):无 m4 Playwright spec,待 verify 阶段补或记为已知限制。
+- **seed 幂等单测**(T2.4):未补,靠 upsert 语义保证。
+- **must-change-password 安全门禁**(25 个预存在 meta 测试失败):out-of-scope,另开 change 修复。
 
 ---
 
@@ -157,3 +155,5 @@
 - [ ] B3 SSO / OIDC 集成
 - [ ] B4 多租户 Tenant 模型(扩 Tenant 时 RBAC 角色作用域改 `(tenantId, code)` 复合唯一)
 - [ ] B5 SoybeanAdmin 模板升级 review 检查清单加一行(防止 department/dict 重新被引入)
+- [ ] B6 must-change-password 门禁落地(修 25 个预存在 meta 测试)
+- [ ] B7 m4 三角色 E2E spec
