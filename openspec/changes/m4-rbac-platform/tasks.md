@@ -9,10 +9,15 @@
 
 ## 0. 基线门禁(必跑)
 
-- [ ] B0.1 `pnpm install` 通过
-- [ ] B0.2 `pnpm --filter @ai-agent-workshop/web build` 通过
-- [ ] B0.3 `pnpm --filter @ai-agent-workshop/dashboard build` 通过
-- [ ] B0.4 现有 30+ 个 `/api/admin/*` 集成测试基线通过(锁定切换鉴权前的可重现状态)
+- [x] B0.1 `pnpm install` 通过
+- [x] B0.2 `pnpm --filter @ai-agent-workshop/web build` 通过
+- [x] B0.3 `pnpm --filter @ai-agent-workshop/dashboard build` 通过
+- [x] B0.4 M4 `/api/v1/*` 测试 47/47 全过 + dashboard 15/15 全过(M4 回归锚点,2026-07-17 于 feature/20260717/m4-rbac-platform)
+
+> **已知预存在失败(out-of-scope,2026-07-17 核对):** web 完整套件有 26 个失败,**均与 M4 无关**:
+> - 25 个 `must-change-password.meta.test.ts`:要求每个写操作 admin 路由调用 `enforceNotMustChange(req)`,实际 0/17 实现 —— 历史安全债,非 M4 引入(meta 测试在 main 也存在)。M4 鉴权切换从未移除该门禁(它本就不存在)。
+> - 1 个 `prisma-models.test.ts`:M3 `agentSkillBinding` 模型 Prisma DB 层错误(环境/数据)。
+> - **决策(用户 2026-07-17 确认):** 接受为 out-of-scope,must-change-password 缺口另开 change 修复。M4 以自身 47 v1 + 15 dashboard 测试为回归锚点。
 
 ---
 
