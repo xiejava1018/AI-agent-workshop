@@ -12,6 +12,7 @@ model User {
   username           String   @unique
   passwordHash       String
   mustChangePassword Boolean  @default(false)
+  disabled           Boolean  @default(false)
   lastProjectId      String?
   createdBy          String?
   createdAt          DateTime @default(now())
@@ -19,6 +20,7 @@ model User {
   tokenDailyLimit      Int @default(0)  // 0 = 不限
   maxConcurrentSessions Int @default(5)
   teams              TeamMember[]
+  userSkillBindings  UserSkillBinding[]
 }
 
 model Team {
@@ -110,6 +112,9 @@ model Agent {
   scope        String   @default("personal")
   createdAt    DateTime @default(now())
 
+  skillBindings AgentSkillBinding[]
+  mcpBindings   AgentMcpBinding[]
+
   @@index([teamId])
   @@index([ownerUserId])
 }
@@ -125,6 +130,9 @@ model AgentSkillBinding {
   skillPackageId String
   mode           String @default("inherit") // inherit | include | exclude
 
+  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skillPackage SkillPackage @relation(fields: [skillPackageId], references: [id], onDelete: Cascade)
+
   @@unique([agentId, skillPackageId])
   @@index([agentId])
 }
@@ -135,6 +143,9 @@ model AgentMcpBinding {
   mcpServerId String
   mode        String @default("inherit")
 
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  mcpServer McpServer @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+
   @@unique([agentId, mcpServerId])
   @@index([agentId])
 }
@@ -144,6 +155,9 @@ model UserSkillBinding {
   userId         String
   skillPackageId String
   mode           String @default("inherit")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillPackage SkillPackage @relation(fields: [skillPackageId], references: [id], onDelete: Cascade)
 
   @@unique([userId, skillPackageId])
   @@index([userId])
@@ -166,6 +180,9 @@ model SkillPackage {
   source      String  @default("")
   filePath    String  @default("")
   enabled     Boolean @default(true)
+
+  agentSkillBindings AgentSkillBinding[]
+  userSkillBindings UserSkillBinding[]
 
   @@unique([scope, slug, teamId, userId])
   @@index([teamId])
@@ -200,6 +217,8 @@ model McpServer {
   teamId    String?
   userId    String?
   enabled   Boolean @default(true)
+
+  agentMcpBindings AgentMcpBinding[]
 
   @@index([teamId])
   @@index([userId])
