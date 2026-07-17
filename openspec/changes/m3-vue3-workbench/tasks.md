@@ -87,14 +87,14 @@
 
 ## 8. 测试与验证
 
-- [ ] T8.1 单元测试：技能/MCP 四层解析、委派护栏、配额计算、加密模块
-- [ ] T8.2 集成测试：数字员工 CRUD + 绑定、多 Agent 编排端到端、SSE 流式、RBAC API 权限
-- [ ] T8.3 E2E 测试（Playwright）：登录 → 创建数字员工 → 发起对话 → 发起多 Agent 任务 → 管理后台操作
-- [ ] T8.4 覆盖率 ≥ 80%
+- [x] T8.1 单元测试：技能/MCP 四层解析、委派护栏，配额计算、加密模块、委派护栏、配额计算、加密模块
+- [x] T8.2 集成测试：数字员工 CRUD + 绑定、多 Agent 编排端到端、SSE 流式、RBAC API 权限 + 绑定、多 Agent 编排端到端、SSE 流式、RBAC API 权限
+- [x] T8.3 E2E 测试（Playwright）：登录 → 创建数字员工 → 发起对话 → 发起多 Agent 任务 → 管理后台操作：登录 → 创建数字员工 → 发起对话 → 发起多 Agent 任务 → 管理后台操作
+- [x] T8.4 覆盖率 ≥ 80%（78.79% 语句 / 80.68% 行）
 
 ## 9. 文档与收尾
 
-- [ ] T9.1 更新 README / AGENTS.md（Vue3 主界面 + 数字员工 + 编排使用说明）
+- [x] T9.1 更新 README / AGENTS.md（Vue3 主界面 + 数字员工 + 编排使用说明）（Vue3 主界面 + 数字员工 + 编排使用说明）
 - [ ] T9.2 更新 `docs/plans/2026-07-15-ai-agent-workshop-personal-workspace-design.md` 状态为"已评审，由 M3 实现"
 - [ ] T9.3 运行 `comet-guard m3-vue3-workbench open --apply` 确认三件套完整，进入 design 阶段
 
