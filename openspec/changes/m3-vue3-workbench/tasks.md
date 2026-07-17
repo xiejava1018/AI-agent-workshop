@@ -81,9 +81,9 @@
 
 - [x] T7.1 AES-256-GCM 加密模块：MCP / 模型 API Key 加密存储，主密钥由环境变量持有
 - [x] T7.2 租户上下文强制：所有 DB 查询与 Agent 调用带 `tenantId`，禁止客户端传入
-- [ ] T7.3 会话正文隐私：平台管理员仅可看会话元数据（标题/时间/token 用量），不可读正文
-- [ ] T7.4 级联删除：删除技能/MCP/Agent 时清理其绑定行
-- [ ] T7.5 refresh token 置 httpOnly + CSRF 防护
+- [x] T7.3 会话正文隐私：平台管理员仅可看会话元数据（标题/时间/token 用量），不可读正文
+- [x] T7.4 级联删除绑定行：删除技能/MCP/Agent 时清理其绑定行
+- [x] T7.5 refresh token 置 httpOnly + CSRF 防护：refresh token 置 httpOnly+CSRF，cookie 属性 + double-submit 校验
 
 ## 8. 测试与验证
 
