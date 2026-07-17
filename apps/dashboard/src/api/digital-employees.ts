@@ -12,7 +12,7 @@ export function createAgent(data: any) {
 }
 
 export function updateAgent(id: string, data: any) {
-  return httpClient.put<any>({ url: `/api/digital-employees/${id}`, data })
+  return httpClient.post<any>({ url: `/api/digital-employees/${id}`, method: 'PATCH', data })
 }
 
 export function deleteAgent(id: string) {
