@@ -73,13 +73,13 @@ async function loadSkills() {
   try {
     const params: any = {}
     if (filterScope.value !== 'all') params.scope = filterScope.value
-    skills.value = await listSkills(params)
+    skills.value = (await listSkills(params)) as any[]
   } finally { loading.value = false }
 }
 
 async function search() {
   if (!searchKeyword.value.trim()) return
-  marketSkills.value = await searchSkills({ q: searchKeyword.value })
+  marketSkills.value = (await searchSkills({ q: searchKeyword.value })) as any[]
 }
 
 async function installSkill(slug: string) {

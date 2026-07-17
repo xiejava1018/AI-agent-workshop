@@ -13,5 +13,5 @@ export function installSkill(data: { slug: string; scope: string }): Promise<any
 }
 
 export function toggleSkill(id: string, data: { enabled: boolean }): Promise<any> {
-  return request.put<any>({ url: `/api/skills/${id}`, data })
+  return request.post<any>({ url: `/api/skills/${id}`, method: 'PATCH', data })
 }
