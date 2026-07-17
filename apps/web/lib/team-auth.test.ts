@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assertCanReadSessionScoped,
+  assertCanReadSessionBody,
   assertMemberOfTeam,
   getUserTeamMemberships,
   isSessionSharedWith,
@@ -290,5 +291,115 @@ describe("assertCanReadSessionScoped", () => {
     // Sanity: isSessionSharedWith also resolves
     expect(await isSessionSharedWith(sessionIdA, ids.outsider)).toBe(true);
     expect(await isSessionSharedWith(sessionIdA, ids.memberB)).toBe(false);
+  });
+});
+
+describe("assertCanReadSessionBody", () => {
+  // Reuses the same session ids and meta setup from the scoped tests.
+  const sessionIdA = `${TEST_PREFIX}sess-A-body-${Math.random().toString(36).slice(2, 8)}`;
+
+  it("session owner can always read body", async () => {
+    const meta = {
+      userId: ids.ownerA,
+      projectId: ids.projectA,
+      teamId: ids.teamA,
+      createdAt: Date.now(),
+    };
+    const result = await assertCanReadSessionBody(ids.ownerA, "OWNER", meta, sessionIdA);
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe("owner");
+  });
+
+  it("team OWNER can read body", async () => {
+    const meta = {
+      userId: ids.ownerA,
+      projectId: ids.projectA,
+      teamId: ids.teamA,
+      createdAt: Date.now(),
+    };
+    // memberA is only a MEMBER — should be denied for body access.
+    const memberResult = await assertCanReadSessionBody(ids.memberA, "MEMBER", meta, sessionIdA);
+    expect(memberResult.allowed).toBe(false);
+    expect(memberResult.reason).toBe("body_access_denied");
+
+    // adminA is ADMIN — allowed.
+    const adminResult = await assertCanReadSessionBody(ids.adminA, "ADMIN", meta, sessionIdA);
+    expect(adminResult.allowed).toBe(true);
+    expect(adminResult.reason).toBe("team_admin");
+    expect(adminResult.teamRole).toBe("ADMIN");
+  });
+
+  it("team ADMIN can read body", async () => {
+    const meta = {
+      userId: ids.ownerA,
+      projectId: ids.projectA,
+      teamId: ids.teamA,
+      createdAt: Date.now(),
+    };
+    const result = await assertCanReadSessionBody(ids.adminA, "ADMIN", meta, sessionIdA);
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe("team_admin");
+  });
+
+  it("team MEMBER is denied body_access_denied (not a total deny)", async () => {
+    const meta = {
+      userId: ids.ownerA,
+      projectId: ids.projectA,
+      teamId: ids.teamA,
+      createdAt: Date.now(),
+    };
+    const result = await assertCanReadSessionBody(ids.memberA, "MEMBER", meta, sessionIdA);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe("body_access_denied");
+  });
+
+  it("shared-with user is denied body_access_denied", async () => {
+    const meta = {
+      userId: ids.ownerA,
+      projectId: ids.projectA,
+      teamId: ids.teamA,
+      createdAt: Date.now(),
+    };
+    // outsider gets a SessionShare for this session
+    await prisma.sessionShare.create({
+      data: { sessionId: sessionIdA, sharedWithUserId: ids.outsider },
+    });
+    const result = await assertCanReadSessionBody(ids.outsider, null, meta, sessionIdA);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe("body_access_denied");
+  });
+
+  it("owner of a DIFFERENT team is denied (not team_admin)", async () => {
+    const meta = {
+      userId: ids.ownerA,
+      projectId: ids.projectA,
+      teamId: ids.teamA,
+      createdAt: Date.now(),
+    };
+    // ownerB is team B's OWNER, but not a member of team A.
+    const result = await assertCanReadSessionBody(ids.ownerB, "OWNER", meta, sessionIdA);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe("deny"); // No team membership at all — total deny.
+  });
+
+  it("session with teamId=null is denied", async () => {
+    const meta = {
+      userId: ids.ownerA,
+      projectId: ids.projectA,
+      teamId: null,
+      createdAt: Date.now(),
+    };
+    const result = await assertCanReadSessionBody(ids.ownerA, "OWNER", meta, sessionIdA);
+    expect(result.allowed).toBe(false);
+  });
+
+  it("undefined meta is denied", async () => {
+    const result = await assertCanReadSessionBody(
+      ids.ownerA,
+      "OWNER",
+      undefined,
+      `${TEST_PREFIX}does-not-exist`
+    );
+    expect(result.allowed).toBe(false);
   });
 });

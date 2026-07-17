@@ -141,3 +141,49 @@ export async function assertCanReadSessionScoped(
   }
   return { allowed: false, reason: "deny" };
 }
+
+/**
+ * T7.3 session body privacy — stricter than assertCanReadSessionScoped.
+ *
+ * Only the session owner and team OWNER/ADMIN may read the full session
+ * body (messages, thinking, export, state, context). Team MEMBERs and
+ * SessionShare recipients can see metadata (session list) but NOT the
+ * conversation content.
+ *
+ * Order of checks (short-circuits on first match):
+ *   1. Session has no teamId → deny (pre-M2.4 data, deny-by-default).
+ *   2. Session was created by the same user → allow.
+ *   3. User is OWNER or ADMIN of the session's team → allow.
+ *   4. Otherwise → deny (MEMBER and shared are NOT sufficient for body).
+ *
+ * The `reason` field distinguishes "body_access_denied" (caller has
+ * metadata access but not body access) from a plain "deny" (no access
+ * at all). This lets audit logs differentiate the two cases.
+ */
+export async function assertCanReadSessionBody(
+  userId: string,
+  userRole: UserRole | null,
+  meta: SessionMetaRow | undefined,
+  sessionId: string
+): Promise<{ allowed: boolean; reason: "owner" | "team_admin" | "body_access_denied" | "deny"; teamRole?: UserRole }> {
+  if (!meta) return { allowed: false, reason: "deny" };
+  void userRole;
+
+  if (!meta.teamId) {
+    return { allowed: false, reason: "deny" };
+  }
+  if (meta.userId === userId) {
+    return { allowed: true, reason: "owner" };
+  }
+  const memberships = await getUserTeamMemberships(userId);
+  const teamRole = memberships.get(meta.teamId);
+  if (teamRole === "OWNER" || teamRole === "ADMIN") {
+    return { allowed: true, reason: "team_admin", teamRole };
+  }
+  // MEMBER or shared-with user: they can see metadata but not body.
+  // Distinguish from a total deny so the audit log can tell the difference.
+  if (teamRole === "MEMBER" || await isSessionSharedWith(sessionId, userId)) {
+    return { allowed: false, reason: "body_access_denied" };
+  }
+  return { allowed: false, reason: "deny" };
+}

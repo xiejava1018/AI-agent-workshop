@@ -26,6 +26,7 @@ import { prisma } from "./prisma";
 export type AuditAction =
   | "session.create"
   | "session.access_denied"
+  | "session.body_access_denied"
   | "session.share_create"
   | "session.share_delete"
   | "user.create"
