@@ -2,6 +2,7 @@
 change: m4-rbac-platform
 design-doc: docs/superpowers/specs/2026-07-17-m4-rbac-platform-design.md
 base-ref: 3173614e0d309959ebe1ed1e14e9b9a552fbfbaa
+archived-with: 2026-07-17-m4-rbac-platform
 ---
 
 # M4 RBAC 平台中台 — 清理 + 测试收尾计划（重写版）

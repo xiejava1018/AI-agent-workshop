@@ -1,6 +1,6 @@
 workflow: full
 language: zh-CN
-phase: verify
+phase: archive
 context_compression: off
 build_mode: executing-plans
 build_pause: null
@@ -13,13 +13,13 @@ auto_transition: true
 base_ref: 3173614e0d309959ebe1ed1e14e9b9a552fbfbaa
 design_doc: docs/superpowers/specs/2026-07-17-m4-rbac-platform-design.md
 plan: docs/superpowers/plans/2026-07-17-m4-rbac-platform.md
-verify_result: pending
-verification_report: null
-branch_status: pending
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-07-17-m4-rbac-platform-verify.md
+branch_status: handled
 created_at: 2026-07-17
-verified_at: null
-archive_confirmation: null
-archived: false
+verified_at: 2026-07-17
+archive_confirmation: confirmed
+archived: true
 direct_override: null
 handoff_context: openspec/changes/m4-rbac-platform/.comet/handoff/design-context.json
 handoff_hash: 711b469cf5382a553e10d0b57bbe0b72a9c56590371a71d0593abb1888edec56
