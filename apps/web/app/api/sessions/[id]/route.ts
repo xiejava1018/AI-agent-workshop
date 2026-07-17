@@ -11,7 +11,7 @@ import {
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { getSessionMeta } from "@/lib/session-meta";
-import { assertCanReadSessionScoped } from "@/lib/team-auth";
+import { assertCanReadSessionScoped, assertCanReadSessionBody } from "@/lib/team-auth";
 import { getUserHighestRole } from "@/lib/user-role";
 import { auditLog } from "@/lib/audit-log";
 
@@ -118,31 +118,60 @@ function projectTreeForResponse<T extends { entry: { id: string }; children: T[]
 /**
  * T7.2 tenant-context enforcement: verify the caller has permission to read
  * the session via team-scoped authorization (matching the agent routes).
+ *
+ * T7.3: when `body=true`, uses assertCanReadSessionBody which only allows
+ * the session owner and team OWNER/ADMIN (not MEMBER or shared-with).
+ * The audit action distinguishes body-access-denied from metadata-access-denied.
  */
 async function assertCanReadSession(
   req: Request,
   sessionId: string,
+  options: { body: boolean } = { body: false },
 ): Promise<{ allowed: true; userId: string } | Response> {
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
   const userRole = await getUserHighestRole(userId);
   const meta = getSessionMeta(sessionId);
-  const decision = await assertCanReadSessionScoped(userId, userRole, meta, sessionId);
-  if (!decision.allowed) {
-    void auditLog({
-      userId,
-      action: "session.access_denied",
-      resourceType: "session",
-      resourceId: sessionId,
-      metadata: {
-        path: "/api/sessions/[id]",
-        reason: decision.reason,
-        sessionTeamId: meta?.teamId ?? null,
-        sessionOwnerId: meta?.userId ?? null,
-      },
-    });
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  if (options.body) {
+    const decision = await assertCanReadSessionBody(userId, userRole, meta, sessionId);
+    if (!decision.allowed) {
+      const action = decision.reason === "body_access_denied"
+        ? "session.body_access_denied"
+        : "session.access_denied";
+      void auditLog({
+        userId,
+        action,
+        resourceType: "session",
+        resourceId: sessionId,
+        metadata: {
+          path: "/api/sessions/[id]",
+          reason: decision.reason,
+          sessionTeamId: meta?.teamId ?? null,
+          sessionOwnerId: meta?.userId ?? null,
+        },
+      });
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+  } else {
+    const decision = await assertCanReadSessionScoped(userId, userRole, meta, sessionId);
+    if (!decision.allowed) {
+      void auditLog({
+        userId,
+        action: "session.access_denied",
+        resourceType: "session",
+        resourceId: sessionId,
+        metadata: {
+          path: "/api/sessions/[id]",
+          reason: decision.reason,
+          sessionTeamId: meta?.teamId ?? null,
+          sessionOwnerId: meta?.userId ?? null,
+        },
+      });
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
   }
+
   return { allowed: true as const, userId };
 }
 
@@ -152,7 +181,7 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  const auth = await assertCanReadSession(req, id);
+  const auth = await assertCanReadSession(req, id, { body: true });
   if (auth instanceof Response) return auth;
 
   try {
