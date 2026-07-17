@@ -23,7 +23,11 @@ export async function GET(req: Request) {
 }
 
 // PATCH /api/skills — toggle disable-model-invocation on a SKILL.md file
+// T7.2: require authentication for this mutation.
 export async function PATCH(req: Request) {
+  const userId = req.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
+
   try {
     const body = await req.json() as { filePath: string; disableModelInvocation: boolean };
     const { filePath, disableModelInvocation } = body;

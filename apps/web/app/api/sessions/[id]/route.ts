@@ -10,6 +10,10 @@ import {
   readSessionHeader,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { getSessionMeta } from "@/lib/session-meta";
+import { assertCanReadSessionScoped } from "@/lib/team-auth";
+import { getUserHighestRole } from "@/lib/user-role";
+import { auditLog } from "@/lib/audit-log";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
@@ -111,11 +115,46 @@ function projectTreeForResponse<T extends { entry: { id: string }; children: T[]
   return projectedRoots;
 }
 
+/**
+ * T7.2 tenant-context enforcement: verify the caller has permission to read
+ * the session via team-scoped authorization (matching the agent routes).
+ */
+async function assertCanReadSession(
+  req: Request,
+  sessionId: string,
+): Promise<{ allowed: true; userId: string } | Response> {
+  const userId = req.headers.get("x-user-id");
+  if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
+  const userRole = await getUserHighestRole(userId);
+  const meta = getSessionMeta(sessionId);
+  const decision = await assertCanReadSessionScoped(userId, userRole, meta, sessionId);
+  if (!decision.allowed) {
+    void auditLog({
+      userId,
+      action: "session.access_denied",
+      resourceType: "session",
+      resourceId: sessionId,
+      metadata: {
+        path: "/api/sessions/[id]",
+        reason: decision.reason,
+        sessionTeamId: meta?.teamId ?? null,
+        sessionOwnerId: meta?.userId ?? null,
+      },
+    });
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  return { allowed: true as const, userId };
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const auth = await assertCanReadSession(req, id);
+  if (auth instanceof Response) return auth;
+
   try {
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
@@ -174,6 +213,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const auth = await assertCanReadSession(req, id);
+  if (auth instanceof Response) return auth;
+
   try {
     const { name } = await req.json() as { name?: string };
     if (typeof name !== "string") {
@@ -193,10 +236,14 @@ export async function PATCH(
 
 // DELETE /api/sessions/[id]
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const auth = await assertCanReadSession(req, id);
+  if (auth instanceof Response) return auth;
+
   try {
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
