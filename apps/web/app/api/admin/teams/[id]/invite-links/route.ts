@@ -24,7 +24,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { canAdministerTeam } from "../members/route";
+import { canAdministerTeam } from "@/lib/team-admin";
 
 export const dynamic = "force-dynamic";
 

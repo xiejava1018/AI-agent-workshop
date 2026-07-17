@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserHighestRole } from "@/lib/server-user";
+import { canAdministerTeam } from "@/lib/team-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -35,23 +36,6 @@ function badRequestResponse(msg: string): NextResponse {
 
 function notFoundResponse(): NextResponse {
   return NextResponse.json({ error: "not found" }, { status: 404 });
-}
-
-/**
- * True if the caller may administer the given team: either a platform OWNER,
- * or holds OWNER/ADMIN role within the team itself.
- */
-export async function canAdministerTeam(
-  teamId: string,
-  callerId: string
-): Promise<boolean> {
-  const platformRole = await getUserHighestRole(callerId);
-  if (platformRole === "OWNER") return true;
-  const membership = await prisma.teamMember.findUnique({
-    where: { teamId_userId: { teamId, userId: callerId } },
-    select: { role: true },
-  });
-  return membership?.role === "OWNER" || membership?.role === "ADMIN";
 }
 
 export async function POST(

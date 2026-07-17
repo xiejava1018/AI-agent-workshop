@@ -22,7 +22,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { canAdministerTeam } from "../route";
+import { canAdministerTeam } from "@/lib/team-admin";
 
 export const dynamic = "force-dynamic";
 
