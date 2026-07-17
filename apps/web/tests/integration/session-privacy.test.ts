@@ -20,6 +20,10 @@ import bcrypt from "bcryptjs";
 const TEST_USERNAME_PREFIX = "test-session-privacy-";
 const TEST_TEAM_PREFIX = "test-session-privacy-team-";
 const TEST_SESSION_PREFIX = "test-session-";
+// Unique code prefix for test-scoped SysRole fixtures (cleaned up after tests).
+// NOTE: the `platform:access` Permission row is global/shared and deliberately
+// NOT prefixed/deleted — only the role + UserRole + RolePermission are test-scoped.
+const TEST_ROLE_PREFIX = "test-session-privacy-role-";
 
 function uniqueUsername(label: string): string {
   return `${TEST_USERNAME_PREFIX}${Date.now().toString(36)}-${label}-${Math.random()
@@ -52,6 +56,19 @@ async function cleanTestRows(): Promise<void> {
   });
   await prisma.team.deleteMany({
     where: { name: { startsWith: TEST_TEAM_PREFIX } },
+  });
+  // Clean up self-contained RBAC fixtures (UserRole → SysRole → RolePermission)
+  // NOTE: the platform:access Permission row is global and NOT deleted here.
+  const testRoles = await prisma.sysRole.findMany({
+    where: { code: { startsWith: TEST_ROLE_PREFIX } },
+    select: { id: true },
+  });
+  for (const r of testRoles) {
+    await prisma.userRole.deleteMany({ where: { roleId: r.id } });
+    await prisma.rolePermission.deleteMany({ where: { roleId: r.id } });
+  }
+  await prisma.sysRole.deleteMany({
+    where: { code: { startsWith: TEST_ROLE_PREFIX } },
   });
   await prisma.user.deleteMany({
     where: { username: { startsWith: TEST_USERNAME_PREFIX } },
@@ -159,6 +176,52 @@ async function makeSession(opts: {
   return { id: session.id, jsonlPath };
 }
 
+/**
+ * Create a platform admin user with a self-contained RBAC chain that grants
+ * the real `platform:access` permission code (the one assertPlatformAdmin checks):
+ *   User → UserRole → SysRole → RolePermission → Permission(platform:access)
+ *
+ * The Permission(platform:access) and SysRole are test-scoped (unique codes)
+ * so cleanup is deterministic; only the permission *code* must match what
+ * the auth helper queries. This avoids depending on production seed data.
+ */
+async function makePlatformAdmin(): Promise<string> {
+  const roleCode = `${TEST_ROLE_PREFIX}platform-admin-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+
+  const user = await prisma.user.create({
+    data: {
+      username: uniqueUsername("platadmin"),
+      passwordHash: await bcrypt.hash("platadmin-pass-1234", 10),
+      mustChangePassword: false,
+    },
+  });
+
+  // Permission.code must be exactly "platform:access" — upsert in case the
+  // seed (or a prior test run) already created it. Never delete this row
+  // (it's shared/global); only the role + binding below are test-scoped.
+  const permission = await prisma.permission.upsert({
+    where: { code: "platform:access" },
+    update: {},
+    create: { code: "platform:access", module: "平台准入", name: "进入平台管理", sort: 200 },
+  });
+
+  const role = await prisma.sysRole.create({
+    data: { code: roleCode, name: "平台管理员(test)", enabled: true, sort: 0 },
+  });
+
+  await prisma.rolePermission.create({
+    data: { roleId: role.id, permissionId: permission.id },
+  });
+
+  await prisma.userRole.create({
+    data: { userId: user.id, roleId: role.id },
+  });
+
+  return user.id;
+}
+
 function makeAdminSessionReq(opts: {
   sessionId: string;
   callerId: string;
@@ -181,7 +244,7 @@ function makeMemberSessionReq(opts: {
 
 describe("T7.3 session body privacy", () => {
   it("platform admin GET session returns only metadata, not body", async () => {
-    // Setup: create team with admin and session
+    // Setup: create a team with a session, and a separate platform admin user
     const { adminId, teamId, projectId } = await makeTeamWithAdminAndMember();
     const session = await makeSession({
       userId: adminId,
@@ -192,9 +255,10 @@ describe("T7.3 session body privacy", () => {
       status: "active",
     });
 
-    // Platform admin calls GET /api/admin/sessions/[id]
+    // Platform admin (not team OWNER) calls GET /api/admin/sessions/[id]
+    const platformAdminId = await makePlatformAdmin();
     const { GET } = await import("../../app/api/admin/sessions/[id]/route");
-    const req = makeAdminSessionReq({ sessionId: session.id, callerId: adminId });
+    const req = makeAdminSessionReq({ sessionId: session.id, callerId: platformAdminId });
     const res = await GET(req, { params: Promise.resolve({ id: session.id }) });
 
     expect(res.status).toBe(200);
@@ -258,9 +322,10 @@ describe("T7.3 session body privacy", () => {
     const dbSession = await prisma.session.findUnique({ where: { id: session.id } });
     expect(dbSession?.jsonlPath).toBeTruthy();
 
-    // Admin requests the session
+    // Platform admin (not team OWNER) requests the session
+    const platformAdminId = await makePlatformAdmin();
     const { GET } = await import("../../app/api/admin/sessions/[id]/route");
-    const req = makeAdminSessionReq({ sessionId: session.id, callerId: adminId });
+    const req = makeAdminSessionReq({ sessionId: session.id, callerId: platformAdminId });
     const res = await GET(req, { params: Promise.resolve({ id: session.id }) });
 
     expect(res.status).toBe(200);
