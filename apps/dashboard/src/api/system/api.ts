@@ -108,37 +108,6 @@ export const deleteUser = (id: number): Promise<any> => {
   return httpClient.del({ url: `${API_PREFIX}/users/${id}` })
 }
 
-// ========== 部门管理 ==========
-
-export const getDepartmentList = (
-  params?: Record<string, any>
-): Promise<BackendListResponse<Api.SystemDepartment.DepartmentItem>> => {
-  return httpClient.get({
-    url: `${API_PREFIX}/departments`,
-    params: normalizePaginationParams(params),
-    keepFullResponse: true
-  })
-}
-
-export const getDepartmentTree = (): Promise<Api.SystemDepartment.DepartmentItem[]> => {
-  return httpClient.get({ url: `${API_PREFIX}/departments/tree` })
-}
-
-export const addDepartment = (data: any): Promise<any> => {
-  return httpClient.post({ url: `${API_PREFIX}/departments`, data, keepFullResponse: true })
-}
-
-export const updateDepartment = (data: any): Promise<any> => {
-  const id = data.id
-  const payload = { ...data }
-  delete payload.id
-  return httpClient.put({ url: `${API_PREFIX}/departments/${id}`, data: payload, keepFullResponse: true })
-}
-
-export const deleteDepartment = (id: number): Promise<any> => {
-  return httpClient.del({ url: `${API_PREFIX}/departments/${id}`, keepFullResponse: true })
-}
-
 // ========== 菜单元素权限 (后端暂不支持, 保留接口占位) ==========
 
 export const getAuthList = (menuID: number): Promise<any> => {

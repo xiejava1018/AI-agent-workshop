@@ -92,8 +92,6 @@ declare namespace Api {
       role_id?: number | null
       role_name?: string | null
       role_desc?: string | null
-      department_id?: number | null
-      department_name?: string | null
       created_at?: number | string
       updated_at?: number | string
       [key: string]: any
@@ -103,7 +101,7 @@ declare namespace Api {
     type UserSearchParams = Partial<
       Pick<
         UserListItem,
-        'id' | 'username' | 'name' | 'phone' | 'gender' | 'status' | 'role_id' | 'department_id'
+        'id' | 'username' | 'name' | 'phone' | 'gender' | 'status' | 'role_id'
       >
     > & {
       page?: number
@@ -133,37 +131,6 @@ declare namespace Api {
       pageSize?: number
       current?: number
       size?: number
-    }
-  }
-
-  /** 部门管理 */
-  namespace SystemDepartment {
-    interface DepartmentItem {
-      id: number
-      parent_id?: number | null
-      name: string
-      status: number // 1 启用 / 2 禁用（后端定义）
-      sort?: number
-      user_count?: number
-      created_at?: number
-      updated_at?: number
-      children?: DepartmentItem[]
-    }
-
-    interface DepartmentSearchParams {
-      page?: number
-      page_size?: number
-      pageSize?: number
-      name?: string
-      status?: number
-    }
-
-    interface DepartmentPayload {
-      id?: number
-      parent_id?: number | null
-      name: string
-      status: number
-      sort?: number
     }
   }
 }
