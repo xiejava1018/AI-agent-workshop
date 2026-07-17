@@ -8,11 +8,12 @@ import {
   Theme,
   type AgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
-import { createDecipheriv, createHash, randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { cacheSessionPath } from "./session-reader";
 import { decrementUserSessionCap } from "./session-cap";
 import { resolveAgentMcpServers, resolveAgentSkills } from "./scope-resolve";
 import { prisma } from "./prisma";
+import { decryptSecret } from "./secret-crypto";
 import type { SlashCommandInfo, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
@@ -1025,47 +1026,11 @@ type AgentServices = AgentSessionServices;
 // ----------------------------------------------------------------------------
 
 /**
- * Decrypt one AES-256-GCM ciphertext stored in `UserApiKey.secretEnc`.
- *
- * The cipher format is `<iv-hex>:<authTag-hex>:<ciphertext-hex>` — same
- * envelope used by T7.1 (the dedicated encryption module). We re-implement
- * the unwrap here so T2.6 does not have to wait for T7.1 to land; once T7.1
- * ships its `decryptSecret()` helper we will route this through it.
- *
- * Throws on any decode / decrypt failure so a misconfigured deploy fails
- * closed rather than silently passing ciphertext through as an "API key".
- */
-function decryptUserApiKey(secretEnc: string): string {
-  const masterKeyHex = process.env.APP_ENCRYPTION_KEY;
-  if (!masterKeyHex) {
-    throw new Error(
-      "APP_ENCRYPTION_KEY env var is required to decrypt UserApiKey rows",
-    );
-  }
-  const masterKey = Buffer.from(masterKeyHex, "hex");
-  if (masterKey.length !== 32) {
-    throw new Error(
-      `APP_ENCRYPTION_KEY must decode to 32 bytes (got ${masterKey.length})`,
-    );
-  }
-  const parts = secretEnc.split(":");
-  if (parts.length !== 3) {
-    throw new Error(
-      "UserApiKey.secretEnc must be `<iv-hex>:<authTag-hex>:<ciphertext-hex>`",
-    );
-  }
-  const [ivHex, authTagHex, ciphertextHex] = parts;
-  const iv = Buffer.from(ivHex, "hex");
-  const authTag = Buffer.from(authTagHex, "hex");
-  const ciphertext = Buffer.from(ciphertextHex, "hex");
-  const decipher = createDecipheriv("aes-256-gcm", masterKey, iv);
-  decipher.setAuthTag(authTag);
-  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  return plaintext.toString("utf8");
-}
-
-/**
  * Load the calling user's BYOK API keys from the database and decrypt them.
+ *
+ * Decryption is delegated to the canonical `decryptSecret` helper in
+ * `lib/secret-crypto.ts` (T7.1), so `UserApiKey.secretEnc` uses exactly the
+ * same `<iv>:<authTag>:<ciphertext>` envelope as every other at-rest secret.
  *
  * Returns an empty array when `userId === null` so legacy callers (no auth
  * context) still work — the resulting InMemory AuthStorage will simply have
@@ -1086,7 +1051,7 @@ export async function loadUserApiKeys(
   });
   return rows.map((row) => ({
     provider: row.provider,
-    apiKey: decryptUserApiKey(row.secretEnc),
+    apiKey: decryptSecret(row.secretEnc),
   }));
 }
 

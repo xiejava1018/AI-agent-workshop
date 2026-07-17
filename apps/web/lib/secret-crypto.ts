@@ -1,20 +1,38 @@
 /**
  * lib/secret-crypto.ts
  *
- * AES-256-GCM envelope encryption for at-rest secrets (platform + user API
- * keys). The cipher format is `<iv-hex>:<authTag-hex>:<ciphertext-hex>` — the
- * same envelope `rpc-manager.decryptUserApiKey` already reads, so ciphertext
- * produced here is interchangeable with the BYOK decrypt path.
+ * Canonical AES-256-GCM envelope encryption for at-rest secrets — MCP server
+ * configs, platform API keys, and user (BYOK) API keys all encrypt/decrypt
+ * through this single module. The cipher format is
+ * `<iv-hex>:<authTag-hex>:<ciphertext-hex>`; ciphertext produced by
+ * `encryptSecret` is decryptable by `decryptSecret` and vice versa, and the
+ * BYOK read path (`rpc-manager.loadUserApiKeys`) routes through `decryptSecret`
+ * so there is exactly one envelope format in the codebase.
  *
  * The master key comes from the `APP_ENCRYPTION_KEY` env var: a 64-char hex
  * string decoding to exactly 32 bytes. A misconfigured deploy throws so it
- * fails closed rather than silently storing weak or plaintext data.
+ * fails closed rather than silently storing weak or plaintext data. Generate a
+ * valid key with `generateEncryptionKey()` (or `openssl rand -hex 32`).
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
 /** GCM standard nonce length in bytes. */
 const IV_BYTES = 12;
+
+/** AES-256 key length in bytes (256 bits). */
+const KEY_BYTES = 32;
+
+/**
+ * Generate a fresh, cryptographically random master key suitable for
+ * `APP_ENCRYPTION_KEY`: a 64-char hex string decoding to exactly 32 bytes.
+ * Use this once per environment (dev / staging / prod) and store the result
+ * in the deploy's secret manager — never commit it. Equivalent shell command:
+ * `openssl rand -hex 32`.
+ */
+export function generateEncryptionKey(): string {
+  return randomBytes(KEY_BYTES).toString("hex");
+}
 
 /**
  * Resolve and validate the 32-byte master key from `APP_ENCRYPTION_KEY`.
@@ -28,7 +46,7 @@ function getMasterKey(): Buffer {
     );
   }
   const masterKey = Buffer.from(masterKeyHex, "hex");
-  if (masterKey.length !== 32) {
+  if (masterKey.length !== KEY_BYTES) {
     throw new Error(
       `APP_ENCRYPTION_KEY must decode to 32 bytes (got ${masterKey.length})`,
     );

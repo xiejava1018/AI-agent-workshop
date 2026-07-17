@@ -65,4 +65,27 @@ describe("secret-crypto", () => {
       process.env.APP_ENCRYPTION_KEY = prev;
     }
   });
+
+  it("generateEncryptionKey produces a valid 32-byte hex key usable as master key", async () => {
+    const { generateEncryptionKey, encryptSecret, decryptSecret } =
+      await import("./secret-crypto");
+    const key = generateEncryptionKey();
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(Buffer.from(key, "hex").length).toBe(32);
+
+    // A freshly generated key must round-trip a secret end-to-end.
+    const prev = process.env.APP_ENCRYPTION_KEY;
+    process.env.APP_ENCRYPTION_KEY = key;
+    try {
+      const enc = encryptSecret("generated-key-secret");
+      expect(decryptSecret(enc)).toBe("generated-key-secret");
+    } finally {
+      process.env.APP_ENCRYPTION_KEY = prev;
+    }
+  });
+
+  it("generateEncryptionKey returns a distinct key each call", async () => {
+    const { generateEncryptionKey } = await import("./secret-crypto");
+    expect(generateEncryptionKey()).not.toBe(generateEncryptionKey());
+  });
 });
