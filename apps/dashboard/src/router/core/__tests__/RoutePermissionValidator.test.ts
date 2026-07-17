@@ -75,7 +75,8 @@ describe('RoutePermissionValidator.hasPermission', () => {
 describe('RoutePermissionValidator.matchRoute', () => {
   const menu = sampleMenu()
 
-  it('matches a dynamic route parameter (/workspace/agent/:id matches /workspace/agent/42)', () => {
+  it('matches a deeply nested path via prefix short-circuit (/workspace/agent/42 under /workspace)', () => {
+    // 注:此处经 /workspace 前缀短路命中,:id 正则路径由 isDynamicRouteMatch 套件单独覆盖
     expect(RoutePermissionValidator.matchRoute('/workspace/agent/42', menu)).toBe(true)
   })
 

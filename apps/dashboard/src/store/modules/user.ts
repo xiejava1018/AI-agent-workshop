@@ -8,6 +8,7 @@ import { resetRouterState } from '@/router/guards/beforeEach'
 import { useMenuStore } from './menu'
 import { StorageConfig } from '@/utils/storage/storage-config'
 import { fetchGetUserInfo } from '@/api/auth'
+import { hasPermission as setHasPermission, hasAnyPermission as setHasAnyPermission } from '@/utils/permissions'
 
 /**
  * 用户状态管理
@@ -62,14 +63,14 @@ export const useUserStore = defineStore(
      * permissions 未加载时(空 Set)返回 false,调用方需确保已 fetchAndSetUserInfo。
      */
     const hasPermission = (code: string): boolean => {
-      return permissions.value.has(code)
+      return setHasPermission(permissions.value, code)
     }
 
     /**
      * M4:判断当前用户是否拥有给定权限码中的任意一个(OR 语义)。
      */
     const hasAnyPermission = (...codes: string[]): boolean => {
-      return codes.some((c) => permissions.value.has(c))
+      return setHasAnyPermission(permissions.value, codes)
     }
 
     /**

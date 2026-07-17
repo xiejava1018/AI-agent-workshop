@@ -1,27 +1,16 @@
 /**
- * T6.5 — userStore M4 RBAC extension unit tests.
+ * T6.5 — userStore M4 RBAC permission-check unit tests.
  *
- * Tests the pure permission-check logic extracted from userStore.
- * We test the functions directly rather than loading the full Pinia store
- * (which has deep import chains to mock data and static assets).
+ * Tests the REAL pure helpers in @/utils/permissions, which userStore.hasPermission
+ * / hasAnyPermission delegate to. Importing the real module (not re-declaring the
+ * logic here) means the test breaks if the contract changes — no false confidence.
+ *
+ * The store wiring itself (permissions.value → hasPermission) is verified via the
+ * v-auth directive test (directives/core/__tests__/auth.test.ts), which drives
+ * the real permission flow end-to-end.
  */
 import { describe, it, expect } from 'vitest'
-
-// ---------------------------------------------------------------------------
-// Re-implement the pure logic under test (same as in userStore).
-// These are trivial wrappers around Set.has(), but testing them ensures:
-//   1. The contract (empty Set → false, OR semantics, etc.) is documented.
-//   2. Future changes don't break the behavior.
-//   3. Coverage for T6.5.
-// ---------------------------------------------------------------------------
-
-function hasPermission(permissions: Set<string>, code: string): boolean {
-  return permissions.has(code)
-}
-
-function hasAnyPermission(permissions: Set<string>, codes: string[]): boolean {
-  return codes.some((c) => permissions.has(c))
-}
+import { hasPermission, hasAnyPermission } from '@/utils/permissions'
 
 describe('hasPermission', () => {
   it('returns false when permissions are empty (not loaded)', () => {
@@ -66,54 +55,16 @@ describe('hasAnyPermission', () => {
   })
 })
 
-describe('fetchAndSetUserInfo — permissions/roles population', () => {
-  it('builds a Set from the permissions array', () => {
-    const apiPermissions = ['user:view', 'role:edit', 'platform:access']
-    const permissions = new Set(apiPermissions)
-    expect(permissions).toEqual(new Set(['user:view', 'role:edit', 'platform:access']))
-    expect(hasPermission(permissions, 'platform:access')).toBe(true)
-    expect(hasAnyPermission(permissions, ['user:view', 'menu:delete'])).toBe(true)
+describe('permission-check on a realistically populated set (auth/me shape)', () => {
+  // Simulates the Set userStore builds from /api/auth/me permissions[]
+  const perms = new Set(['user:view', 'user:create', 'platform:access'])
+
+  it('grants platform:access for a platform admin', () => {
+    expect(hasPermission(perms, 'platform:access')).toBe(true)
   })
 
-  it('empty permissions array yields empty Set', () => {
-    const permissions = new Set<string>([])
-    expect(permissions.size).toBe(0)
-    expect(hasPermission(permissions, 'user:view')).toBe(false)
-  })
-
-  it('non-array permissions field is ignored (existing Set preserved)', () => {
-    // Simulating: API returns { permissions: undefined } → don't overwrite
-    const existing = new Set(['user:view'])
-    const apiResponse: Record<string, unknown> = { userId: 'u1' }
-    const permissions = Array.isArray(apiResponse.permissions)
-      ? new Set(apiResponse.permissions as string[])
-      : existing
-    expect(permissions).toEqual(new Set(['user:view']))
-  })
-
-  it('roles array is assigned directly', () => {
-    const roles = [{ code: 'platform_admin', name: '平台管理员' }]
-    expect(roles).toEqual([{ code: 'platform_admin', name: '平台管理员' }])
-  })
-
-  it('non-array roles field is ignored (existing roles preserved)', () => {
-    const existing = [{ code: 'team_owner', name: '团队所有者' }]
-    const apiResponse: Record<string, unknown> = { userId: 'u1' }
-    const roles = Array.isArray(apiResponse.roles) ? apiResponse.roles : existing
-    expect(roles).toEqual([{ code: 'team_owner', name: '团队所有者' }])
-  })
-})
-
-describe('logOut — permissions/roles cleared', () => {
-  it('permissions and roles are reset to empty', () => {
-    let permissions = new Set(['user:view', 'platform:access'])
-    let roles = [{ code: 'platform_admin', name: '平台管理员' }]
-
-    // Simulate logOut
-    permissions = new Set()
-    roles = []
-
-    expect(permissions.size).toBe(0)
-    expect(roles).toEqual([])
+  it('OR-checks across module boundaries', () => {
+    expect(hasAnyPermission(perms, ['role:edit', 'platform:access'])).toBe(true)
+    expect(hasAnyPermission(perms, ['role:edit', 'menu:delete'])).toBe(false)
   })
 })

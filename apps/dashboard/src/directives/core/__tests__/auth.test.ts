@@ -11,10 +11,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 
-// 可变的路由 mock：测试间改写 meta.authList
-const mockRoute = {
-  value: { meta: { authList: [] as Array<{ authMark: string }> } }
-}
+// vi.hoisted 使 mockRoute 在 vi.mock 工厂提升执行时即可用(普通 top-level const
+// 此时还未初始化)。测试间改写 meta.authList 驱动指令行为。
+const { mockRoute } = vi.hoisted(() => ({
+  mockRoute: {
+    value: { meta: { authList: [] as Array<{ authMark: string }> } }
+  }
+}))
 
 vi.mock('@/router', () => ({
   router: {
@@ -22,7 +25,9 @@ vi.mock('@/router', () => ({
   }
 }))
 
-const { setupAuthDirective } = await import('../auth')
+// 静态 import(非动态 await import):vi.mock 已提升到所有 import 之前,
+// 使 auth.ts 被 vitest 正确归因到 coverage 报表。
+import { setupAuthDirective } from '../auth'
 
 /** 设置当前路由的 authList */
 function setAuthList(authMarks: string[]): void {
