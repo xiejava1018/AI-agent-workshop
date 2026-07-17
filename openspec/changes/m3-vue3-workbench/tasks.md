@@ -60,7 +60,7 @@
 - [x] T5.2 扩展 `/api/skills/search`：返回作用域过滤后的技能列表
 - [x] T5.3 扩展 `/api/plugins`：按 global/team/user/agent 解析并强制按 tenant 过滤
 - [x] T5.4 对话中 `/<skill>` 显式调用：映射到 `disableModelInvocation` 技能
-- [ ] T5.5 模型自决 `<skill>` 块：经 `parseSkillBlock` 解析并注入指令，前端可视化提示
+- [x] T5.5 模型自决 `<skill>` 块：经 `parseSkillBlock` 解析并注入指令，前端可视化提示
 
 ## 6. 前端：Vue3 统一主界面（apps/dashboard）
 
