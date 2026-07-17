@@ -1,5 +1,26 @@
 import fs from "fs";
+import { resolve, relative, sep } from "path";
 import { prisma } from "./prisma";
+
+// Skills root directory — all skill file reads are pinned to this location
+const SKILLS_ROOT = resolve(process.env.SKILLS_ROOT ?? "./.skills");
+
+/**
+ * Validate and read a skill file safely, rejecting any path that escapes SKILLS_ROOT.
+ * Returns null if the file cannot be read or the path is invalid.
+ */
+export function safeReadSkillFile(filePath: string): string | null {
+  if (!filePath) return null;
+  const candidate = resolve(filePath);
+  const rel = relative(SKILLS_ROOT, candidate);
+  // Reject if the resolved path is outside SKILLS_ROOT (path traversal attempt)
+  if (rel.startsWith(`..${sep}`) || rel.includes("..")) return null;
+  try {
+    return fs.readFileSync(candidate, "utf-8");
+  } catch {
+    return null;
+  }
+}
 
 export interface SkillCommand {
   skillName: string;
@@ -79,15 +100,10 @@ export async function buildSkillInjection(
 
   if (!resolvedSkill) return null;
 
-  // Read skill file content from filePath
+  // Read skill file content from filePath (validated against SKILLS_ROOT)
   let skillContent = "";
   if (resolvedSkill.filePath) {
-    try {
-      skillContent = fs.readFileSync(resolvedSkill.filePath, "utf-8");
-    } catch {
-      // If file can't be read, continue without content
-      skillContent = "";
-    }
+    skillContent = safeReadSkillFile(resolvedSkill.filePath) ?? "";
   }
 
   // Write SkillInvocation audit log

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { parseSkillCommand, buildSkillInjection } from "./skill-invoke";
+import { parseSkillCommand, buildSkillInjection, safeReadSkillFile } from "./skill-invoke";
 
 // Mock prisma
 vi.mock("./prisma", () => ({
@@ -39,6 +39,21 @@ describe("parseSkillCommand", () => {
   });
 });
 
+describe("safeReadSkillFile", () => {
+  it("returns null for empty filePath", () => {
+    expect(safeReadSkillFile("")).toBeNull();
+    expect(safeReadSkillFile(null as any)).toBeNull();
+    expect(safeReadSkillFile(undefined as any)).toBeNull();
+  });
+
+  it("returns null for path traversal attempts", () => {
+    // These should be rejected as they escape SKILLS_ROOT
+    expect(safeReadSkillFile("/etc/passwd")).toBeNull();
+    expect(safeReadSkillFile("../../../etc/passwd")).toBeNull();
+    expect(safeReadSkillFile(".skills/../../etc/passwd")).toBeNull();
+  });
+});
+
 describe("buildSkillInjection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -53,7 +68,7 @@ describe("buildSkillInjection", () => {
     teamId: null as string | null,
     userId: null as string | null,
     source: "",
-    filePath: "/path/to/skills/commit/SKILL.md",
+    filePath: ".skills/commit/SKILL.md",  // relative path within SKILLS_ROOT
     enabled: true,
   };
 

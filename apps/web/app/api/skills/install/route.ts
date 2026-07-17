@@ -24,9 +24,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { resolve, relative, sep } from "path";
 import { runNpx } from "@/lib/npx";
 import { prisma } from "@/lib/prisma";
 import { getUserHighestRole } from "@/lib/user-role";
+
+// Skills root — filePath values are validated against this at install time
+const SKILLS_ROOT = resolve(process.env.SKILLS_ROOT ?? "./.skills");
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +57,17 @@ function badRequestResponse(msg: string): NextResponse {
 
 function isSkillScope(v: unknown): v is SkillScope {
   return typeof v === "string" && (VALID_SCOPES as readonly string[]).includes(v);
+}
+
+/**
+ * Validate that a filePath resolves to a location within SKILLS_ROOT.
+ * Rejects empty paths and any path that escapes the skills directory (path traversal).
+ */
+function isValidSkillFilePath(filePath: string): boolean {
+  if (!filePath || typeof filePath !== "string") return false;
+  const candidate = resolve(filePath);
+  const rel = relative(SKILLS_ROOT, candidate);
+  return !(rel.startsWith(`..${sep}`) || rel.includes(".."));
 }
 
 /** Check if caller is OWNER or ADMIN of a specific team. */
@@ -98,7 +113,7 @@ async function handleScopedInstall(
   const callerId = req.headers.get("x-user-id");
   if (!callerId) return unauthorizedResponse();
 
-  const { slug: rawSlug, name: rawName, description, scope: rawScope, teamId, userId, source, filePath } =
+  const { slug: rawSlug, name: rawName, description, scope: rawScope, teamId, userId, source, filePath: rawFilePath } =
     body;
 
   if (typeof rawSlug !== "string" || rawSlug.trim().length === 0) {
@@ -115,6 +130,14 @@ async function handleScopedInstall(
     return badRequestResponse('scope must be "global" | "team" | "user"');
   }
   const scope = rawScope;
+
+  // Validate filePath if provided — must stay within SKILLS_ROOT
+  const filePath = typeof rawFilePath === "string" && rawFilePath.trim() !== ""
+    ? rawFilePath.trim()
+    : "";
+  if (filePath && !isValidSkillFilePath(filePath)) {
+    return badRequestResponse("filePath must be inside the skills root directory");
+  }
 
   // Resolve tenant + RBAC per scope.
   let resolvedTeamId: string | null = null;
@@ -168,7 +191,7 @@ async function handleScopedInstall(
         teamId: resolvedTeamId,
         userId: resolvedUserId,
         source: typeof source === "string" ? source : "",
-        filePath: typeof filePath === "string" ? filePath : "",
+        filePath,
       },
     });
     return NextResponse.json({ skill: created }, { status: 201 });
