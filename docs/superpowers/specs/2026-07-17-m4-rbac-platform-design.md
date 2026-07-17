@@ -600,3 +600,39 @@ export const auth: Directive<HTMLElement, string> = {
 - UI 设计：`docs/ui-design/index.html`
 - 既有 RBAC：`apps/web/lib/team-auth.ts`、`apps/web/lib/server-user.ts`
 - M3 提案：`openspec/changes/m3-vue3-workbench/proposal.md`
+
+---
+
+## 15. Implementation Divergence（实现偏差记录，verify 阶段 2026-07-17 追加）
+
+> 本节记录实现与上方设计/delta spec 的有意偏差。这些偏差经 verify 阶段核对 + 用户确认（选项 A：记录偏差）接受，**不回 build 改 spec**。delta spec 中的对应表述以本节为准。
+
+### 15.1 `api/system/api.ts` 保留（非删除）
+
+- **spec/design 原表述**（§8.5、delta spec R6/R9）：「删除 `api/system/api.ts`（无用，前端不再调 `/api/v1/*` 走这里）」。
+- **实际**：该文件是 system 页面（`views/system/user`、`role`、`menu`、`role/auth`）访问 `/api/v1/*` 的**活跃 API 层**，被 6 个文件 import，内部 `API_PREFIX = '/api/v1'` 调真实后端。原「无用」判断有误。
+- **处理**：保留 `api/system/api.ts`；本次仅移除其中的 department CRUD 函数（T10-D）。grep 确认无死引用。
+
+### 15.2 前端动态菜单/指令用模板自带命名（非 spec 引用的路径）
+
+- **spec/design 原表述**（§8.2/§8.3、delta spec R6）：`router/utils.ts` 的 `buildRoutesFromMenu`、`directives/business/auth.ts`。
+- **实际**：Art Design Pro 模板自带等价机制——动态路由用 `router/guards/beforeEach.ts` 的 `RouteRegistry.register()`（功能等价 buildRoutesFromMenu）；`v-auth` 指令在 `directives/core/auth.ts`（基于 `route.meta.authList`，功能等价）。`router/utils.ts`/`directives/business/auth.ts` 不存在。
+- **处理**：采纳模板命名；本次补的单测覆盖 `directives/core/auth.ts`（v-auth）与 `router/core/RoutePermissionValidator.ts`（路由权限校验）。
+
+### 15.3 审计（R11）接受为已知缺口
+
+- **spec R11**：RBAC 操作（user.create / role.create / menu.create 等）SHALL 写 `AuditLog`。
+- **实际**：`auditLog()` 函数存在（`lib/audit-log.ts`），但仅在 `api/agent/*`、`api/sessions/*` 调用；`/api/v1/{roles,users,menus}` 与 `/api/admin/*` **未调用**。
+- **处理**：用户 2026-07-17 确认接受为已知缺口（verify 报告 W1），留 backlog（见 tasks.md §10）后续 change 补。
+
+### 15.4 三角色 E2E（R3/R10/R12）接受为已知缺口
+
+- **spec R3/R10/R12 scenarios**：三角色登录侧边栏截图、v-auth 真实页面移除、UI 13 屏对照。
+- **实际**：无 m4 Playwright E2E spec（仅有 m3-workbench/login）。后端 RBAC 逻辑已由 47 个 v1 集成测试覆盖，但前端端到端无自动化。
+- **处理**：用户 2026-07-17 确认接受为已知缺口（verify 报告 W2），留 backlog（tasks.md B7）。
+
+### 15.5 `store/modules/permission.ts` 整文件删除
+
+- **spec/design 原表述**（§8.5）：删除 `getMenuByRole`/`isPlatformAdmin`/`isTeamAdmin`，「`Role` 类型仅用于 hasPermission 判断时保留」。
+- **实际**：三个函数 + `Role` 类型 + `MenuItem` 接口**零外部引用**（grep 全 src 确认），整文件删除（commit 2cdabdb）。
+- **处理**：整文件删除，比 spec「保留 Role 类型」更彻底（因 Role 也无引用）。

@@ -157,3 +157,4 @@
 - B5 SoybeanAdmin 模板升级 review 检查清单加一行(防止 department/dict 重新被引入)
 - B6 must-change-password 门禁落地(修 25 个预存在 meta 测试)
 - B7 m4 三角色 E2E spec
+- B8 RBAC 路由审计落地(verify W1):/api/v1/{roles,users,menus} 与 /api/admin/* 的 create/update/delete 补 `void auditLog({...})`(沿用 agent/session 路由模式);满足 spec R11
