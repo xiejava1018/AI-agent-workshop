@@ -87,16 +87,6 @@ export const asyncRoutes: AppRouteRecord[] = [
         }
       },
       {
-        path: 'dict',
-        name: 'Dict',
-        component: RoutesAlias.Dict,
-        meta: {
-          title: '字典管理',
-          keepAlive: true,
-          roles: ['R_SUPER', 'R_ADMIN']
-        }
-      },
-      {
         path: 'config',
         name: 'SystemConfig',
         component: RoutesAlias.SystemConfig,
