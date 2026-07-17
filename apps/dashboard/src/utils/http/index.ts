@@ -13,6 +13,19 @@ const UNAUTHORIZED_DEBOUNCE_TIME = 3000
 let isUnauthorizedErrorShown = false
 let unauthorizedTimer: NodeJS.Timeout | null = null
 
+/** Token刷新状态 */
+let isRefreshing = false
+let refreshSubscribers: Array<(token: string) => void> = []
+
+function subscribeTokenRefresh(callback: (token: string) => void) {
+  refreshSubscribers.push(callback)
+}
+
+function onTokenRefreshed(token: string) {
+  refreshSubscribers.forEach((cb) => cb(token))
+  refreshSubscribers = []
+}
+
 /** 扩展 AxiosRequestConfig */
 export interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   showErrorMessage?: boolean
@@ -89,9 +102,40 @@ axiosInstance.interceptors.response.use(
     // 2xx 时直接放行；401 由 error 分支处理。
     return response
   },
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config as ExtendedAxiosRequestConfig & { _retry?: boolean }
     const status = error.response?.status
-    const skipAuth = error.config?.skipAuthHandler === true
+    const skipAuth = originalRequest?.skipAuthHandler === true
+
+    // 401 自动刷新 token 重放
+    if (status === ApiStatus.unauthorized && !skipAuth && !originalRequest._retry) {
+      if (!isRefreshing) {
+        isRefreshing = true
+        try {
+          const { refreshToken } = await import('@/api/auth')
+          const res = await refreshToken()
+          const newToken = (res as any)?.data?.access_token
+          if (newToken) {
+            localStorage.setItem('access_token', newToken)
+            onTokenRefreshed(newToken)
+          }
+        } catch {
+          // refresh 失败，交给后续 handleUnauthorizedError 处理
+        } finally {
+          isRefreshing = false
+        }
+      }
+
+      // 排队等待 token 刷新完成
+      return new Promise((resolve) => {
+        subscribeTokenRefresh((token) => {
+          originalRequest._retry = true
+          ;(originalRequest.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
+          resolve(axiosInstance(originalRequest))
+        })
+      })
+    }
+
     if (status === ApiStatus.unauthorized && !skipAuth) handleUnauthorizedError()
     return Promise.reject(handleError(error))
   }
