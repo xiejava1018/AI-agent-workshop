@@ -4,14 +4,25 @@ import request from '@/utils/http'
  * 登录
  * POST /api/auth/user-login
  */
-export async function fetchLogin(params: Api.Auth.LoginParams): Promise<Api.Auth.LoginResponse> {
-  const res = await request.post<any>({
-    url: '/api/auth/user-login',
-    data: params,
-    showErrorMessage: false
-  })
+export function login(username: string, password: string) {
+  return request.post({ url: '/api/auth/user-login', data: { username, password }, showErrorMessage: false })
+}
 
-  return res as Api.Auth.LoginResponse
+/**
+ * 刷新访问令牌
+ * POST /api/auth/refresh
+ * HttpOnly cookie (pw_rt) 自动携带，无需显式传 token
+ */
+export function refreshToken() {
+  return request.post({ url: '/api/auth/refresh', showErrorMessage: false })
+}
+
+/**
+ * 修改密码（首次登录强制改密）
+ * POST /api/auth/change-password
+ */
+export function changePassword(oldPassword: string, newPassword: string) {
+  return request.post({ url: '/api/auth/change-password', data: { oldPassword, newPassword }, showErrorMessage: false })
 }
 
 /**
@@ -23,6 +34,19 @@ export function fetchGetUserInfo() {
     url: '/api/auth/me',
     showErrorMessage: false
   })
+}
+
+/**
+ * 登录 (legacy - use login() instead)
+ * POST /api/auth/user-login
+ */
+export async function fetchLogin(params: Api.Auth.LoginParams): Promise<Api.Auth.LoginResponse> {
+  const res = await request.post<any>({
+    url: '/api/auth/user-login',
+    data: params,
+    showErrorMessage: false
+  })
+  return res as Api.Auth.LoginResponse
 }
 
 /**
