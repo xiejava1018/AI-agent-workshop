@@ -22,17 +22,17 @@
 - [x] T1.6 新增 `InviteLink` 表（teamId / token / role / expiresAt / usedBy / requireAccount）
 - [x] T1.7 新增 `PlatformApiKey` / `UserApiKey` 表（AES-256-GCM 加密，主密钥由环境变量持有）
 - [x] T1.8 扩展 `Quota`（或并入 User/Team）：tokenDailyLimit / maxConcurrentSessions（=活跃会话数）
-- [ ] T1.9 `Session` 确认已挂 `userId + projectId`（若缺 projectId 则补迁移）
-- [ ] T1.10 编写并运行 `prisma migrate dev` 生成 PostgreSQL 迁移，回滚可复现
+- [x] T1.9 `Session` 确认已挂 `userId + projectId`（若缺 projectId 则补迁移）
+- [x] T1.10 编写并运行 `prisma migrate dev` 生成 PostgreSQL 迁移，回滚可复现
 
 ## 2. 后端：Agent 运行时与绑定接缝
 
-- [ ] T2.1 修 `lib/rpc-manager.ts` 缓存键：从 `getOrCreateServices(cwd, agentDir)` 改为纳入技能/扩展作用域 hash（如 `getOrCreateServices(cwd, scopeHash)`），避免按 agentId 绑定被击穿
-- [ ] T2.2 在 `lib/tool-presets.ts` 实现技能四层解析（global → team → user → agent），按 `agentId` 计算有效技能集
-- [ ] T2.3 在 `lib/tool-presets.ts` 实现 MCP 四层解析（global → team → user → agent），按 `agentId` 计算有效 MCP Server 列表
-- [ ] T2.4 在 `spawnSession(opts)` 中按 `agentId` 四层解析后，经 `createAgentSessionServices` 的 `resourceLoaderOptions` 注入技能（`skillsOverride` / `additionalSkillPaths` / `noSkills`）与 MCP 扩展（`extensionsOverride` / `additionalExtensionPaths`）
-- [ ] T2.5 会话层工具级约束：经 `createAgentSessionFromServices` 的 `tools` / `customTools` / `excludeTools` 参数
-- [ ] T2.6 每次 spawn 注入按租户的 `SettingsManager` 与 `AuthStorage`（InMemory，按请求注入 BYOK 密钥）
+- [x] T2.1 修 `lib/rpc-manager.ts` 缓存键：从 `getOrCreateServices(cwd, agentDir)` 改为纳入技能/扩展作用域 hash（如 `getOrCreateServices(cwd, scopeHash)`），避免按 agentId 绑定被击穿
+- [x] T2.2 在 `lib/tool-presets.ts` 实现技能四层解析（global → team → user → agent），按 `agentId` 计算有效技能集
+- [x] T2.3 在 `lib/tool-presets.ts` 实现 MCP 四层解析（global → team → user → agent），按 `agentId` 计算有效 MCP Server 列表
+- [x] T2.4 在 `spawnSession(opts)` 中按 `agentId` 四层解析后，经 `createAgentSessionServices` 的 `resourceLoaderOptions` 注入技能（`skillsOverride` / `additionalSkillPaths` / `noSkills`）与 MCP 扩展（`extensionsOverride` / `additionalExtensionPaths`）
+- [x] T2.5 会话层工具级约束：经 `createAgentSessionFromServices` 的 `tools` / `customTools` / `excludeTools` 参数
+- [x] T2.6 每次 spawn 注入按租户的 `SettingsManager` 与 `AuthStorage`（InMemory，按请求注入 BYOK 密钥）
 
 ## 3. 后端：多 Agent 编排（Supervisor）
 
@@ -68,7 +68,7 @@
 - [x] T6.2 登录页：用户名+密码登录，对接 refresh token 续期；新用户首次登录强制改密
 - [x] T6.3 工作空间屏：统计卡片（今日会话/Token/活跃 Agent/MCP/技能）、最近会话、快捷操作
 - [x] T6.4 Agent 工作台屏：会话列表 + SSE 流式打字机：会话列表 + 对话区（SSE 流式打字机）+ 当前 Agent/工具面板；支持 `/<skill>` 与 `@MCP` 提示
-- [ ] T6.5 多 Agent 编排屏：任务输入 + 模式切换（同步/并行/异步）+ 编排树实时展示 + 执行日志/结果
+- [x] T6.5 多 Agent 编排屏：任务输入 + 模式切换（同步/并行/异步）+ 编排树实时展示 + 执行日志/结果
 - [x] T6.6 数字员工屏：列表 + 创建/编辑/克隆 + 绑定技能/MCP：列表（团队预置只读继承 + 个人可编辑）+ 创建/编辑/克隆为个人 + 绑定技能/MCP 界面
 - [x] T6.7 技能中心屏：已安装列表 + 市场搜索 + 安装/启停：已安装列表（按作用域）+ 市场搜索 + 安装/启停
 - [x] T6.8 我的设置屏：个人资料 + BYOK API Key + 默认模型 + 配额：个人资料 + BYOK API Key 管理 + 默认模型 + 故障回退开关 + 我的配额
@@ -94,9 +94,9 @@
 
 ## 9. 文档与收尾
 
-- [x] T9.1 更新 README / AGENTS.md（Vue3 主界面 + 数字员工 + 编排使用说明）（Vue3 主界面 + 数字员工 + 编排使用说明）
-- [ ] T9.2 更新 `docs/plans/2026-07-15-ai-agent-workshop-personal-workspace-design.md` 状态为"已评审，由 M3 实现"
-- [ ] T9.3 运行 `comet-guard m3-vue3-workbench open --apply` 确认三件套完整，进入 design 阶段
+- [x] T9.1 更新 README / AGENTS.md（Vue3 主界面 + 数字员工 + 编排使用说明）
+- [x] T9.2 更新 `docs/plans/2026-07-15-ai-agent-workshop-personal-workspace-design.md` 状态为"已评审，由 M3 实现"
+- [x] T9.3 运行 `comet-guard m3-vue3-workbench open --apply` 确认三件套完整，进入 design 阶段（已过 open → build 阶段，plan 文件中 open guard 产物已存在）
 
 ---
 
