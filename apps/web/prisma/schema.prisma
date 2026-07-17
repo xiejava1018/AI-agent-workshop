@@ -1,0 +1,406 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String             @id @default(cuid())
+  username              String             @unique
+  passwordHash          String
+  mustChangePassword    Boolean            @default(false)
+  disabled              Boolean            @default(false)
+  lastProjectId         String?
+  createdBy             String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  tokenDailyLimit       Int                @default(0) // 0 = 不限
+  maxConcurrentSessions Int                @default(5)
+  teams                 TeamMember[]
+  userSkillBindings     UserSkillBinding[]
+  userRoles             UserRole[]
+}
+
+model Team {
+  id                    String       @id @default(cuid())
+  name                  String
+  ownerUserId           String
+  createdAt             DateTime     @default(now())
+  tokenDailyLimit       Int          @default(0)
+  maxConcurrentSessions Int          @default(0) // 0 = 用全局默认
+  members               TeamMember[]
+  projects              Project[]
+}
+
+model TeamMember {
+  teamId   String
+  userId   String
+  role     Role     @default(MEMBER)
+  joinedAt DateTime @default(now())
+  team     Team     @relation(fields: [teamId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@id([teamId, userId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String
+  rootPath  String
+  createdBy String
+  createdAt DateTime @default(now())
+  team      Team     @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, rootPath])
+}
+
+// M2 reserved — schema 留空表, M1 永 false
+model SessionShare {
+  sessionId        String
+  sharedWithUserId String
+  createdAt        DateTime @default(now())
+
+  @@id([sessionId, sharedWithUserId])
+}
+
+// M2.3 — refresh token 黑名单: 存已撤销 jti + 过期时间, 过期可清理
+model RefreshTokenBlacklist {
+  id        String   @id @default(cuid())
+  jti       String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+// M2.4 — audit log: record security-relevant events (session create, cross-
+// team access denial, session share/unshare, admin role change).
+// `metadata` is a free-form JSON string so the schema doesn't need a
+// migration every time we add a new event type. `action` is a stable
+// machine-readable token like "session.create" or "session.access_denied".
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  action       String
+  resourceType String
+  resourceId   String?
+  metadata     String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@index([createdAt])
+}
+
+// M3 — Agent (digital employee): a configurable AI agent scoped to a team or
+// personal workspace. `scope` is "team" | "personal"; `model` is the LLM
+// identifier used for this agent. Stored systemPrompt is the base prompt.
+model Agent {
+  id           String   @id @default(cuid())
+  teamId       String?
+  ownerUserId  String?
+  name         String
+  description  String   @default("")
+  systemPrompt String   @default("")
+  model        String   @default("")
+  scope        String   @default("personal")
+  createdAt    DateTime @default(now())
+
+  skillBindings AgentSkillBinding[]
+  mcpBindings   AgentMcpBinding[]
+
+  @@index([teamId])
+  @@index([ownerUserId])
+}
+
+// M3 — Agent skill/mcp/user bindings: configure which skills and MCP servers an
+// agent (or a user) can access, and how. `mode` is "inherit" | "include" |
+// "exclude" — "inherit" defers to the owning scope's default, while "include"
+// / "exclude" override it. The pair (`agentId`+`skillPackageId`) is unique so a
+// binding row is the single source of truth for that (agent, skill) pair.
+model AgentSkillBinding {
+  id             String @id @default(cuid())
+  agentId        String
+  skillPackageId String
+  mode           String @default("inherit") // inherit | include | exclude
+
+  agent        Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  skillPackage SkillPackage @relation(fields: [skillPackageId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, skillPackageId])
+  @@index([agentId])
+}
+
+model AgentMcpBinding {
+  id          String @id @default(cuid())
+  agentId     String
+  mcpServerId String
+  mode        String @default("inherit")
+
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  mcpServer McpServer @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, mcpServerId])
+  @@index([agentId])
+}
+
+model UserSkillBinding {
+  id             String @id @default(cuid())
+  userId         String
+  skillPackageId String
+  mode           String @default("inherit")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillPackage SkillPackage @relation(fields: [skillPackageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillPackageId])
+  @@index([userId])
+}
+
+// M3 — SkillPackage: a skill bundle that can be scoped to global/team/user.
+// `scope` is "global" | "team" | "user"; `source` and `filePath` describe where
+// the bundle is loaded from (e.g. "builtin" path, or remote registry id). A
+// (scope, slug, teamId, userId) tuple uniquely identifies a package so a
+// global slug and a team-scoped slug can coexist. Like other M3 binding
+// tables, there are no FK relations — references are validated in-app.
+model SkillPackage {
+  id          String  @id @default(cuid())
+  slug        String
+  name        String
+  description String  @default("")
+  scope       String  @default("global") // global | team | user
+  teamId      String?
+  userId      String?
+  source      String  @default("")
+  filePath    String  @default("")
+  enabled     Boolean @default(true)
+
+  agentSkillBindings AgentSkillBinding[]
+  userSkillBindings  UserSkillBinding[]
+
+  @@unique([scope, slug, teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+// M3 — SkillInvocation: record an invocation/use of a SkillPackage by a user
+// in a session. Analytics/auditing row; no FK relations, validated in-app.
+model SkillInvocation {
+  id             String   @id @default(cuid())
+  skillPackageId String
+  userId         String?
+  sessionId      String?
+  createdAt      DateTime @default(now())
+
+  @@index([skillPackageId])
+}
+
+// M3 — McpServer: an MCP server registration scoped to global/team/user.
+// `transport` is "stdio" | "sse" | "http"; `endpoint` holds the URL for sse/
+// http transports. `configEnc` stores the AES-256-GCM ciphertext of the
+// server config (env vars, args, secrets) — NEVER plaintext. `scope` mirrors
+// SkillPackage scoping. No FK relations; references validated in-app.
+model McpServer {
+  id        String  @id @default(cuid())
+  name      String
+  transport String  @default("stdio") // stdio | sse | http
+  endpoint  String  @default("")
+  command   String  @default("")
+  configEnc String  @default("") // AES-256-GCM ciphertext, never plaintext
+  scope     String  @default("global") // global | team | user
+  teamId    String?
+  userId    String?
+  enabled   Boolean @default(true)
+
+  agentMcpBindings AgentMcpBinding[]
+
+  @@index([teamId])
+  @@index([userId])
+}
+
+// M3 — DelegationTree: a node in an agent-session delegation tree. Records a
+// parent→child session delegation under a shared root session. `mode` is the
+// delegation strategy; `depth` is the level below root; `status` tracks the
+// child session's lifecycle. No FK relations — references validated in-app.
+model DelegationTree {
+  id              String   @id @default(cuid())
+  rootSessionId   String
+  parentSessionId String?
+  childSessionId  String
+  mode            String   @default("sync") // sync | parallel | async
+  depth           Int      @default(0)
+  status          String   @default("running") // running | done | error
+  createdAt       DateTime @default(now())
+
+  @@index([rootSessionId])
+  @@index([childSessionId])
+}
+
+model InviteLink {
+  id             String   @id @default(cuid())
+  teamId         String
+  token          String   @unique
+  role           String   @default("MEMBER")
+  expiresAt      DateTime
+  usedBy         String?
+  requireAccount Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  @@index([teamId])
+}
+
+// M3 — PlatformApiKey: platform-level LLM provider credentials (system-wide).
+// `secretEnc` stores the AES-256-GCM ciphertext of the API key — NEVER plaintext.
+// Only one row per provider; rotated by upsert on `provider`.
+model PlatformApiKey {
+  id        String   @id @default(cuid())
+  provider  String
+  secretEnc String // AES-256-GCM ciphertext, never plaintext
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider])
+}
+
+// M3 — UserApiKey: per-user LLM provider credentials (BYOK). Allows individual
+// users to bring their own API keys for a given provider. `secretEnc` stores
+// the AES-256-GCM ciphertext — NEVER plaintext. Uniquely identified by
+// (userId, provider) so a user has at most one key per provider.
+model UserApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String
+  secretEnc String // AES-256-GCM ciphertext, never plaintext
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+// M3 — Session: metadata for agent sessions. Body still lives in .jsonl files
+// (Pi Agent compatibility); this table only stores queryable metadata + jsonlPath pointer.
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  teamId     String
+  projectId  String?
+  title      String   @default("")
+  status     String   @default("active")
+  tokenUsage Int      @default(0)
+  jsonlPath  String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([teamId])
+}
+
+// ===== M4 RBAC Platform =====
+// 标准 RBAC 中台:6 个新模型,正交于 TeamMember(team 数据范围)
+// SysRole/UserRole 管导航+平台动作(全局角色绑定),Permission 是一等公民,
+// 菜单可见性 = set(SysMenu.meta.permissions) ∩ set(user.permissions)
+// 设计:openspec/changes/m4-rbac-platform/design.md
+
+model SysRole {
+  id        String   @id @default(cuid())
+  code      String   @unique // platform_admin | team_owner | member | <自定义>
+  name      String
+  desc      String   @default("")
+  enabled   Boolean  @default(true)
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@index([enabled])
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role SysRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique // user:view / session:view / platform:access
+  module      String // 用户管理 / 团队管理 / 平台准入
+  name        String
+  description String   @default("")
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@index([module, sort])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       SysRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model SysMenu {
+  id        String   @id @default(cuid())
+  parentId  String?
+  name      String // 唯一英文标识
+  title     String // 显示名
+  path      String   @default("") // 前端路由 path
+  component String   @default("") // 前端组件路径
+  icon      String   @default("")
+  type      String   @default("menu") // directory | menu | button
+  authMark  String   @default("") // button 类型的权限码
+  sort      Int      @default(0)
+  visible   Boolean  @default(true) // is_hide
+  enabled   Boolean  @default(true) // is_enable
+  meta      String   @default("{}") // JSON: { permissions: ["user:view"], ... }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent    SysMenu?   @relation("MenuTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  SysMenu[]  @relation("MenuTree")
+  menuAuths MenuAuth[]
+
+  @@unique([parentId, name])
+  @@index([parentId])
+  @@index([type, enabled])
+}
+
+model MenuAuth {
+  id        String   @id @default(cuid())
+  menuId    String
+  title     String // "新增用户"
+  mark      String // "system:user:add" — 一个权限码
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menu SysMenu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@unique([menuId, mark])
+  @@index([menuId])
+}
