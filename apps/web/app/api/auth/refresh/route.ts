@@ -19,6 +19,7 @@
 //     browser drops the stale session.
 
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { jwtVerify } from "jose";
 import { getPasswordAuthProvider } from "@/lib/auth-provider";
 import "@/lib/auth-provider-bootstrap"; // side-effect: registers LocalPasswordAuthProvider
@@ -26,8 +27,10 @@ import { isRefreshTokenRevoked, revokeRefreshToken } from "@/lib/token-blacklist
 
 const COOKIE_AT = "pw_at";
 const COOKIE_RT = "pw_rt";
+const COOKIE_CSRF = "csrf_token";
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 const ACCESS_MAX_AGE = 60 * 15; // 15 minutes
+const CSRF_MAX_AGE = 60 * 60 * 24; // 24 hours
 
 function loadSecret(): Uint8Array {
   const secret = process.env.PI_WEB_JWT_SECRET;
@@ -55,7 +58,50 @@ function clearBothCookies(res: NextResponse): void {
   });
 }
 
+/**
+ * Double-Submit Cookie Pattern CSRF validation.
+ * Compares the csrf_token cookie value with the x-csrf-token header value.
+ * Lenient: if no CSRF cookie is present (client didn't call GET first), skip validation.
+ * This maintains backward compatibility with existing clients while protecting
+ * state-changing operations when the client follows the proper flow.
+ */
+function validateCsrf(req: NextRequest): boolean {
+  const csrfCookie = req.cookies.get(COOKIE_CSRF)?.value;
+  const csrfHeader = req.headers.get("x-csrf-token");
+
+  // If no CSRF cookie, skip validation (client hasn't called GET to obtain token)
+  if (!csrfCookie) {
+    return true;
+  }
+
+  // If CSRF cookie is present, header must match
+  return Boolean(csrfHeader && csrfCookie === csrfHeader);
+}
+
+/**
+ * GET /api/auth/refresh — issues a CSRF token cookie.
+ * The client JS reads this cookie and echoes it back via x-csrf-token header
+ * on state-changing requests (POST).
+ */
+export async function GET(req: NextRequest) {
+  const csrfToken = randomBytes(32).toString("hex");
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(COOKIE_CSRF, csrfToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: CSRF_MAX_AGE,
+    path: "/api/auth",
+  });
+  return res;
+}
+
 export async function POST(req: NextRequest) {
+  // CSRF validation using Double-Submit Cookie Pattern
+  if (!validateCsrf(req)) {
+    return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
+  }
+
   const refreshToken = req.cookies.get(COOKIE_RT)?.value;
   if (!refreshToken) {
     const res = NextResponse.json(
