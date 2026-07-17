@@ -87,23 +87,6 @@
               </ElSelect>
             </ElFormItem>
           </ElCol>
-          <ElCol :span="12">
-            <ElFormItem label="部门" prop="department_id">
-              <ElSelect
-                v-model="formData.department_id"
-                placeholder="请选择部门"
-                style="width: 100%"
-              >
-                <ElOption label="请选择" value="" disabled></ElOption>
-                <ElOption
-                  v-for="item in departmentList"
-                  :key="item.id"
-                  :label="item.name"
-                  :value="item.id"
-                />
-              </ElSelect>
-            </ElFormItem>
-          </ElCol>
         </ElRow>
 
         <ElRow :gutter="20">
@@ -146,7 +129,6 @@
     addUser,
     updateUser,
     deleteUser as apiDeleteUser,
-    getDepartmentList,
     getRoleList
   } from '@/api/system/api'
   import { FormInstance } from 'element-plus'
@@ -168,7 +150,6 @@
         username: '',
         full_name: '',
         phone: '',
-        department_id: undefined,
         role_id: undefined
       },
       columnsFactory: () => [
@@ -209,11 +190,6 @@
               )
             return '--'
           }
-        },
-        {
-          prop: 'department_name',
-          label: '部门',
-          align: 'center'
         },
         {
           prop: 'role_name',
@@ -271,8 +247,7 @@
     refreshAll
   } = tableApi as any
 
-  // 添加部门列表和角色列表的响应式数据
-  const departmentList = ref<any[]>([])
+  // 角色列表的响应式数据
   const roleList = ref<any[]>([])
 
   // 用户表单数据
@@ -284,7 +259,6 @@
     phone: '',
     gender: undefined,
     status: 1,
-    department_id: undefined,
     role_id: undefined
   })
 
@@ -315,19 +289,6 @@
       placeholder: '请输入手机号'
     },
     {
-      label: '部门',
-      key: 'department_id',
-      type: 'select',
-      span: 6,
-      clearable: true,
-      placeholder: '请选择部门',
-      options: () =>
-        departmentList.value.map((item) => ({
-          label: item.name,
-          value: item.id
-        }))
-    },
-    {
       label: '角色',
       key: 'role_id',
       type: 'select',
@@ -348,7 +309,6 @@
     { label: '用户名称', prop: 'full_name' },
     { label: '手机号', prop: 'phone' },
     { label: '性别', prop: 'gender' },
-    { label: '部门', prop: 'department_name' },
     { label: '角色', prop: 'role_name' },
     { label: '状态', prop: 'status' },
     { label: '操作', prop: 'operation' }
@@ -365,28 +325,6 @@
   }
 
   // 用户列表数据已由 useTable 管理
-
-  // 加载部门列表数据
-  const loadDepartmentList = async () => {
-    try {
-      const res = await getDepartmentList({ page: 1, pageSize: 200 })
-      const r: any = res as any
-      // 后端 DepartmentListResponse 字段是 items（不是 records）
-      const list = Array.isArray(r?.data?.items)
-        ? r.data.items
-        : Array.isArray(r?.data?.records)
-          ? r.data.records
-          : Array.isArray(r?.data)
-            ? r.data
-            : Array.isArray(r)
-              ? r
-              : []
-      departmentList.value = list
-    } catch (err) {
-      console.error('获取部门列表出错:', err)
-      ElMessage.error('获取部门列表失败')
-    }
-  }
 
   // 加载角色列表数据
   const loadRoleList = async () => {
@@ -424,7 +362,6 @@
       formData.phone = row.phone || ''
       formData.gender = row.gender === 0 ? 1 : row.gender
       formData.status = row.status
-      formData.department_id = row.department_id
       formData.role_id = row.role_id || 1
       formData.password = ''
     } else {
@@ -435,7 +372,6 @@
       formData.phone = ''
       formData.gender = undefined
       formData.status = 1
-      formData.department_id = undefined
       formData.role_id = undefined
 
       // 确保下一个渲染周期状态为启用
@@ -513,7 +449,6 @@
     ],
     gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
     status: [{ required: true, message: '请选择状态', trigger: 'change' }],
-    department_id: [{ required: true, message: '请选择部门', trigger: 'change' }],
     role_id: [{ required: true, message: '请选择角色', trigger: 'change' }]
   }
 
@@ -588,9 +523,9 @@
     })
   }
 
-  // 初始化加载部门和角色数据
+  // 初始化加载角色数据
   onMounted(async () => {
-    await Promise.all([loadDepartmentList(), loadRoleList()])
+    await loadRoleList()
   })
 </script>
 
