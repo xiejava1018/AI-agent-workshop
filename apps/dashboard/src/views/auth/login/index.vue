@@ -26,9 +26,11 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { login, changePassword } from '@/api/auth'
+import { useUserStore } from '@/store/modules/user'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+const userStore = useUserStore()
 const formRef = ref()
 const loading = ref(false)
 const mustChangePassword = ref(false)
@@ -52,14 +54,22 @@ async function handleLogin() {
     if (mustChangePassword.value) {
       await changePassword(form.password, form.newPassword)
     }
-    await login(form.username, form.password)
-    router.push('/workspace')
-  } catch (err: any) {
-    if (err?.response?.data?.mustChangePassword) {
+    const res = await login(form.username, form.password)
+    // mustChangePassword: true means first login — show password change form instead of redirecting
+    if (res?.mustChangePassword) {
       mustChangePassword.value = true
     } else {
-      ElMessage.error(err?.response?.data?.error || '登录失败')
+      // Populate user store and redirect to workspace
+      userStore.setUserInfo({
+        userId: res.id,
+        username: res.username,
+      } as Api.Auth.UserInfo)
+      userStore.setLoginStatus(true)
+      userStore.checkAndClearWorktabs()
+      router.push('/workspace')
     }
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.error || '登录失败')
   } finally {
     loading.value = false
   }
