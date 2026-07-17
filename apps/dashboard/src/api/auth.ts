@@ -4,8 +4,12 @@ import request from '@/utils/http'
  * 登录
  * POST /api/auth/user-login
  */
-export function login(username: string, password: string) {
-  return request.post({ url: '/api/auth/user-login', data: { username, password }, showErrorMessage: false })
+export function login(username: string, password: string): Promise<Api.Auth.LoginResponse> {
+  return request.post<Api.Auth.LoginResponse>({
+    url: '/api/auth/user-login',
+    data: { username, password },
+    showErrorMessage: false
+  })
 }
 
 /**
