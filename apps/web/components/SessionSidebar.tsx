@@ -214,9 +214,17 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
     }
   }
 
-  // Sort each level by modified desc
+  // Sort each level: pinned first (most-recently pinned last, then by modified
+  // desc within pinned), then unpinned by modified desc. The unmodified sort
+  // is the secondary key so a freshly-pinned row doesn't bounce a more
+  // recently active unpinned row around.
   const sort = (nodes: SessionTreeNode[]) => {
-    nodes.sort((a, b) => b.session.modified.localeCompare(a.session.modified));
+    nodes.sort((a, b) => {
+      const ap = a.session.pinned ? 1 : 0;
+      const bp = b.session.pinned ? 1 : 0;
+      if (ap !== bp) return bp - ap; // pinned first
+      return b.session.modified.localeCompare(a.session.modified);
+    });
     nodes.forEach((n) => sort(n.children));
   };
   sort(roots);
@@ -694,6 +702,42 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     onNewSession?.(tempId, selectedCwd);
   }, [selectedCwd, onNewSession]);
+
+  // Optimistic pin toggle — flip local state immediately so the list re-orders
+  // without a round trip, then refresh to reconcile with the server's view.
+  const handlePinnedChange = useCallback((id: string, pinned: boolean) => {
+    setAllSessions((prev) => {
+      let changed = false;
+      const next = prev.map((s) => {
+        if (s.id !== id) return s;
+        if ((s.pinned ?? false) === pinned) return s;
+        changed = true;
+        return { ...s, pinned };
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const pinnedReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadSessionsAfterPin = useCallback(() => {
+    if (pinnedReloadTimerRef.current) clearTimeout(pinnedReloadTimerRef.current);
+    pinnedReloadTimerRef.current = setTimeout(() => {
+      pinnedReloadTimerRef.current = null;
+      void loadSessions(false);
+    }, 150);
+  }, [loadSessions]);
+
+  useEffect(() => () => {
+    if (pinnedReloadTimerRef.current) clearTimeout(pinnedReloadTimerRef.current);
+  }, []);
+
+  const handlePinnedChangeWithReload = useCallback((id: string, pinned: boolean) => {
+    handlePinnedChange(id, pinned);
+    // Re-fetch so the file's pin status is the source of truth — the optimistic
+    // update is for snappy UX, not authority. Use a small debounce so toggling
+    // rapidly doesn't thrash the network.
+    reloadSessionsAfterPin();
+  }, [handlePinnedChange, reloadSessionsAfterPin]);
 
   const recentProjects = getRecentProjects(allSessions);
   const showProjectFilter = recentProjects.length > 8;
@@ -1467,6 +1511,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               onSessionDeleted?.(id);
               loadSessions();
             }}
+            onPinnedChange={handlePinnedChangeWithReload}
             depth={0}
           />
         ))}
@@ -1571,6 +1616,7 @@ function SessionTreeItem({
   onSelectSession,
   onRenamed,
   onSessionDeleted,
+  onPinnedChange,
   depth,
 }: {
   node: SessionTreeNode;
@@ -1580,6 +1626,7 @@ function SessionTreeItem({
   onSelectSession: (s: SessionInfo) => void;
   onRenamed?: () => void;
   onSessionDeleted?: (id: string) => void;
+  onPinnedChange?: (id: string, pinned: boolean) => void;
   depth: number;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -1607,6 +1654,7 @@ function SessionTreeItem({
           onClick={() => onSelectSession(node.session)}
           onRenamed={onRenamed}
           onDeleted={(id) => onSessionDeleted?.(id)}
+          onPinnedChange={onPinnedChange}
           depth={depth}
           hasChildren={hasChildren}
           collapsed={collapsed}
@@ -1625,6 +1673,7 @@ function SessionTreeItem({
               onSelectSession={onSelectSession}
               onRenamed={onRenamed}
               onSessionDeleted={onSessionDeleted}
+              onPinnedChange={onPinnedChange}
               depth={depth + 1}
             />
           ))}
@@ -1705,6 +1754,7 @@ function SessionItem({
   onClick,
   onRenamed,
   onDeleted,
+  onPinnedChange,
   depth = 0,
   hasChildren = false,
   collapsed = false,
@@ -1717,6 +1767,7 @@ function SessionItem({
   onClick: () => void;
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
+  onPinnedChange?: (id: string, pinned: boolean) => void;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
@@ -1727,9 +1778,11 @@ function SessionItem({
   const [renameValue, setRenameValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
+  const isPinned = session.pinned === true;
 
   const startRename = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1775,6 +1828,30 @@ function SessionItem({
     e.stopPropagation();
     setConfirmDelete(false);
   }, []);
+
+  const handleTogglePin = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (pinBusy) return;
+    const next = !isPinned;
+    // Optimistic — propagate to the parent so the list re-orders immediately.
+    onPinnedChange?.(session.id, next);
+    setPinBusy(true);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned: next }),
+      });
+      if (!res.ok) {
+        // Roll back so the list stays consistent with the server.
+        onPinnedChange?.(session.id, isPinned);
+      }
+    } catch {
+      onPinnedChange?.(session.id, isPinned);
+    } finally {
+      setPinBusy(false);
+    }
+  }, [isPinned, pinBusy, session.id, onPinnedChange]);
 
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
   const ITEM_HEIGHT = 54;
@@ -1939,9 +2016,76 @@ function SessionItem({
             </button>
           )}
 
+          {/* Persistent pin affordance so users can tell at-a-glance that a
+              session is pinned (and unpin) without having to find it on hover.
+              Non-pinned rows still get the button on hover via the panel below. */}
+          {isPinned && (
+            <button
+              onClick={handleTogglePin}
+              disabled={pinBusy}
+              title="Pinned — click to unpin"
+              aria-label="Unpin session"
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 22, height: 22, padding: 0, flexShrink: 0,
+                background: "rgba(37,99,235,0.10)", border: "1px solid rgba(37,99,235,0.35)",
+                borderRadius: 6, color: "var(--accent)",
+                cursor: pinBusy ? "default" : "pointer",
+                opacity: pinBusy ? 0.6 : 1,
+                transition: "background 0.12s, color 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                if (pinBusy) return;
+                e.currentTarget.style.background = "rgba(37,99,235,0.18)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(37,99,235,0.10)";
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="17" x2="12" y2="22" />
+                <path d="M5 17h14v-1.5a1.5 1.5 0 0 0-1.5-1.5H17l-1.4-1.4a2 2 0 0 0-1.4-.6H9.8a2 2 0 0 0-1.4.6L7 14H6.5A1.5 1.5 0 0 0 5 15.5V17z" />
+                <path d="M12 2a3 3 0 0 0-3 3c0 1.5 1 2 1 4h4c0-2 1-2.5 1-4a3 3 0 0 0-3-3z" />
+              </svg>
+            </button>
+          )}
+
           {/* Action buttons — shown on hover */}
           {hovered && (
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+              {!isPinned && (
+                <button
+                  onClick={handleTogglePin}
+                  disabled={pinBusy}
+                  title="Pin to top"
+                  aria-label="Pin session"
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 32, height: 32, padding: 0,
+                    background: "var(--bg-hover)", border: "1px solid var(--border)",
+                    borderRadius: 7, color: "var(--text-muted)",
+                    cursor: pinBusy ? "default" : "pointer", flexShrink: 0,
+                    transition: "background 0.12s, color 0.12s, border-color 0.12s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (pinBusy) return;
+                    e.currentTarget.style.background = "var(--bg-selected)";
+                    e.currentTarget.style.color = "var(--accent)";
+                    e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--bg-hover)";
+                    e.currentTarget.style.color = "var(--text-muted)";
+                    e.currentTarget.style.borderColor = "var(--border)";
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="17" x2="12" y2="22" />
+                    <path d="M5 17h14v-1.5a1.5 1.5 0 0 0-1.5-1.5H17l-1.4-1.4a2 2 0 0 0-1.4-.6H9.8a2 2 0 0 0-1.4.6L7 14H6.5A1.5 1.5 0 0 0 5 15.5V17z" />
+                    <path d="M12 2a3 3 0 0 0-3 3c0 1.5 1 2 1 4h4c0-2 1-2.5 1-4a3 3 0 0 0-3-3z" />
+                  </svg>
+                </button>
+              )}
               <button
                 onClick={startRename}
                 title="Rename"

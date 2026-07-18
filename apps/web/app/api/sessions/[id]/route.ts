@@ -11,6 +11,7 @@ import {
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { getSessionMeta } from "@/lib/session-meta";
+import { setPinned, clearPinned, isPinned } from "@/lib/session-prefs";
 import { assertCanReadSessionScoped, assertCanReadSessionBody } from "@/lib/team-auth";
 import { getUserHighestRole } from "@/lib/user-role";
 import { auditLog } from "@/lib/audit-log";
@@ -221,6 +222,7 @@ export async function GET(
           })()
         : "(no messages)",
       parentSessionId,
+      pinned: isPinned(id),
     } : null;
 
     return NextResponse.json({
@@ -236,7 +238,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/sessions/[id]  body: { name: string }
+// PATCH /api/sessions/[id]  body: { name?: string, pinned?: boolean }
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -247,16 +249,26 @@ export async function PATCH(
   if (auth instanceof Response) return auth;
 
   try {
-    const { name } = await req.json() as { name?: string };
-    if (typeof name !== "string") {
-      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    const body = await req.json() as { name?: unknown; pinned?: unknown };
+
+    // Pin toggle is a pure-prefs operation — no need to touch the .jsonl.
+    if (typeof body.pinned === "boolean") {
+      const applied = await setPinned(id, body.pinned);
+      return NextResponse.json({ ok: true, pinned: applied });
+    }
+
+    if (typeof body.name !== "string") {
+      return NextResponse.json(
+        { error: "name (string) or pinned (boolean) is required" },
+        { status: 400 },
+      );
     }
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
     const sm = SessionManager.open(filePath);
-    sm.appendSessionInfo(name.trim());
+    sm.appendSessionInfo(body.name.trim());
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
@@ -306,6 +318,8 @@ export async function DELETE(
     getRpcSession(id)?.destroy();
     unlinkSync(filePath);
     invalidateSessionPathCache(id);
+    // Drop any pin record so the prefs file doesn't accumulate dead ids.
+    clearPinned(id);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
