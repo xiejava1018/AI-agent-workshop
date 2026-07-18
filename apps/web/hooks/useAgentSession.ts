@@ -159,6 +159,9 @@ const PROMPT_SETTLE_INITIAL_DELAY_MS = 800;
 const PROMPT_SETTLE_POLL_MS = 600;
 const PROMPT_SETTLE_MAX_MS = 20_000;
 const AGENT_STATE_RECONCILE_MS = 15_000;
+// Cap auto-derived session names at this many user-visible characters so the
+// sidebar list stays compact and one Chinese-heavy prompt doesn't overflow.
+const SESSION_NAME_MAX_CHARS = 20;
 // Production SSE connects in single-digit ms; dev (Turbopack) first request
 // can take 6+ seconds while Next.js compiles the route + middleware chain.
 // Use a longer timeout in dev so the dev experience matches production.
@@ -239,6 +242,17 @@ function noticeReducer(state: NoticeState, action: NoticeAction): NoticeState {
     default:
       return state;
   }
+}
+
+// Derive a short display name from the first user message so brand-new
+// sessions don't all show up as "新会话". Trims, collapses whitespace, and
+// truncates at SESSION_NAME_MAX_CHARS user-visible chars. Image-only messages
+// (no text) fall back to "新会话" so the sidebar still has a label.
+function deriveInitialSessionName(message: string): string {
+  const flat = message.replace(/\s+/g, " ").trim();
+  if (!flat) return "新会话";
+  // [...flat] iterates code points so a CJK char counts as 1, not 2.
+  return [...flat].slice(0, SESSION_NAME_MAX_CHARS).join("") || "新会话";
 }
 
 function extractMessageText(message: Partial<AgentMessage>): string {
@@ -515,7 +529,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [setToolPresetState]);
 
-  const promoteNewSession = useCallback((messageCount = 0, firstMessage = "(no messages)") => {
+  const promoteNewSession = useCallback((messageCount = 0, firstMessage = "(no messages)", name?: string) => {
     const sid = sessionIdRef.current;
     if (!isNew || !newSessionCwd || !sid || newSessionPromotedRef.current) return;
     newSessionPromotedRef.current = true;
@@ -523,7 +537,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       id: sid,
       path: "",
       cwd: newSessionCwd,
-      name: undefined,
+      name,
       created: new Date().toISOString(),
       modified: new Date().toISOString(),
       messageCount,
@@ -1043,13 +1057,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // session finished rebuilding — hence the "Timed out connecting
           // to the agent event stream" error. With POST-first, the session
           // is live by the time the SSE handler picks it up.
-          await sendAgentCommand(sid, {
+          const initialName = deriveInitialSessionName(message);
+          // Fire the prompt and (for brand-new sessions) the name update in
+          // parallel — they're independent agent commands, and ordering the
+          // name first ensures the sidebar refresh after onSessionCreated
+          // already sees the new label. Skip the name call when reusing an
+          // already-promoted sid: a prior run in the same session must keep
+          // its existing name. Best-effort: a failed set_session_name must
+          // not abort the already-sent prompt.
+          const promptCommand = sendAgentCommand(sid, {
             type: "prompt",
             message,
             ...(piImages?.length ? { images: piImages } : {}),
           });
+          const nameCommand = existingSid
+            ? Promise.resolve()
+            : sendAgentCommand(sid, { type: "set_session_name", name: initialName })
+                .catch((e) => { console.error("Failed to set initial session name:", e); });
+          await promptCommand;
+          await nameCommand;
           await ensureEventsConnected(sid);
-          promoteNewSession(1, message);
+          promoteNewSession(1, message, initialName);
         }
       } else if (session) {
         sentSessionId = session.id;
