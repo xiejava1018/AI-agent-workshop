@@ -5,6 +5,7 @@ import { assertCanReadSessionScoped } from "@/lib/team-auth";
 import { getUserHighestRole } from "@/lib/user-role";
 import { getSessionMeta } from "@/lib/session-meta";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { isPinned as isSessionPinned } from "@/lib/session-prefs";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     updatedAt: string;
     /** M4 fix: true = session runtime 启动(可聊天), false = 文件不在/未启动(老 session 不可用) */
     available: boolean;
+    /** M3 follow-up: 来自 session-prefs 的全局 pin 标记,供 dashboard Agent 工作台 UI 使用 */
+    pinned: boolean;
   }> = [];
 
   for (const s of sessions) {
@@ -64,6 +67,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         createdAt: s.createdAt.toISOString(),
         updatedAt: s.updatedAt.toISOString(),
         available,
+        pinned: isSessionPinned(s.id),
       });
     }
   }
