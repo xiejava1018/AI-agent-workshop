@@ -286,6 +286,8 @@ export interface SessionInfo {
   projectRoot?: string;
   /** Branch name when cwd is a linked git worktree (not the main checkout) */
   worktreeBranch?: string;
+  /** Pinned to the top of the sidebar list. */
+  pinned?: boolean;
 }
 
 export interface SessionContext {
