@@ -8,7 +8,13 @@ export interface FileExplorerAdapter {
 }
 
 export interface UseFileExplorerOptions extends FileExplorerAdapter {
-  /** Keep the dashboard usable while the shared backend has no files route. */
+  /**
+   * Fall back to an in-memory mock tree when the backend has no files route
+   * (or returns 404 / network error). Defaults to false: the Vue side
+   * trusts that apps/web has the GET /api/agent/[id]/files endpoints
+   * (added in the same change-set as this composable). Tests inject mock
+   * adapters explicitly instead of flipping this flag.
+   */
   useMockFallback?: boolean
 }
 
@@ -77,7 +83,9 @@ export function useFileExplorer(
   const error = ref<string | null>(null)
   const currentRootPath = ref('')
   const isDefaultAdapter = !options?.listFiles
-  const allowMockFallback = options?.useMockFallback ?? isDefaultAdapter
+  // 默认禁用 mock：apps/web 已补 GET /api/agent/[id]/files 端点。
+  // 测试/e2e 注入自定义 adapter 时才走 mock fallback。
+  const allowMockFallback = options?.useMockFallback ?? false
 
   const getSessionId = () => (typeof sessionId === 'string' ? sessionId : sessionId.value)
   const listFiles =

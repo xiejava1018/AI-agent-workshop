@@ -69,6 +69,21 @@ export interface AgentSession {
   readonly pinned?: boolean
 }
 
+/**
+ * Session working directory info. Resolved from apps/web endpoint
+ * GET /api/agent/[id]/files (cwd comes from wrapper.cwd or
+ * SessionManager.listAll). `available: false` sessions have no cwd —
+ * FileExplorer should render a "not browsable" hint rather than list
+ * files. Added together with the backend files routes in the same
+ * change-set; types track the wire format exactly.
+ */
+export interface CwdInfo {
+  /** Absolute path to the session's working directory. '' = unknown / not browsable. */
+  cwd: string
+  /** True when cwd came from a live runtime wrapper (vs. persisted metadata). */
+  fromRuntime: boolean
+}
+
 /** SSE 事件白名单 —— 见 design 文档 §"SSE 事件流" */
 /** 允许的事件 type(其它事件 console.warn 并丢弃) */
 export const ALLOWED_SSE_EVENTS = [
