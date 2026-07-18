@@ -6,9 +6,15 @@ export function getWorkspaceStats() {
   })
 }
 
-export function getRecentSessions(limit = 10) {
-  return request.get<any>({
-    url: '/api/sessions',
-    params: { limit, orderBy: 'createdAt', order: 'desc' }
+/**
+ * Recent sessions for the workspace table. /api/sessions returns
+ * { sessions: SessionInfo[], runningSessionIds: string[] }; the view only
+ * needs the array, so extract and slice here to keep the view simple.
+ */
+export async function getRecentSessions(limit = 10) {
+  const res = await request.get<{ sessions: any[]; runningSessionIds: string[] }>({
+    url: '/api/sessions'
   })
+  const sessions = res?.sessions ?? []
+  return sessions.slice(0, limit)
 }

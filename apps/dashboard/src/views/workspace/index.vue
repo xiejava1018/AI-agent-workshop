@@ -20,14 +20,17 @@
       </template>
       <el-empty v-if="recentSessions.length === 0" description="暂无会话" />
       <el-table v-else :data="recentSessions" style="width: 100%">
-        <el-table-column prop="title" label="标题" />
-        <el-table-column prop="status" label="状态" width="80">
+        <el-table-column prop="name" label="标题" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status }}</el-tag>
+            {{ row.name || row.firstMessage || '未命名会话' }}
           </template>
         </el-table-column>
-        <el-table-column prop="tokenUsage" label="Token" width="120" />
-        <el-table-column prop="createdAt" label="创建时间" width="180" />
+        <el-table-column prop="messageCount" label="消息数" width="100" />
+        <el-table-column prop="created" label="创建时间" width="180">
+          <template #default="{ row }">
+            {{ formatTime(row.created) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
             <el-button link type="primary" @click="openSession(row.id)">继续</el-button>
@@ -46,11 +49,13 @@ import { getWorkspaceStats, getRecentSessions } from '@/api/workspace'
 defineOptions({ name: 'WorkspaceView' })
 
 const router = useRouter()
+// Keys must match the response of GET /api/dashboard/stats so the fetched
+// counts can be merged onto these cards by key.
 const stats = ref([
-  { key: 'sessions', label: '今日会话', value: 0 },
-  { key: 'tokens', label: '今日Token', value: 0 },
-  { key: 'agents', label: '活跃Agent', value: 0 },
-  { key: 'skills', label: '已安装技能', value: 0 },
+  { key: 'sessions', label: '会话', value: 0 },
+  { key: 'agents', label: 'Agent', value: 0 },
+  { key: 'skills', label: '技能', value: 0 },
+  { key: 'projects', label: '项目', value: 0 },
 ])
 
 const recentSessions = ref<any[]>([])
@@ -61,12 +66,22 @@ onMounted(async () => {
       getWorkspaceStats(),
       getRecentSessions(),
     ])
-    stats.value = statsData
+    // Backend returns raw counts (object); merge by key, keep client-side labels.
+    stats.value = stats.value.map((card) => ({
+      ...card,
+      value: Number(statsData?.[card.key] ?? 0)
+    }))
     recentSessions.value = sessionsData
   } catch (err) {
     console.error('Failed to load workspace data', err)
   }
 })
+
+function formatTime(value: string | undefined): string {
+  if (!value) return '-'
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
+}
 
 function openSession(id: string) {
   router.push(`/agents/${id}`)
