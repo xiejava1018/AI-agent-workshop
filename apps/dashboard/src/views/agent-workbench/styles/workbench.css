@@ -1,0 +1,370 @@
+/**
+ * Agent 工作台共享样式
+ *
+ * 设计原则:
+ * 1. 用 CSS 变量定义 IDE 风格的色彩与间距,组件 scss/vue 局部样式不重复
+ * 2. 不与 Element Plus 默认主题冲突;只在工作台容器作用域内重定义
+ * 3. 动画只用 transform/opacity,layout-bound 属性(width/height/padding)不参与动画
+ * 4. 响应式断点: --bp-md 768px / --bp-lg 1024px / --bp-xl 1440px
+ *
+ * 加载方式: 在 index.vue 里 import './styles/workbench.css'
+ */
+
+.agent-workbench {
+  /* 色彩 */
+  --wb-bg: var(--el-bg-color, #ffffff);
+  --wb-bg-elevated: var(--el-bg-color-page, #fafafa);
+  --wb-bg-sidebar: var(--el-fill-color-light, #f5f7fa);
+  --wb-bg-hover: var(--el-fill-color, #eef0f3);
+  --wb-bg-active: var(--el-color-primary-light-9, #e6f1fc);
+
+  --wb-border: var(--el-border-color-lighter, #ebeef5);
+  --wb-border-strong: var(--el-border-color, #dcdfe6);
+
+  --wb-text: var(--el-text-color-primary, #303133);
+  --wb-text-secondary: var(--el-text-color-regular, #606266);
+  --wb-text-muted: var(--el-text-color-secondary, #909399);
+
+  --wb-accent: var(--el-color-primary, #409eff);
+  --wb-success: var(--el-color-success, #67c23a);
+  --wb-warning: var(--el-color-warning, #e6a23c);
+  --wb-danger: var(--el-color-danger, #f56c6c);
+
+  /* 间距 */
+  --wb-pad-xs: 4px;
+  --wb-pad-sm: 8px;
+  --wb-pad-md: 12px;
+  --wb-pad-lg: 16px;
+  --wb-pad-xl: 24px;
+
+  /* 圆角 */
+  --wb-radius-sm: 4px;
+  --wb-radius-md: 6px;
+  --wb-radius-lg: 8px;
+
+  /* 阴影(仅用于浮层/抽屉,不在常规容器上) */
+  --wb-shadow-pop: 0 2px 12px 0 rgba(0, 0, 0, 0.08);
+  --wb-shadow-drawer: -2px 0 8px 0 rgba(0, 0, 0, 0.06);
+
+  /* 字体 */
+  --wb-font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'JetBrains Mono',
+    'Source Code Pro', Menlo, Consolas, monospace;
+  --wb-font-sans: var(--el-font-family, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
+
+  /* 三栏布局尺寸 */
+  --wb-sidebar-width: 280px;
+  --wb-tabbar-height: 36px;
+  --wb-input-min-height: 80px;
+  --wb-config-drawer-width: 420px;
+
+  /* 动画 */
+  --wb-transition-fast: 150ms;
+  --wb-transition-normal: 250ms;
+  --wb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 断点(响应式 @media 用,不在 CSS 变量机制里) */
+  --wb-bp-md: 768px;
+  --wb-bp-lg: 1024px;
+  --wb-bp-xl: 1440px;
+}
+
+/* ============ 布局 ============ */
+
+.agent-workbench {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: var(--wb-bg);
+  color: var(--wb-text);
+  font-family: var(--wb-font-sans);
+  overflow: hidden;
+}
+
+.workbench-card {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.wb-session-list {
+  flex: 0 0 var(--wb-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--wb-bg-sidebar);
+  border-right: 1px solid var(--wb-border);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wb-chat-area {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wb-config-drawer {
+  flex: 0 0 var(--wb-config-drawer-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--wb-bg-elevated);
+  border-left: 1px solid var(--wb-border);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============ 会话项 ============ */
+
+.wb-session-item {
+  padding: var(--wb-pad-sm) var(--wb-pad-md);
+  border-bottom: 1px solid var(--wb-border);
+  cursor: pointer;
+  transition: background-color var(--wb-transition-fast) var(--wb-ease-out);
+}
+.wb-session-item:hover {
+  background: var(--wb-bg-hover);
+}
+.wb-session-item.active {
+  background: var(--wb-bg-active);
+  border-left: 2px solid var(--wb-accent);
+}
+.wb-session-item.pinned .wb-session-title::before {
+  content: '★ ';
+  color: var(--wb-warning);
+}
+.wb-session-item.unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wb-session-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--wb-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-session-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--wb-text-muted);
+  margin-top: 2px;
+}
+
+.wb-running-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wb-success);
+  margin-left: var(--wb-pad-xs);
+  animation: wb-pulse 1.5s ease-in-out infinite;
+}
+@keyframes wb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ============ 消息区 ============ */
+
+.wb-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--wb-pad-lg);
+}
+
+.wb-message {
+  display: flex;
+  gap: var(--wb-pad-md);
+  margin-bottom: var(--wb-pad-lg);
+  animation: wb-fade-in var(--wb-transition-normal) var(--wb-ease-out);
+}
+.wb-message.user {
+  flex-direction: row-reverse;
+}
+
+@keyframes wb-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.wb-message-content {
+  max-width: 75%;
+  padding: var(--wb-pad-md);
+  border-radius: var(--wb-radius-md);
+  background: var(--wb-bg-elevated);
+  border: 1px solid var(--wb-border);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.wb-message.user .wb-message-content {
+  background: var(--wb-bg-active);
+  border-color: var(--wb-accent);
+}
+
+/* ============ 输入区 ============ */
+
+.wb-input-area {
+  flex: 0 0 auto;
+  padding: var(--wb-pad-md);
+  border-top: 1px solid var(--wb-border);
+  background: var(--wb-bg-elevated);
+  min-height: var(--wb-input-min-height);
+}
+
+.wb-input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--wb-pad-sm);
+}
+
+/* ============ Tab 栏 ============ */
+
+.wb-tabbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  height: var(--wb-tabbar-height);
+  background: var(--wb-bg-sidebar);
+  border-bottom: 1px solid var(--wb-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.wb-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--wb-pad-xs);
+  padding: 0 var(--wb-pad-md);
+  border-right: 1px solid var(--wb-border);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background-color var(--wb-transition-fast) var(--wb-ease-out);
+}
+.wb-tab:hover {
+  background: var(--wb-bg-hover);
+}
+.wb-tab.active {
+  background: var(--wb-bg);
+  border-bottom: 2px solid var(--wb-accent);
+}
+.wb-tab-close {
+  cursor: pointer;
+  opacity: 0.6;
+}
+.wb-tab-close:hover {
+  opacity: 1;
+}
+
+/* Track A 合并:tab 内的运行中圆点 */
+.wb-tab .wb-running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wb-success);
+  flex-shrink: 0;
+}
+
+/* ============ Markdown 渲染 ============ */
+
+.wb-markdown {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.wb-markdown pre {
+  background: var(--el-color-black, #1e1e1e);
+  color: #d4d4d4;
+  padding: var(--wb-pad-md);
+  border-radius: var(--wb-radius-md);
+  overflow-x: auto;
+  font-family: var(--wb-font-mono);
+  font-size: 13px;
+}
+.wb-markdown code {
+  font-family: var(--wb-font-mono);
+  font-size: 0.9em;
+  background: var(--wb-bg-hover);
+  padding: 2px 4px;
+  border-radius: var(--wb-radius-sm);
+}
+.wb-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+.wb-markdown a {
+  color: var(--wb-accent);
+  text-decoration: none;
+}
+.wb-markdown a:hover {
+  text-decoration: underline;
+}
+.wb-markdown blockquote {
+  margin: var(--wb-pad-md) 0;
+  padding: var(--wb-pad-sm) var(--wb-pad-md);
+  border-left: 3px solid var(--wb-border-strong);
+  color: var(--wb-text-secondary);
+}
+
+/* ============ 文件浏览器 ============ */
+
+.wb-file-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--wb-pad-sm);
+  font-family: var(--wb-font-mono);
+  font-size: 13px;
+}
+.wb-file-node {
+  padding: 2px var(--wb-pad-xs);
+  cursor: pointer;
+  border-radius: var(--wb-radius-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--wb-pad-xs);
+}
+.wb-file-node:hover {
+  background: var(--wb-bg-hover);
+}
+.wb-file-node.selected {
+  background: var(--wb-bg-active);
+}
+
+/* ============ 响应式 ============ */
+
+@media (max-width: 768px) {
+  .wb-session-list {
+    flex: 0 0 200px;
+  }
+  .wb-config-drawer {
+    position: absolute;
+    inset: 0;
+    flex: 0 0 100%;
+    z-index: 10;
+    box-shadow: var(--wb-shadow-drawer);
+  }
+  .wb-message-content {
+    max-width: 90%;
+  }
+}
+
+/* ============ 可访问性 ============ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
