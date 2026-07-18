@@ -8,6 +8,7 @@
  * - v1.3: SSE 事件名按 Track B 实测修正(下划线 message_start 而非点号)+ + STREAM_TIMEOUT_MS
  *         + + AgentMessage.streamStatus
  * - v1.4: + CwdInfo(apps/web 补 /api/agent/[id]/files 配套)
+ * - v1.5: 合并 Track A / Track C 注释(行尾字段说明从其他分支同步)
  */
 
 import type { AgentSession } from '@/api/agent'
@@ -160,7 +161,9 @@ export interface WorkbenchTab {
   id: string
   sessionId: string
   title: string
+  /** 该 tab 是否就是当前 active tab */
   active?: boolean
+  /** 该 tab 的 session 是否正在生成(running 状态) */
   running?: boolean
 }
 
@@ -173,7 +176,9 @@ export interface ModelConfig {
   name: string
   provider: string
   enabled: boolean
+  /** 当前是否选中 */
   selected?: boolean
+  /** 模型上下文长度 */
   contextWindow?: number
 }
 
@@ -182,6 +187,7 @@ export interface SkillConfig {
   name: string
   description?: string
   enabled: boolean
+  /** 文件路径或注册名 */
   source?: string
 }
 
@@ -190,6 +196,7 @@ export interface PluginConfig {
   name: string
   version?: string
   enabled: boolean
+  /** 权限 / 配置描述 */
   description?: string
 }
 
@@ -201,6 +208,7 @@ export type ConfigPanelKey = 'none' | 'files' | 'models' | 'skills' | 'plugins'
 
 const SAFE_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 
+/** 仅放行 http/https/mailto 协议 */
 export function safeUrl(url: string): string | undefined {
   try {
     const parsed = new URL(url, window.location.href)
@@ -211,12 +219,14 @@ export function safeUrl(url: string): string | undefined {
   return undefined
 }
 
+/** 文件路径防穿越:禁止 ../ 与绝对路径(除非 rootPath 前缀) */
 export function safeFilePath(p: string, rootPath?: string): string | undefined {
   if (!p || p.includes('..')) return undefined
   if (rootPath) {
     if (!p.startsWith(rootPath)) return undefined
     return p
   }
+  // 无 rootPath 时禁止绝对路径
   if (p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p)) return undefined
   return p
 }
