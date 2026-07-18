@@ -228,6 +228,12 @@ export function AppShell() {
   const handleSessionCreated = useCallback((session: SessionInfo) => {
     setNewSessionCwd(null);
     setSelectedSession(session);
+    // Bump sessionKey so <ChatWindow> remounts with the freshly-promoted
+    // session. useAgentSession's load-on-mount effect is keyed by `[]` and
+    // only runs once per ChatWindow instance — without this bump, switching
+    // from a previously-loaded session to a freshly-created one leaves the
+    // old messages in place instead of loading the new session's context.
+    setSessionKey((k) => k + 1);
     setRefreshKey((k) => k + 1);
     hydrateSelectedSession(session.id);
     router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
