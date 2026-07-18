@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Agent Workshop · 用户视角 UI 设计</title>
+<style>
+  :root{
+    --primary:#409EFF; --success:#67C23A; --warning:#E6A23C; --danger:#F56C6C;
+    --bg:#f5f7fa; --card:#fff; --border:#dcdfe6; --text:#303133; --text2:#606266; --text3:#909399;
+    --sidebar:#1f2937; --sidebar-active:#409EFF;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;}
+  body{background:var(--bg);color:var(--text);font-size:14px;}
+  .topbar{height:56px;background:var(--sidebar);color:#fff;display:flex;align-items:center;padding:0 20px;gap:16px;position:sticky;top:0;z-index:10;}
+  .topbar .logo{font-weight:700;font-size:16px;color:#fff;}
+  .topbar .logo span{color:var(--primary);}
+  .topbar .ws{background:#374151;padding:5px 12px;border-radius:6px;font-size:13px;color:#cbd5e1;}
+  .topbar .spacer{flex:1;}
+  .topbar .avatar{width:32px;height:32px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;}
+  .layout{display:flex;min-height:calc(100vh - 56px);}
+  .nav{width:200px;background:var(--sidebar);color:#cbd5e1;padding:12px 0;flex-shrink:0;}
+  .nav .item{padding:12px 20px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;border-left:3px solid transparent;}
+  .nav .item:hover{background:#283447;color:#fff;}
+  .nav .item.active{background:#283447;color:#fff;border-left-color:var(--primary);}
+  .nav .item .dot{width:7px;height:7px;border-radius:50%;background:var(--success);}
+  .nav .group{font-size:11px;color:#64748b;padding:14px 20px 6px;letter-spacing:.5px;}
+  .main{flex:1;padding:24px;overflow:auto;}
+  .page{display:none;} .page.active{display:block;animation:fade .2s;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);}
+  .card h3{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+  .muted{color:var(--text3);font-size:12px;}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer;font-size:13px;}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff;}
+  .btn.success{background:var(--success);border-color:var(--success);color:#fff;}
+  .btn.sm{padding:5px 10px;font-size:12px;}
+  .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;}
+  .tag.g{background:#eef9e8;color:var(--success);} .tag.b{background:#ecf3fe;color:var(--primary);}
+  .tag.w{background:#fdf6ec;color:var(--warning);} .tag.r{background:#fef0f0;color:var(--danger);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #ebeef5;}
+  th{color:var(--text3);font-weight:600;background:#fafafa;}
+  tr:hover td{background:#f5f9ff;}
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;}
+  .stat .n{font-size:24px;font-weight:700;color:var(--primary);}
+  .stat .l{color:var(--text3);font-size:12px;margin-top:4px;}
+  .row{display:flex;gap:16px;}
+  .col{flex:1;}
+  input,select,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;color:var(--text);}
+  textarea{resize:vertical;min-height:70px;}
+  label{display:block;margin:12px 0 6px;color:var(--text2);font-size:13px;}
+  .login-wrap{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 56px);}
+  .login-card{width:380px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:30px;box-shadow:0 4px 20px rgba(0,0,0,.08);}
+  .login-card h2{text-align:center;margin-bottom:6px;}
+  .msg{display:flex;gap:10px;padding:10px 12px;border-radius:8px;margin-bottom:10px;}
+  .msg.user{background:#ecf3fe;} .msg.ai{background:#f4f4f5;}
+  .msg .who{font-weight:600;font-size:12px;color:var(--text3);}
+  .toolcall{background:#fdf6ec;color:var(--warning);font-size:12px;padding:6px 10px;border-radius:6px;margin:6px 0;border:1px dashed #f0d9a8;}
+  .tree{display:flex;flex-direction:column;gap:10px;}
+  .node{border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:#fff;display:flex;align-items:center;gap:10px;}
+  .node.super{background:#ecf3fe;border-color:var(--primary);}
+  .node .bar{height:6px;border-radius:3px;background:var(--success);flex:1;max-width:120px;}
+  .children{margin-left:28px;border-left:2px solid var(--border);padding-left:18px;display:flex;flex-direction:column;gap:10px;}
+  .pill{font-size:11px;padding:2px 8px;border-radius:10px;background:#eef9e8;color:var(--success);}
+  .placeholder{height:120px;background:linear-gradient(135deg,#f0f4ff,#eef9f3);border:1px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text3);}
+  .note{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 14px;color:#854f00;font-size:12px;margin-bottom:16px;}
+  .note.info{background:#ecf3fe;border-color:#b3d8ff;color:#1d4ed8;}
+  .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px;}
+  .kv:last-child{border-bottom:none;}
+  .switch{position:relative;width:42px;height:22px;background:#dcdfe6;border-radius:11px;display:inline-block;transition:.2s;}
+  .switch.on{background:var(--success);}
+  .switch::after{content:"";position:absolute;width:18px;height:18px;background:#fff;border-radius:50%;top:2px;left:2px;transition:.2s;}
+  .switch.on::after{left:22px;}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+  .seg-btn{padding:6px 14px;border:none;background:#fff;color:var(--text2);cursor:pointer;font-size:13px;border-right:1px solid var(--border);}
+  .seg-btn:last-child{border-right:none;}
+  .seg-btn.on{background:var(--primary);color:#fff;}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">AI Agent <span>Workshop</span></div>
+    <div class="ws">工作空间：研发团队 · Project-A</div>
+    <div class="spacer"></div>
+    <span class="muted"style="color:#cbd5e1">用户视角 · alice</span>
+    <div class="avatar">A</div>
+  </div>
+  <div style="background:#ecf3fe;border-bottom:1px solid #b3d8ff;color:#1d4ed8;font-size:12px;padding:6px 20px">📌 这是<b>统一前端（apps/dashboard）在「普通用户」角色下的设计视角</b>。系统实际为<b>单一入口</b>：管理员 / 团队 OWNER 登录同一界面会看到额外菜单（平台管理 / 团队）。完整蓝图（含角色切换演示）见 <code>index.html</code>。</div>
+
+  <div class="layout">
+    <div class="nav" id="nav">
+      <div class="item active" data-page="home"><span class="dot"></span>工作空间</div>
+      <div class="item" data-page="chat"><span class="dot"></span>Agent 工作台</div>
+      <div class="item" data-page="orchestrate"><span class="dot"></span>多 Agent 编排</div>
+      <div class="item" data-page="agents"><span class="dot"></span>我的数字员工</div>
+      <div class="item" data-page="skills"><span class="dot"></span>技能中心</div>
+      <div class="group">个人</div>
+      <div class="item" data-page="settings"><span class="dot"></span>我的设置</div>
+    </div>
+
+    <div class="main">
+      <div class="note">👤 这是<b>用户视角</b> UI 设计稿（草案），用于评审普通成员登录后看到的界面。所有数据为示意。确认后由 OpenSpec 变更（M3/M4）落地。</div>
+
+      <!-- 工作空间 -->
+      <div class="page active" id="home">
+        <div class="stats">
+          <div class="stat"><div class="n">12</div><div class="l">今日会话数</div></div>
+          <div class="stat"><div class="n">86k</div><div class="l">Token 用量</div></div>
+          <div class="stat"><div class="n">3</div><div class="l">活跃数字员工</div></div>
+          <div class="stat"><div class="n">5</div><div class="l">已绑定 MCP 工具</div></div>
+          <div class="stat"><div class="n">8</div><div class="l">可用技能</div></div>
+        </div>
+        <div class="row" style="margin-top:16px">
+          <div class="col">
+            <div class="card">
+              <h3>最近会话</h3>
+              <table>
+                <tr><th>会话</th><th>数字员工</th><th>更新</th><th></th></tr>
+                <tr><td>重构登录模块</td><td><span class="tag b">编码 Agent</span></td><td class="muted">2 分钟前</td><td><a class="btn sm">打开</a></td></tr>
+                <tr><td>调研向量数据库</td><td><span class="tag b">调研 Agent</span></td><td class="muted">1 小时前</td><td><a class="btn sm">打开</a></td></tr>
+                <tr><td>生成周报</td><td><span class="tag b">写作 Agent</span></td><td class="muted">昨天</td><td><a class="btn sm">打开</a></td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <h3>快捷操作</h3>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
+                <button class="btn primary" onclick="go('chat')">＋ 新建 Agent 对话</button>
+                <button class="btn success" onclick="go('orchestrate')">⚡ 发起多 Agent 任务</button>
+                <button class="btn" onclick="go('agents')">🤖 选择数字员工</button>
+                <button class="btn" onclick="go('skills')">🧩 浏览技能中心</button>
+              </div>
+              <div class="placeholder" style="margin-top:14px;height:90px">我的配额：5/5 会话 · 86k/200k token</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent 工作台 -->
+      <div class="page" id="chat">
+        <div class="row">
+          <div class="col" style="max-width:220px">
+            <div class="card" style="padding:12px">
+              <h3>会话</h3>
+              <div class="msg user" style="margin-bottom:8px"><div><div class="who">重构登录模块</div></div></div>
+              <div class="msg ai"><div class="who">调研向量数据库</div></div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <h3>编码 Agent <span class="tag g">在线</span></h3>
+              <div class="msg user"><div><div class="who">你</div>帮我给登录接口加上 refresh token 续期</div></div>
+              <div class="msg ai"><div>
+                <div class="who">编码 Agent</div>
+                <div class="toolcall">🔧 调用工具：read /api/auth/refresh/route.ts</div>
+                <div>已在 `POST /api/auth/refresh` 实现 refresh token 轮换，并写入 jti 黑名单……</div>
+                <div class="toolcall">🔧 调用工具：edit /api/auth/refresh/route.ts</div>
+              </div></div>
+              <div class="msg ai"><div><div class="who">编码 Agent</div><span class="tag">🧩 技能：code-review</span> 已加载审查清单，逐文件检查改动……</div></div>
+              <div class="msg ai"><div><div class="who">编码 Agent</div><span style="color:var(--success)">▍</span> 正在生成单测……</div></div>
+              <label>输入消息</label>
+              <textarea placeholder="给 Agent 下达任务…（支持 @MCP 工具、/<skill> 技能）"></textarea>
+              <button class="btn primary" style="margin-top:8px">发送</button>
+            </div>
+          </div>
+          <div class="col" style="max-width:240px">
+            <div class="card" style="padding:12px">
+              <h3>当前数字员工 / 工具</h3>
+              <p class="muted">数字员工</p>
+              <div style="margin:4px 0 12px"><span class="tag b">编码 Agent</span></div>
+              <p class="muted">已启用 MCP 工具</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+                <span class="tag g">filesystem</span><span class="tag g">github</span>
+                <span class="tag g">postgres</span><span class="tag g">slack</span>
+                <span class="tag g">puppeteer</span>
+              </div>
+              <p class="muted" style="margin-top:12px">可用技能</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+                <span class="tag">generate-ppt</span><span class="tag">code-review</span>
+                <span class="tag">weekly-report</span><span class="tag">pdf</span>
+              </div>
+              <div class="placeholder" style="margin-top:14px;height:80px">模型：qwen-max · 故障自动回退开启</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 多 Agent 编排 -->
+      <div class="page" id="orchestrate">
+        <div class="card">
+          <h3>⚡ 发起多 Agent 任务</h3>
+          <textarea placeholder="描述一个复杂任务，Supervisor 会自动拆解并委派给多个子 Agent…&#10;例如：调研 3 种向量数据库，给出对比，并据此重构我们的记忆层代码。"></textarea>
+          <div style="margin-top:10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <span class="muted">委派模式</span>
+            <span class="seg">
+              <button class="seg-btn" onclick="this.parentNode.querySelectorAll('.seg-btn').forEach(b=>b.classList.remove('on'));this.classList.add('on')">同步</button>
+              <button class="seg-btn on" onclick="this.parentNode.querySelectorAll('.seg-btn').forEach(b=>b.classList.remove('on'));this.classList.add('on')">并行</button>
+              <button class="seg-btn" onclick="this.parentNode.querySelectorAll('.seg-btn').forEach(b=>b.classList.remove('on'));this.classList.add('on')">异步</button>
+            </span>
+            <span class="muted">并行上限 8 · 深度 ≤ 3 层（参考 MateClaw）</span>
+          </div>
+          <div class="note info" style="margin-top:12px">异步模式：父 Agent 派发后立即继续推理，结果以 <code>task_id</code> 回填（参考 MateClaw <code>delegateAsync</code> + <code>taskOutput</code>）。子 Agent 的进度实时回流到下方编排树。</div>
+          <div style="margin-top:10px;display:flex;gap:10px">
+            <button class="btn primary">运行编排</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col">
+            <div class="card">
+              <h3>编排树（实时）</h3>
+              <div class="tree">
+                <div class="node super">🧠 Supervisor <span class="pill">规划中</span></div>
+                <div class="children">
+                  <div class="node">🔍 调研 Agent <span class="tag g">完成</span> <div class="bar"></div></div>
+                  <div class="node">💻 编码 Agent <span class="tag w">运行中</span> <div class="bar" style="width:60%"></div></div>
+                  <div class="node">✅ 审查 Agent <span class="tag b">等待</span> <div class="bar" style="background:#dcdfe6"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <h3>执行日志 / 结果</h3>
+              <div class="msg ai"><div><div class="who">调研 Agent</div>已对比 pgvector / Qdrant / Milvus，输出对比表…</div></div>
+              <div class="msg ai"><div><div class="who">编码 Agent</div>正在根据调研结果重构记忆层 SessionManager 注入逻辑…</div></div>
+              <div class="placeholder" style="height:90px">汇总结果将在此展示（支持树状/时间线切换）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 我的数字员工（用户视角） -->
+      <div class="page" id="agents">
+        <div class="note info">团队已为你预置若干数字员工（scope=team，只读继承），你可一键「克隆为个人」（复制一份 scope=personal 副本供任意改写），也可创建完全个人的数字员工。个人数字员工以"全局精选 + 本团队已授权"作底座；个人安装的<b>纯指令型技能可独立于团队</b>，若绑定带凭证 MCP 仍受团队凭证隔离铁律约束（A2/B1 澄清，2026-07-16）。</div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3>🤖 我的数字员工</h3>
+            <button class="btn primary sm">＋ 创建个人数字员工</button>
+          </div>
+          <table style="margin-top:8px">
+            <tr><th>名称</th><th>来源</th><th>归属</th><th>模型</th><th>绑定技能</th><th>操作</th></tr>
+            <tr><td>编码 Agent</td><td><span class="tag b">团队预置</span></td><td>研发团队</td><td><span class="tag b">qwen-max</span></td><td>code-review · pdf</td><td><a class="btn sm">使用</a> <a class="btn sm">克隆</a></td></tr>
+            <tr><td>调研 Agent</td><td><span class="tag b">团队预置</span></td><td>研发团队</td><td><span class="tag b">qwen-max</span></td><td>—</td><td><a class="btn sm">使用</a> <a class="btn sm">克隆</a></td></tr>
+            <tr><td>我的周报员</td><td><span class="tag">个人</span></td><td>仅自己</td><td><span class="tag b">deepseek</span></td><td>weekly-report</td><td><a class="btn sm">编辑</a> <a class="btn sm">删除</a></td></tr>
+          </table>
+        </div>
+        <div class="row">
+          <div class="col">
+            <div class="card">
+              <h3>配置：我的周报员</h3>
+              <label>名称</label><input value="我的周报员" />
+              <label>描述</label><input value="按模板生成本周工作周报" />
+              <label>系统提示词（systemPrompt）</label>
+              <textarea>你负责根据本周 git 提交与会议纪要生成周报……</textarea>
+              <label>默认模型（受管理员开放清单限制）</label>
+              <select><option>qwen-max</option><option>deepseek</option><option>gpt-4o</option></select>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <h3>绑定技能（仅本团队授权范围）</h3>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <span class="tag g">✓ weekly-report</span><span class="tag">generate-ppt</span>
+                <span class="tag">code-review</span><span class="tag">pdf</span>
+              </div>
+              <h3 style="margin-top:16px">绑定 MCP（仅本团队授权范围）</h3>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                <span class="tag g">✓ slack</span><span class="tag">github</span>
+                <span class="tag">postgres</span><span class="tag">filesystem</span>
+              </div>
+              <div class="note" style="margin-top:12px">个人数字员工可安装<b>独立于团队</b>的个人技能（纯指令型）；若绑定带凭证 MCP，则仍受团队凭证隔离铁律约束，越权绑定将被服务端拒绝（B1 边界，2026-07-16）。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 技能中心 -->
+      <div class="page" id="skills">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3>🧩 技能中心</h3>
+            <div style="display:flex;gap:8px">
+              <input placeholder="搜索技能市场…" style="width:220px" />
+              <button class="btn primary sm">🔍 搜索</button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col">
+              <div class="card" style="background:var(--bg)">
+                <h3>已安装（本团队/个人可见）</h3>
+                <table>
+                  <tr><th>技能</th><th>作用域</th><th>状态</th><th>操作</th></tr>
+                  <tr><td>generate-ppt</td><td><span class="tag b">team</span></td><td><span class="tag g">已启用</span></td><td><a class="btn sm">停用</a></td></tr>
+                  <tr><td>code-review</td><td><span class="tag b">team</span></td><td><span class="tag g">已启用</span></td><td><a class="btn sm">停用</a></td></tr>
+                  <tr><td>weekly-report</td><td><span class="tag">user</span></td><td><span class="tag g">已启用</span></td><td><a class="btn sm">停用</a></td></tr>
+                  <tr><td>pdf</td><td><span class="tag">global</span></td><td><span class="tag g">已启用</span></td><td><a class="btn sm">停用</a></td></tr>
+                </table>
+              </div>
+            </div>
+            <div class="col">
+              <div class="card" style="background:var(--bg)">
+                <h3>市场推荐（skills.sh）</h3>
+                <table>
+                  <tr><th>技能包</th><th>安装量</th><th></th></tr>
+                  <tr><td>owner/pdf@extract</td><td>1.2M installs</td><td><a class="btn sm primary">安装</a></td></tr>
+                  <tr><td>owner/docx@create</td><td>980K installs</td><td><a class="btn sm primary">安装</a></td></tr>
+                  <tr><td>owner/pptx@build</td><td>640K installs</td><td><a class="btn sm primary">安装</a></td></tr>
+                </table>
+                <div class="note" style="margin-top:12px">安装可按「团队 / 个人」作用域；仅本团队/个人已启用技能会出现在对话的可用技能中（不跨租户泄漏）。</div>
+              </div>
+            </div>
+          </div>
+          <div class="note" style="margin-top:12px">调用方式：① 对话输入 <code>/generate-ppt</code> 显式触发；② 模型识别需求后自动触发（<code>&lt;skill&gt;</code> 块，经 parseSkillBlock 解析注入指令）。</div>
+        </div>
+      </div>
+
+      <!-- 我的设置（新增：个人密钥 BYOK） -->
+      <div class="page" id="settings">
+        <div class="card">
+          <h3>👤 个人资料</h3>
+          <div class="kv"><span>用户名</span><span>alice</span></div>
+          <div class="kv"><span>显示名称</span><span>Alice（研发团队 OWNER）</span></div>
+          <div class="kv"><span>所属团队</span><span>研发团队（OWNER）、平台组（MEMBER）</span></div>
+        </div>
+
+        <div class="card">
+          <h3>🔑 我的 API Key（BYOK）</h3>
+          <div class="note info">填写后，调用对应厂商模型将<b>优先使用你的密钥</b>；未填写的厂商将使用平台共享额度。密钥仅你本人可见，按厂商隔离，不跨团队共享。</div>
+          <table>
+            <tr><th>厂商</th><th>密钥状态</th><th>操作</th></tr>
+            <tr><td>OpenAI</td><td><span class="tag g">已配置</span></td><td><a class="btn sm">更新</a> <a class="btn sm">清除</a></td></tr>
+            <tr><td>Anthropic</td><td><span class="tag r">未配置</span></td><td><a class="btn sm">填写</a></td></tr>
+            <tr><td>通义千问 (qwen)</td><td><span class="tag g">已配置</span></td><td><a class="btn sm">更新</a> <a class="btn sm">清除</a></td></tr>
+            <tr><td>DeepSeek</td><td><span class="tag r">未配置</span></td><td><a class="btn sm">填写</a></td></tr>
+          </table>
+          <div class="row" style="margin-top:12px">
+            <div class="col"><label>新增/更新厂商密钥</label><input placeholder="选择厂商…" value="DeepSeek" /></div>
+            <div class="col"><label>API Key</label><input placeholder="sk-..." /></div>
+            <div class="col" style="display:flex;align-items:flex-end"><button class="btn primary">保存并测试连接</button></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col">
+            <div class="card">
+              <h3>⚙️ 默认模型与回退</h3>
+              <label>默认模型（受管理员开放清单限制）</label>
+              <select><option>qwen-max</option><option>deepseek</option><option>gpt-4o</option></select>
+              <label style="display:flex;align-items:center;gap:8px;margin-top:14px">
+                故障自动回退 <span class="switch on" onclick="this.classList.toggle('on')"></span>
+                <span class="muted">主模型不可用时自动切换到管理员配置的备选模型</span>
+              </label>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <h3>📊 我的配额</h3>
+              <div class="kv"><span>活跃会话数（本日）</span><span>5 / 5</span></div>
+              <div class="kv"><span>Token（本日）</span><span>86k / 200k</span></div>
+              <div class="note" style="margin-top:12px">配额由团队 OWNER / 管理员设定，详见团队管理。本期<b>单一维度"同时活跃会话数"</b>，"并发数"即活跃会话数别名，不另设独立并发列（A1 术语对齐，2026-07-16）。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+  const nav = document.getElementById('nav');
+  nav.querySelectorAll('.item').forEach(it=>{
+    it.addEventListener('click',()=>{
+      document.querySelectorAll('.nav .item').forEach(n=>n.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+      it.classList.add('active');
+      document.getElementById(it.dataset.page).classList.add('active');
+    });
+  });
+  function go(page){
+    document.querySelectorAll('.nav .item').forEach(n=>n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.querySelector('.nav .item[data-page="'+page+'"]').classList.add('active');
+    document.getElementById(page).classList.add('active');
+    window.scrollTo(0,0);
+  }
+</script>
+</body>
+</html>
