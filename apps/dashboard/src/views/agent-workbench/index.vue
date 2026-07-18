@@ -145,10 +145,29 @@ watch(
     // 因字符串 truthy 永远成立,绕过类型检查,把 content=undefined 的空 assistant
     // 消息无限 push 进 messages,UI 看似"无回复"。显式枚举四种类型。
     switch (last.type) {
-      case 'message':
-        messages.value.push({ role: 'assistant', content: last.content || '' })
+      case 'message_start': {
+        // SDK 报告一条 assistant 消息开始,push 占位消息,后续 message_delta 累积
+        messages.value.push({ role: 'assistant', content: '' })
+        break
+      }
+      case 'message_delta': {
+        // 流式增量:append 到当前(最后一条)assistant 消息,而不是 push 新气泡
+        // 这是修复"一段回复被切成 N 个气泡"的关键
+        const lastMsg = messages.value[messages.value.length - 1]
+        if (lastMsg && lastMsg.role === 'assistant') {
+          lastMsg.content = (lastMsg.content || '') + (last.content || '')
+        } else {
+          // 兜底:没占位消息就先 push
+          messages.value.push({ role: 'assistant', content: last.content || '' })
+        }
         isTyping.value = false
         break
+      }
+      case 'message_end': {
+        // 消息结束,无需操作(content 已经累积完)
+        isTyping.value = false
+        break
+      }
       case 'tool_update':
         messages.value.push({
           role: 'assistant',

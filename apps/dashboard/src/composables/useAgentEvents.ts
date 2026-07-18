@@ -8,18 +8,22 @@
  *                / message_end
  *   tool_execution_start / tool_execution_update / tool_execution_end
  *
- * 前端 watch 期望的形状是窄白名单
- *   { type: 'message' | 'tool_update' | 'prompt_done' | 'error', content?, toolName?, toolInput? }
+ * 前端 watch 期望的形状:
+ *   { type: 'message_start', content: '' }      // 开新 assistant 消息(占位)
+ *   { type: 'message_delta', content: string }   // 文本增量,append 到当前消息
+ *   { type: 'message_end' }                      // 当前消息结束
+ *   { type: 'tool_update', toolName?, toolInput? }
+ *   { type: 'prompt_done' }
+ *   { type: 'error', content }
  *
- * 这一层只做一件事:把 SDK 事件归一化到前端 4 类,丢掉对 UI 无意义的事件,
- * 避免下游 watch 把 content=undefined 的空消息塞进 messages 数组(参见 M4
- * 历史 bug:workbench/index.vue 里 `=== 'message' | ...` 优先级错误导致
- * 永远 truthy、空消息无限 push)。
+ * 关键设计:streaming 时 SDK 一段回复会产生 N 个 `message_update.text_delta`,
+ * 不能每个 delta 都 emit 为独立 'message' 类型(那样会把一段回复切成 N 个气泡)。
+ * 改成 'message_delta' 让前端累积到同一条消息上。
  */
 import { ref, onUnmounted, type Ref } from 'vue'
 
 export interface AgentEvent {
-  type: 'message' | 'tool_update' | 'prompt_done' | 'error'
+  type: 'message_start' | 'message_delta' | 'message_end' | 'tool_update' | 'prompt_done' | 'error'
   content?: string
   toolName?: string
   toolInput?: unknown
@@ -65,19 +69,30 @@ function flattenContent(content: unknown): string {
 function normalizeSdkEvent(raw: unknown): AgentEvent | null {
   const e = raw as SdkAgentEvent
   switch (e?.type) {
+    case 'message_start': {
+      // 整条 assistant/user 消息开始。emit 占位事件让前端 push 一条空消息,
+      // 后续 message_delta 在这条消息上 append。
+      // 区分 assistant vs user:SDK emit 的 message 没有 role 字段在顶层,
+      // 但 SDK 推 message 时通常 message.role 描述。但 wrapper 透传原始事件,
+      // 这里用 message.role 推断。
+      const role = (e.message as { role?: string } | undefined)?.role
+      // 只对 assistant 开新消息占位;user 消息由前端 handleSend 自己 push,不走 SSE
+      if (role !== 'assistant') return null
+      return { type: 'message_start', content: '' }
+    }
     case 'message_update': {
       const inner = e.assistantMessageEvent
       if (!inner) return null
       // 只关心文本增量;其余(text_start/thinking_*/toolcall_*)不在 watch 范围内
       if (inner.type === 'text_delta' && typeof inner.delta === 'string') {
-        return { type: 'message', content: inner.delta }
+        // 关键:emit 'message_delta' 而不是 'message',让前端累积到同一条消息
+        return { type: 'message_delta', content: inner.delta }
       }
       return null
     }
     case 'message_end': {
-      // 整条 message 完整,典型是最终 assembled 文本;前端 watch 不需要重复追加,
-      // 真正的"已结束"信号交给 message_end 后紧跟的 turn_end 来发 prompt_done
-      return null
+      // 整条 message 结束,emit 收尾事件让前端可以清理 streaming 状态
+      return { type: 'message_end' }
     }
     case 'turn_end': {
       const toolErr = (e.toolResults ?? []).some((t) => t?.isError)

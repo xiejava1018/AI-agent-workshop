@@ -1351,6 +1351,22 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
 
+    // M4 尝试:提前把 session header 写盘,让 wrapper destroy 后
+    // `resolveSessionPath()` 仍能找到文件。
+    //
+    // 已被证实有副作用:SDK 的 `SessionManager._persist()` 看到 `flushed=false`
+    // 会走 `openSync(path, 'wx')`(独占创建),但我之前已经写过文件 → EEXIST。
+    // 后续每轮 prompt 都触发 appendMessage → _persist → EEXIST → 整个 session
+    // 卡在第二轮永久无回复。
+    //
+    // SDK 的设计是:文件只写一次(包含所有 entry 一次性 dump),之后只 append。
+    // 我们没办法在不破坏 flushed 状态的前提下提前写盘。
+    //
+    // 暂留 no-op,以后如果有 SDK 升级暴露稳定的 `flush()` API 再回来启用。
+    if (!sessionFile) {
+      // no-op: SDK 会在第一条 assistant message 后自动 flush
+    }
+
     // Determine which tools to pass based on requested toolNames.
     // Since v0.68.0, session creation expects string[] tool names instead of Tool[] instances.
     let toolsOption: string[] | undefined;
