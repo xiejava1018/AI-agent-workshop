@@ -26,12 +26,55 @@ const normalizePaginationParams = (params?: Record<string, any>) => {
 
 // ========== 菜单管理 ==========
 
-export const getUserMenu = (): Promise<any[]> => {
-  return httpClient.get({ url: `${API_PREFIX}/menus/tree`, showErrorMessage: false })
+// 工具:把后端 {code, message, data: [...] / T} 包装解为内层 data
+// 供菜单相关 API 复用(它们都需要返数组/对象本体)
+function unwrapData<T>(p: Promise<{ code: number; message: string; data: T }>): Promise<T> {
+  return p.then((res) => res.data)
 }
 
-export const getAllMenu = (): Promise<any> => {
-  return httpClient.get({ url: `${API_PREFIX}/menus/tree`, showErrorMessage: false })
+// 工具:把后端 M4 SysMenu 节点适配为菜单管理表格期望的格式
+// (formatter 读 row.meta.title / row.meta.isEnable / row.meta.authList)
+function adaptMenuNode(node: any): any {
+  if (!node) return node
+  return {
+    ...node,
+    meta: {
+      title: node.title,
+      isEnable: node.enabled,
+      isHide: !node.visible,
+      authList: node.menuAuths ?? [],
+      ...(node.meta || {})
+    }
+  }
+}
+
+function adaptMenuList<T extends { children?: any[] } | any[]>(data: T): T {
+  if (!data) return data
+  // tree 形态(数组,可能有嵌套 children)
+  if (Array.isArray(data)) {
+    return data.map((n) => adaptMenuNode({ ...n, children: adaptMenuList(n.children || []) })) as unknown as T
+  }
+  return adaptMenuNode(data) as T
+}
+
+export const getUserMenu = (): Promise<any[]> => {
+  return unwrapData(
+    httpClient.get<{ code: number; message: string; data: any[] }>({
+      url: `${API_PREFIX}/menus/tree`,
+      keepFullResponse: true,
+      showErrorMessage: false
+    })
+  ).then(adaptMenuList)
+}
+
+export const getAllMenu = (): Promise<any[]> => {
+  return unwrapData(
+    httpClient.get<{ code: number; message: string; data: any[] }>({
+      url: `${API_PREFIX}/menus/tree`,
+      keepFullResponse: true,
+      showErrorMessage: false
+    })
+  ).then(adaptMenuList)
 }
 
 export const addMenu = (data: any): Promise<any> => {

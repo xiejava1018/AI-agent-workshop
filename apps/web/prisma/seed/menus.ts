@@ -25,6 +25,8 @@ type ChildSeed = {
   sort: number;
   /** 可见性所需的权限码,空数组=公共 */
   permissionCodes: string[];
+  /** iconfont unicode 字符(与 asyncRoutes 一致,如 &#xe721;)*/
+  icon?: string;
 };
 
 type ParentSeed = {
@@ -41,7 +43,7 @@ const MENUS: ParentSeed[] = [
     name: "workspace",
     title: "工作区",
     path: "/workspace",
-    icon: "HomeOutlined",
+    icon: "ri:dashboard-line", // 仪表盘
     sort: 1,
     children: [
       {
@@ -51,6 +53,7 @@ const MENUS: ParentSeed[] = [
         component: "/workspace/index",
         sort: 1,
         permissionCodes: [],
+        icon: "ri:home-line"
       },
       {
         name: "agent-workbench",
@@ -59,6 +62,7 @@ const MENUS: ParentSeed[] = [
         component: "/agent-workbench/index",
         sort: 2,
         permissionCodes: ["session:view"],
+        icon: "ri:terminal-box-line"
       },
       {
         name: "orchestration",
@@ -67,6 +71,7 @@ const MENUS: ParentSeed[] = [
         component: "/orchestration/index",
         sort: 3,
         permissionCodes: ["session:view", "agent:view"],
+        icon: "ri:git-branch-line"
       },
     ],
   },
@@ -74,7 +79,7 @@ const MENUS: ParentSeed[] = [
     name: "my-resources",
     title: "我的资源",
     path: "/my",
-    icon: "UserOutlined",
+    icon: "ri:user-3-line", // 用户/资源
     sort: 2,
     children: [
       {
@@ -84,6 +89,7 @@ const MENUS: ParentSeed[] = [
         component: "/digital-employees/index",
         sort: 1,
         permissionCodes: ["agent:view"],
+        icon: "ri:robot-line"
       },
       {
         name: "skill-center",
@@ -92,6 +98,7 @@ const MENUS: ParentSeed[] = [
         component: "/skill-center/index",
         sort: 2,
         permissionCodes: ["skill:view"],
+        icon: "ri:sparkles-line"
       },
       {
         name: "my-settings",
@@ -100,6 +107,7 @@ const MENUS: ParentSeed[] = [
         component: "/settings/index",
         sort: 3,
         permissionCodes: [],
+        icon: "ri:settings-3-line"
       },
     ],
   },
@@ -107,7 +115,7 @@ const MENUS: ParentSeed[] = [
     name: "team",
     title: "团队",
     path: "/team",
-    icon: "TeamOutlined",
+    icon: "ri:team-line", // 团队
     sort: 3,
     children: [
       {
@@ -117,6 +125,7 @@ const MENUS: ParentSeed[] = [
         component: "/team/index",
         sort: 1,
         permissionCodes: ["team:view"],
+        icon: "ri:group-line"
       },
     ],
   },
@@ -124,7 +133,7 @@ const MENUS: ParentSeed[] = [
     name: "platform",
     title: "平台管理",
     path: "/platform",
-    icon: "SettingOutlined",
+    icon: "ri:settings-2-line", // 平台设置
     sort: 4,
     children: [
       {
@@ -134,6 +143,7 @@ const MENUS: ParentSeed[] = [
         component: "/system/user/index",
         sort: 1,
         permissionCodes: ["user:view"],
+        icon: "ri:user-settings-line"
       },
       {
         name: "platform-roles",
@@ -142,6 +152,7 @@ const MENUS: ParentSeed[] = [
         component: "/system/role/index",
         sort: 2,
         permissionCodes: ["role:view"],
+        icon: "ri:key-2-line"
       },
       {
         name: "platform-menus",
@@ -150,6 +161,7 @@ const MENUS: ParentSeed[] = [
         component: "/system/menu/index",
         sort: 3,
         permissionCodes: ["menu:view"],
+        icon: "ri:menu-line"
       },
       {
         name: "platform-models",
@@ -158,6 +170,7 @@ const MENUS: ParentSeed[] = [
         component: "/platform/index",
         sort: 4,
         permissionCodes: ["model:view"],
+        icon: "ri:cpu-line"
       },
       {
         name: "platform-mcp",
@@ -166,6 +179,7 @@ const MENUS: ParentSeed[] = [
         component: "/platform/index",
         sort: 5,
         permissionCodes: ["mcp:view"],
+        icon: "ri:puzzle-line"
       },
       {
         name: "platform-skill",
@@ -174,6 +188,7 @@ const MENUS: ParentSeed[] = [
         component: "/platform/index",
         sort: 6,
         permissionCodes: ["skill:view"],
+        icon: "ri:apps-2-line"
       },
       {
         name: "platform-agenttpl",
@@ -182,6 +197,7 @@ const MENUS: ParentSeed[] = [
         component: "/platform/index",
         sort: 7,
         permissionCodes: ["agent:view"],
+        icon: "ri:layout-grid-line"
       },
       {
         name: "platform-audit",
@@ -190,6 +206,7 @@ const MENUS: ParentSeed[] = [
         component: "/system/audit-log/index",
         sort: 8,
         permissionCodes: ["audit:view"],
+        icon: "ri:file-list-3-line"
       },
       {
         name: "platform-monitor",
@@ -198,6 +215,7 @@ const MENUS: ParentSeed[] = [
         component: "/platform/index",
         sort: 9,
         permissionCodes: ["monitor:view"],
+        icon: "ri:line-chart-line"
       },
     ],
   },
@@ -208,8 +226,13 @@ async function upsertParent(parent: ParentSeed) {
     where: { parentId: null, name: parent.name },
   });
   if (existing) {
+    // 已存在 → 同步 icon/title/path(允许 seed 演化而不需 reset DB)
+    await prisma.sysMenu.update({
+      where: { id: existing.id },
+      data: { icon: parent.icon, title: parent.title, path: parent.path }
+    });
     // eslint-disable-next-line no-console
-    console.log(`  [skip] parent '${parent.name}' exists`);
+    console.log(`  [update] parent '${parent.name}' icon synced`);
     return existing;
   }
   return prisma.sysMenu.create({
@@ -231,8 +254,18 @@ async function upsertChild(parentId: string, child: ChildSeed) {
     where: { parentId, name: child.name },
   });
   if (existing) {
+    // 已存在 → 同步 icon/title/path/component
+    await prisma.sysMenu.update({
+      where: { id: existing.id },
+      data: {
+        icon: child.icon ?? existing.icon,
+        title: child.title,
+        path: child.path,
+        component: child.component
+      }
+    });
     // eslint-disable-next-line no-console
-    console.log(`  [skip] child '${child.name}' exists`);
+    console.log(`  [update] child '${child.name}' icon synced`);
     return existing;
   }
   return prisma.sysMenu.create({
@@ -241,6 +274,7 @@ async function upsertChild(parentId: string, child: ChildSeed) {
       title: child.title,
       path: child.path,
       component: child.component,
+      icon: child.icon ?? "",
       type: "menu",
       sort: child.sort,
       parentId,

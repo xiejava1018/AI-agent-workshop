@@ -13,6 +13,10 @@ export interface AgentSession {
   title: string
   createdAt: string
   updatedAt: string
+  userId?: string
+  teamId?: string | null
+  /** M4: false = session 文件不在/未启动(老 M2.x session),不能聊天 */
+  available?: boolean
 }
 
 export interface SendMessageParams {
@@ -30,20 +34,32 @@ export const listSessions = (params?: { page?: number; page_size?: number }) => 
   })
 }
 
-/** 创建会话 */
+/** 创建会话
+ * 改:原 /api/agent/sessions 404(后端无)。改调 /api/agent/new,
+ * body 必含 type 字段(后端 startRpcSession 必需,否则 500)。
+ * type:'ensure_session' 只创建 runtime 不发消息(推荐用于先建后发)。
+ *
+ * 注意:keepFullResponse 时,后端返回形如
+ *   { success: true, sessionId: string, data: null }
+ * 不是 BaseResponse 风格。调用方需自己读 sessionId。
+ */
 export const createSession = (userId: string) => {
   return httpClient.post<Http.BaseResponse<AgentSession>>({
-    url: `${PREFIX}/sessions`,
-    data: { userId },
+    url: `${PREFIX}/new`,
+    data: { type: 'ensure_session', title: '新会话', userId },
     keepFullResponse: true
   })
 }
 
-/** 发送消息 */
+/** 发送消息
+ * 改:原 /api/agent/sessions/[id]/messages 404。
+ * 后端真实端点是 POST /api/agent/[id](body.type 必填),
+ * SSE agent type 接受 'prompt' | 'steer' | 'follow_up'。
+ */
 export const sendMessage = (sessionId: string, content: string, userId: string) => {
   return httpClient.post<Http.BaseResponse<{ ok: boolean }>>({
-    url: `${PREFIX}/sessions/${sessionId}/messages`,
-    data: { content, userId },
+    url: `${PREFIX}/${sessionId}`,
+    data: { type: 'prompt', message: content, userId },
     keepFullResponse: true
   })
 }

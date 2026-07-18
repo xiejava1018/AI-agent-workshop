@@ -84,57 +84,10 @@
           color: var(--art-text-gray-500) !important;
         }
 
-        .input-wrap {
-          margin-top: 25px;
-
-          .input-label {
-            display: block;
-            padding-bottom: 8px;
-            font-size: 15px;
-            font-weight: 500;
-            color: var(--art-text-gray-800);
-          }
-        }
-
         // 选择器高度与输入框保持一致
-        .account-select :deep(.el-select__wrapper),
         .el-input,
         .login-btn {
           height: 40px !important;
-        }
-
-        .captcha-wrap {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-
-          .el-input {
-            flex: 1;
-          }
-
-          .captcha-image,
-          .captcha-loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 120px;
-            height: 40px;
-            cursor: pointer;
-            user-select: none;
-            background: var(--art-main-bg-color);
-            border: 1px solid rgba(var(--art-gray-300-rgb), 0.6);
-            border-radius: 8px;
-            transition: all 0.2s ease;
-          }
-
-          .captcha-image {
-            object-fit: cover;
-          }
-
-          .captcha-loading {
-            font-size: 13px;
-            color: var(--art-text-gray-500);
-          }
         }
 
         .forget-password {
@@ -221,12 +174,6 @@
 
         .form {
           margin-top: 12vh;
-
-          .input-wrap {
-            .input-label {
-              display: none;
-            }
-          }
 
           .input-wrap,
           .drag-verify {

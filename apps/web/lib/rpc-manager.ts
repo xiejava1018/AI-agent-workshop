@@ -223,6 +223,13 @@ export class AgentSessionWrapper {
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
+  /**
+   * M4 修复:支持多订阅。原先 `onDestroy` 是单一 callback 槽,任何后注册
+   * 的 callback 都会覆盖之前的(包括 registry 删除回调),导致 wrapper 死
+   * 了之后仍滞留在 registry 里、后续 `getRpcSession` 拿到 stale dead wrapper。
+   * 改成 Set 后,registry 删除回调和 SSE 闭包回调可以共存。
+   */
+  private onDestroyListeners = new Set<() => void>();
   private _alive = true;
   // Owning userId, set at construction. Used by destroyAllSessionsForUser
   // so the LRU eviction in lib/session-cap can match sessions to their
@@ -394,8 +401,11 @@ export class AgentSessionWrapper {
     for (const l of this.listeners) l(event);
   }
 
-  onDestroy(cb: () => void): void {
-    this.onDestroyCallback = cb;
+  onDestroy(cb: () => void): () => void {
+    this.onDestroyListeners.add(cb);
+    return () => {
+      this.onDestroyListeners.delete(cb);
+    };
   }
 
   async send(command: Record<string, unknown>): Promise<unknown> {
@@ -662,7 +672,12 @@ export class AgentSessionWrapper {
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
-    this.onDestroyCallback?.();
+    // 全部 destroy 监听者都调用一次(包括 registry 删除回调、SSE 闭包等)。
+    // 复制一份快照再遍历,因为回调内部可能反过来调用 offDestroy 来删自己。
+    for (const cb of Array.from(this.onDestroyListeners)) {
+      try { cb(); } catch { /* listener 自吞 */ }
+    }
+    this.onDestroyListeners.clear();
     notifyRunningChange();
   }
 

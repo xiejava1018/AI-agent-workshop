@@ -25,6 +25,7 @@
 
 import { prisma } from "./prisma";
 import type { SessionMetaRow } from "./session-meta";
+import { assertPermission } from "./permissions";
 
 export type UserRole = "OWNER" | "ADMIN" | "MEMBER";
 
@@ -118,7 +119,16 @@ export async function assertCanReadSessionScoped(
   meta: SessionMetaRow | undefined,
   sessionId: string
 ): Promise<{ allowed: boolean; reason: "owner" | "team_member" | "shared" | "deny"; teamRole?: UserRole }> {
+  // M4:platform_admin 全局角色 bypass team-scoped 限制,优先于所有检查
+  // (包括 !meta,避免内存 Map 懒加载未完成时平台管理员也被误拒)。
+  // 平台管理员理应能看所有 session(管理/排障需要),不受 team 隔离/meta 存在性影响。
+  // 这是 M4 切鉴权时的遗漏(team-scoped 端点仍是 M2.4 team 逻辑),这里补齐。
+  if (await assertPermission(userId, "platform:access")) {
+    return { allowed: true, reason: "owner" }
+  }
+
   if (!meta) return { allowed: false, reason: "deny" };
+
   // userRole is accepted for backwards compatibility with the M2.3
   // call sites that already pass it through, but no longer affects
   // the decision. (We log it as part of the deny reason for

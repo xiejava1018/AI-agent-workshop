@@ -93,9 +93,53 @@ interface MenuResponse {
   menuList: AppRouteRecord[]
 }
 
-// 获取菜单数据（后端驱动）
+// M4 后端 user-menu 节点(已被服务端按权限码过滤)
+interface BackendUserMenuNode {
+  id: string
+  parentId: string | null
+  name: string
+  title: string
+  path: string
+  component: string
+  icon?: string
+  type: string
+  authMark?: string
+  sort?: number
+  visible?: boolean
+  enabled?: boolean
+  meta?: Record<string, unknown>
+  children?: BackendUserMenuNode[]
+}
+
+// 将 M4 后端 user-menu 节点转为前端路由格式
+function userMenuNodeToRoute(node: BackendUserMenuNode): AppRouteRecord {
+  const hasChildren = Array.isArray(node.children) && node.children.length > 0
+  return {
+    name: node.name,
+    path: node.path,
+    component: node.component || (node.type === 'directory' || hasChildren ? RoutesAlias.Layout : ''),
+    meta: {
+      title: node.title || node.name,
+      icon: node.icon,
+      keepAlive: !hasChildren,
+      isHide: node.visible === false,
+      isHideTab: node.visible === false,
+      authList: [],
+      ...(node.meta || {})
+    },
+    children: hasChildren ? node.children!.map(userMenuNodeToRoute) : undefined
+  }
+}
+
+// 获取当前用户菜单树(M4 RBAC)
+// 改:原实现读本地 asyncRoutes(等于 Soybean 硬编码);
+// 现改为调真实后端 /api/v1/menus/user-menu(服务端按 platform:access/角色权限码过滤)
 export async function fetchGetMenuList(): Promise<MenuResponse> {
-  // AI-agent-workshop 后端暂无菜单接口，直接使用本地路由
-  const localMenu = asyncRoutes.map((route) => menuDataToRouter(route))
-  return { menuList: localMenu }
+  const res = await request.get<{ code: number; message: string; data: BackendUserMenuNode[] }>({
+    url: '/api/v1/menus/user-menu',
+    keepFullResponse: true,
+    showErrorMessage: false
+  })
+  const list = Array.isArray(res?.data) ? res.data : []
+  return { menuList: list.map(userMenuNodeToRoute) }
 }
