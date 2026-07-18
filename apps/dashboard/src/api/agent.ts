@@ -17,6 +17,8 @@ export interface AgentSession {
   teamId?: string | null
   /** M4: false = session 文件不在/未启动(老 M2.x session),不能聊天 */
   available?: boolean
+  /** M3 follow-up (issue #4): 从 session-prefs 拉取的 pin 状态 */
+  pinned?: boolean
 }
 
 export interface SendMessageParams {
@@ -66,7 +68,9 @@ export const sendMessage = (sessionId: string, content: string, userId: string) 
 
 /** 获取可用的 Digital Employees */
 export const listAvailableAgents = () => {
-  return httpClient.get<Http.BaseResponse<Array<{ id: string; name: string; description?: string }>>>({
+  return httpClient.get<
+    Http.BaseResponse<Array<{ id: string; name: string; description?: string }>>
+  >({
     url: '/api/digital-employees',
     keepFullResponse: true
   })
@@ -78,5 +82,36 @@ export const startDelegation = (params: { task: string; mode: string; agentIds: 
     url: '/api/delegation/start',
     data: params,
     keepFullResponse: true
+  })
+}
+
+/**
+ * 会话操作 (issue #4)
+ *
+ * 后端在 apps/web/app/api/sessions/[id]/route.ts 里暴露:
+ *   PATCH  body: { name?: string, pinned?: boolean }
+ *   DELETE
+ *
+ * Vue 端通过 Vite proxy /api 调用。
+ */
+export const renameSession = (sessionId: string, name: string) => {
+  return httpClient.request<Http.BaseResponse<{ ok: boolean }>>({
+    url: `/api/sessions/${encodeURIComponent(sessionId)}`,
+    method: 'PATCH',
+    data: { name }
+  })
+}
+
+export const togglePinSession = (sessionId: string, pinned: boolean) => {
+  return httpClient.request<Http.BaseResponse<{ ok: boolean; pinned: boolean }>>({
+    url: `/api/sessions/${encodeURIComponent(sessionId)}`,
+    method: 'PATCH',
+    data: { pinned }
+  })
+}
+
+export const deleteSession = (sessionId: string) => {
+  return httpClient.del<Http.BaseResponse<{ ok: boolean }>>({
+    url: `/api/sessions/${encodeURIComponent(sessionId)}`
   })
 }
