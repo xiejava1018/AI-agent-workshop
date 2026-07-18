@@ -250,6 +250,26 @@ export class AgentSessionWrapper {
     return this.inner.sessionFile ?? "";
   }
 
+  /**
+   * Working directory the session was created in. Returns "" when the
+   * runtime session is not alive (e.g. M2.x legacy session whose file is
+   * gone) or when the underlying SessionManager does not expose a cwd.
+   *
+   * Used by `/api/agent/[id]/files/*` to scope file browsing to the
+   * session's working directory. Files endpoints MUST treat an empty
+   * cwd as "not browsable" (404) rather than defaulting to process.cwd().
+   */
+  get cwd(): string {
+    try {
+      // sessionManager.getCwd() exists on persisted sessions; for in-memory
+      // sessions (sessionFile === "") it returns the original cwd arg.
+      const c = (this.inner.sessionManager as { getCwd?: () => string }).getCwd?.()
+      return typeof c === "string" ? c : ""
+    } catch {
+      return ""
+    }
+  }
+
   isAlive(): boolean {
     return this._alive;
   }
