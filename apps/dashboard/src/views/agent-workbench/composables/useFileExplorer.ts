@@ -82,7 +82,6 @@ export function useFileExplorer(
   const loading = ref(false)
   const error = ref<string | null>(null)
   const currentRootPath = ref('')
-  const isDefaultAdapter = !options?.listFiles
   // 默认禁用 mock：apps/web 已补 GET /api/agent/[id]/files 端点。
   // 测试/e2e 注入自定义 adapter 时才走 mock fallback。
   const allowMockFallback = options?.useMockFallback ?? false

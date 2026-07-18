@@ -126,7 +126,10 @@ const SAFE_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 /** 仅放行 http/https/mailto 协议 */
 export function safeUrl(url: string): string | undefined {
   try {
-    const parsed = new URL(url, typeof window === 'undefined' ? 'http://localhost' : window.location.href)
+    const parsed = new URL(
+      url,
+      typeof window === 'undefined' ? 'http://localhost' : window.location.href
+    )
     if (SAFE_URL_PROTOCOLS.has(parsed.protocol)) return parsed.toString()
   } catch {
     /* not a valid URL */
