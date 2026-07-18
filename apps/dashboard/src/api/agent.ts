@@ -115,3 +115,61 @@ export const deleteSession = (sessionId: string) => {
     url: `/api/sessions/${encodeURIComponent(sessionId)}`
   })
 }
+
+export interface FileData {
+  content: string
+  language?: string
+  size: number
+  binary?: boolean
+}
+
+export interface FileListResponse {
+  items?: Array<{
+    name: string
+    path: string
+    isDir: boolean
+    size?: number
+    modifiedAt?: string
+    children?: never
+  }>
+  entries?: Array<{
+    name: string
+    path?: string
+    isDir: boolean
+    size?: number
+    modifiedAt?: string
+  }>
+}
+
+/**
+ * File routes are not currently exposed by apps/web. Keep the wrappers ready
+ * for the shared contract so the explorer can swap in the real adapter later.
+ */
+export const listFiles = async (
+  sessionId: string,
+  path = ''
+): Promise<import('@/views/agent-workbench/types').FileNode[]> => {
+  const response = await httpClient.get<Http.BaseResponse<FileListResponse>>({
+    url: `${PREFIX}/${encodeURIComponent(sessionId)}/files`,
+    params: { path },
+    keepFullResponse: true
+  })
+  const payload =
+    (response as Http.BaseResponse<FileListResponse> & FileListResponse).data ?? response
+  const rows = payload.items ?? payload.entries ?? []
+  return rows.map((row) => ({
+    name: row.name,
+    path: row.path ?? (path ? `${path.replace(/\/$/, '')}/${row.name}` : row.name),
+    isDir: row.isDir,
+    size: row.size,
+    modifiedAt: row.modifiedAt
+  }))
+}
+
+export const getFile = (sessionId: string, path: string) => {
+  return httpClient.get<Http.BaseResponse<FileData>>({
+    url: `${PREFIX}/${encodeURIComponent(sessionId)}/files/content`,
+    params: { path },
+    keepFullResponse: true
+  })
+}
