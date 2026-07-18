@@ -229,6 +229,11 @@ async function handleSend() {
 
 function selectSession(id: string) {
   currentSessionId.value = id
+  // 清空消息面板。messages 在组件 setup 顶层是单一 ref,如果不重置,
+  // 切换会话时旧会话的对话会留在屏幕上;handleSend 还会乐观 push user
+  // 消息,导致多个会话的消息累积在一个数组里。
+  messages.value = []
+  isTyping.value = false
 }
 
 async function handleCreateSession() {
