@@ -149,7 +149,9 @@ export interface FileNode {
  * files.
  */
 export interface CwdInfo {
+  /** Absolute path to the session's working directory. '' = unknown / not browsable. */
   cwd: string
+  /** True when cwd came from a live runtime wrapper (vs. persisted metadata). */
   fromRuntime: boolean
 }
 

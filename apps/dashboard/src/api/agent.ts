@@ -382,3 +382,77 @@ export const setPluginEnabled = async (
     }
   })
 }
+
+export interface FileData {
+  content: string
+  language?: string
+  size: number
+  binary?: boolean
+}
+
+export interface FileListResponse {
+  items?: Array<{
+    name: string
+    path: string
+    isDir: boolean
+    size?: number
+    modifiedAt?: string
+    children?: never
+  }>
+  entries?: Array<{
+    name: string
+    path?: string
+    isDir: boolean
+    size?: number
+    modifiedAt?: string
+  }>
+}
+
+/**
+ * File routes are not currently exposed by apps/web. Keep the wrappers ready
+ * for the shared contract so the explorer can swap in the real adapter later.
+ */
+/**
+ * File routes — apps/web exposes two GET endpoints (see d1e4100):
+ *   GET /api/agent/[id]/files?path=<relative-dir>
+ *     列目录(不递归),返 { code, data: { items: FileNode[] } }
+ *   GET /api/agent/[id]/files/<relative-file-path>
+ *     读单个文本文件,返 { code, data: { content, size, modifiedAt } }
+ *
+ * List endpoint takes `path` as a query param; read endpoint puts it in
+ * the URL path (catch-all `[...path]`).
+ */
+export const listFiles = async (
+  sessionId: string,
+  path = ''
+): Promise<import('@/views/agent-workbench/types').FileNode[]> => {
+  const response = await httpClient.get<Http.BaseResponse<FileListResponse>>({
+    url: `${PREFIX}/${encodeURIComponent(sessionId)}/files`,
+    params: { path },
+    keepFullResponse: true
+  })
+  const payload =
+    (response as Http.BaseResponse<FileListResponse> & FileListResponse).data ?? response
+  const rows = payload.items ?? payload.entries ?? []
+  return rows.map((row) => ({
+    name: row.name,
+    path: row.path ?? (path ? `${path.replace(/\/$/, '')}/${row.name}` : row.name),
+    isDir: row.isDir,
+    size: row.size,
+    modifiedAt: row.modifiedAt
+  }))
+}
+
+export const getFile = (sessionId: string, filePath: string) => {
+  // apps/web uses catch-all `[...path]` — path goes in the URL, not query.
+  // Reject `..` and absolute paths client-side too (server has assertWithinRoot
+  // as the authoritative gate).
+  const safe = filePath.split('/').filter((seg) => seg && seg !== '..').join('/')
+  if (!safe) {
+    return Promise.reject(new Error('invalid file path'))
+  }
+  return httpClient.get<Http.BaseResponse<FileData>>({
+    url: `${PREFIX}/${encodeURIComponent(sessionId)}/files/${safe}`,
+    keepFullResponse: true
+  })
+}
