@@ -112,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue'
+  import { ref, computed, onMounted, watch } from 'vue'
   import { ElMessage } from 'element-plus'
   import { Folder } from '@element-plus/icons-vue'
 
@@ -126,6 +126,7 @@
   import FileExplorer from './components/FileExplorer.vue'
 
   import type { ConfigPanelKey, WorkbenchTab } from './types'
+  import { useSessionList } from './composables/useSessionList'
 
   // ============================================================================
   // 状态
@@ -135,6 +136,46 @@
   const activePanel = ref<ConfigPanelKey>('none')
   const tabs = ref<WorkbenchTab[]>([])
   const showToolbar = ref(true)
+
+  // Bug 3 修复:刷新后恢复。会话列表由 useSessionList 管理(load 自动从后端拉);
+  // currentSessionId 持久化到 localStorage,刷新时若后端还有这个 session 就恢复选中。
+  const sessionList = useSessionList()
+
+  const LAST_SESSION_KEY = 'wb:lastSessionId'
+
+  function readLastSessionId(): string | null {
+    try {
+      return localStorage.getItem(LAST_SESSION_KEY)
+    } catch {
+      return null
+    }
+  }
+
+  function writeLastSessionId(id: string | null): void {
+    try {
+      if (id) localStorage.setItem(LAST_SESSION_KEY, id)
+      else localStorage.removeItem(LAST_SESSION_KEY)
+    } catch {
+      /* 隐私模式 / quota 异常时静默 */
+    }
+  }
+
+  // 写回 currentSessionId 到 localStorage(任何变化)
+  watch(currentSessionId, (id) => {
+    writeLastSessionId(id)
+  })
+
+  // 挂载时:1) 拉会话列表 2) 尝试恢复 lastSessionId(后端查得到才恢复)
+  // 注意:SessionSidebar 自己也调用 useSessionList(),这是独立实例;我们这里的
+  // sessionList 仅用于"读 sessions 列表查 lastSessionId 是否还存在",不写入
+  // 侧栏共享状态(避免双实例互相覆盖)。
+  onMounted(async () => {
+    await sessionList.load(true)
+    const last = readLastSessionId()
+    if (last && sessionList.sessions.value.find((s) => s.id === last)) {
+      handleSelect(last)
+    }
+  })
 
   const panelLabel = computed(() => {
     switch (activePanel.value) {
