@@ -62,6 +62,29 @@
 - [x] T5.3 commit:`feat(web+dashboard): add GET /api/agent/[id]/messages for history fetch`(commit 781d82c)
 - [x] T5.4 commit:`fix(dashboard): load session history on session switch`(commit 1738bb8)+ `feat(dashboard): persist lastSessionId to localStorage for refresh recovery`(commit 见 `git log`)
 
+## 6. 回归修复 — Bug 2 真实根因(2026-07-19 复检发现)
+
+> 用户复测:Agent 工作台历史会话仍显示"开始对话"。前次 `verify_pass` 为**假阳性** ——
+> `useAgentSession.test.ts` 在模块层 mock 了 `fetchSessionMessages`(见该文件
+> `vi.mock('@/api/agent')`),绕过了真实响应形状解析,所以形状 bug 一直没被发现。
+
+- [x] T6.1 定位根因:`apps/dashboard/src/api/agent.ts` 的 `fetchSessionMessages` 读
+  `res.data?.context`。但 `httpClient`(`utils/http/index.ts` makeRequest)已把
+  `AxiosResponse.data` 展平为响应体本身,且 `/api/sessions/[id]`(Next.js 路由)的
+  `context` 在**顶层**、未被 `{code,message,data}` 包裹(那是 Vue 侧 `/api/agent/*`
+  代理路由的形状)→ `ctx` 恒 `undefined` → `rawMsgs` 恒 `[]` → 历史永远空。
+  (React 参考界面 `apps/web` 直读 `d.context.messages`,所以端口 30141 正常。)
+- [x] T6.2 改 `apps/dashboard/src/api/agent.ts`:读 `(res as { context? }).context`,附注释说明形状差异。
+- [x] T6.3 新增 `apps/dashboard/src/api/agent.test.ts`:mock `@/utils/http` 喂真实顶层 `context`
+  响应体,锁死形状契约。已验证是**真守卫**:回退到旧 `res.data?.context` 实现时 2/3 fail,修复后 3/3 pass。
+- [x] T6.4 全量回归:`pnpm exec vitest run`(整库 dashboard)→ 128/128 通过;
+  `pnpm --filter @ai-agent-workshop/dashboard build`(含 vue-tsc)→ 通过。
+- [ ] T6.5 commit:`fix(dashboard): read top-level context from /api/sessions/[id] for history`(待用户确认提交策略)
+
+> ⚠️ verify 命令范围注意:前次记录的 verify 命令是 `vitest run src/views/agent-workbench/`,
+> **不覆盖** `src/api/agent.test.ts`。复检 verify 应改用整库 `vitest run`(或显式包含 `src/api/`),
+> 否则该回归守卫不会被执行,假阳性可能重现。
+
 ---
 
 ## 阶段依赖

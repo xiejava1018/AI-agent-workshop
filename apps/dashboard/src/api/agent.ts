@@ -191,7 +191,12 @@ export const fetchSessionMessages = async (
     url: `/api/sessions/${encodeURIComponent(sessionId)}?deferThinking=1&deferMedia=1`,
     keepFullResponse: true
   })
-  const ctx = (res as { data?: { context?: SessionDetailContext } }).data?.context
+  // httpClient 的 makeRequest 已把 AxiosResponse.data 展平成响应体本身(见
+  // utils/http/index.ts),且 /api/sessions/[id] 是 Next.js 路由,直接返回
+  //   { sessionId, filePath, info, leafId, tree, context: { messages, entryIds, ... } }
+  // —— context 在顶层,没有被 { code, message, data } 再包一层(那是 Vue 侧
+  // /api/agent/* 代理路由的形状,别处如 listSessions 才走 .data)。
+  const ctx = (res as { context?: SessionDetailContext }).context
   const rawMsgs = ctx?.messages ?? []
   const entryIds = ctx?.entryIds ?? []
   // 转换 SDK message → 前端 AgentMessage
