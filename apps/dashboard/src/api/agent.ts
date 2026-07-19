@@ -123,15 +123,18 @@ export const deleteSession = (sessionId: string) => {
 /**
  * Bug 2 修复:按 session 拉历史消息
  *
- * 改:之前调自己写的 /api/agent/[id]/messages 失败 —— 那个端点用
- *   `SessionManager.open(filePath).getEntries()` 走磁盘,SDK 在内存里有 SSE
- *   累积的 entry 但 getEntries() 看不到,导致文件被 SDK 主动写后 disk 版本与
- *   内存不一致(常见场景)。apps/web 的 /api/sessions/[id] 用
- *   SessionManager.open 但同时读 wrapper.inner —— 不依赖磁盘一致。
+ * 改:之前调自己写的 /api/agent/[id]/messages 失败 —— SDK 在 idle/LRU 时
+ *   `getEntries()` 返空。apps/web React 实测切 tab + 刷新历史完整,证明
+ *   /api/sessions/[id] 走 SessionManager 累积的内存 entry,可工作。
  *
  * 这里直接复用 apps/web 的端点,响应里取 context.messages。
  * 后端: GET /api/sessions/[id]?deferThinking=1&deferMedia=1
- *   响应: { context: { messages, entryIds, thinkingLevel, model }, path, id, leafId, ... }
+ *   响应: { context: { messages, entryIds, thinkingLevel, model }, ... }
+ *
+ * 注意 shape 转换:
+ * - 后端 message.content 是 Array<{type, text}>(SDK 原生)
+ * - 前端 AgentMessage.content 是 string(MessageView 用 v-html 渲染)
+ * - 后端 message 没有顶层 id,前端 AgentMessage.id 必填,得用 entryIds[i] 配对
  */
 export interface FetchSessionMessagesResponse {
   messages: import('@/views/agent-workbench/types').AgentMessage[]
@@ -139,8 +142,22 @@ export interface FetchSessionMessagesResponse {
   total: number
 }
 
+interface SdkTextBlock {
+  type?: string
+  text?: string
+  thinking?: string
+}
+
+interface SdkMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  content: SdkTextBlock[] | string
+  timestamp?: number
+  errorMessage?: string
+  stopReason?: string
+}
+
 interface SessionDetailContext {
-  messages: import('@/views/agent-workbench/types').AgentMessage[]
+  messages: SdkMessage[]
   entryIds?: string[]
   thinkingLevel?: string
   model?: { provider: string; modelId: string } | null
@@ -153,24 +170,51 @@ interface SessionDetailResponse {
   context: SessionDetailContext
 }
 
+/** 把 SDK content 数组展平成字符串(text/thinking 块拼接) */
+function flattenSdkContent(content: SdkMessage['content']): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((b) => {
+      if (typeof b?.text === 'string') return b.text
+      if (typeof b?.thinking === 'string') return b.thinking
+      return ''
+    })
+    .join('')
+}
+
 export const fetchSessionMessages = async (
   sessionId: string,
   _opts?: { limit?: number; before?: string }
 ) => {
-  // apps/web 端点用 ?deferThinking=1&deferMedia=1 减小首次 load payload
-  // (前端只关心 content/role/id,不需要原始 thinking/tool image)
   const res = await httpClient.get<Http.BaseResponse<SessionDetailResponse>>({
     url: `/api/sessions/${encodeURIComponent(sessionId)}?deferThinking=1&deferMedia=1`,
     keepFullResponse: true
   })
   const ctx = (res as { data?: { context?: SessionDetailContext } }).data?.context
-  const msgs = ctx?.messages ?? []
-  // 转换成与原来 fetchSessionMessages 兼容的形状,避免 useAgentSession 改动
+  const rawMsgs = ctx?.messages ?? []
+  const entryIds = ctx?.entryIds ?? []
+  // 转换 SDK message → 前端 AgentMessage
+  // id 优先用 entryIds[i](稳定 entry id),无 entryIds 时退化为 `${role}-${timestamp}-${idx}`
+  const messages = rawMsgs.map((m, idx) => {
+    const text = flattenSdkContent(m.content)
+    const id = entryIds[idx] ?? `hist-${m.role}-${m.timestamp ?? idx}-${idx}`
+    const ts = typeof m.timestamp === 'number'
+      ? new Date(m.timestamp).toISOString()
+      : new Date().toISOString()
+    return {
+      id,
+      role: m.role,
+      content: text,
+      createdAt: ts,
+      streamStatus: 'done' as const
+    } as import('@/views/agent-workbench/types').AgentMessage
+  })
   return {
     data: {
-      messages: msgs,
+      messages,
       hasMore: false,
-      total: msgs.length
+      total: messages.length
     }
   }
 }
