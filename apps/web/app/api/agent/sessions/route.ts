@@ -5,6 +5,7 @@ import { assertCanReadSessionScoped } from "@/lib/team-auth";
 import { getUserHighestRole } from "@/lib/user-role";
 import { getSessionMeta } from "@/lib/session-meta";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { resolveSessionPath } from "@/lib/session-reader";
 import { isPinned as isSessionPinned } from "@/lib/session-prefs";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const meta = getSessionMeta(s.id);
     const decision = await assertCanReadSessionScoped(userId, userRole, meta, s.id);
     if (decision.allowed) {
+      // fix-agent-workbench-delete-session-404:拒绝 DB 有 row 但磁盘 .jsonl
+      // 缺失的"僵尸 session",否则侧栏 UI 会列出它,删除时 DELETE handler 走
+      // resolveSessionPath → null 必返 404。available 字段仅查内存 runtime,
+      // 检测不到磁盘文件已丢失,所以这里补一道 resolveSessionPath 兜底。
+      const filePath = await resolveSessionPath(s.id);
+      if (!filePath) continue;
       // runtime 状态:memory registry 里有 = 可用(M2.x 老 session 文件不在 → 不可用)
       const available = getRpcSession(s.id) !== undefined;
       items.push({
