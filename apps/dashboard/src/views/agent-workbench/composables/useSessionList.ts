@@ -95,6 +95,10 @@ export function useSessionList(): UseSessionListResult {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const searchQuery = ref('')
+  // 跟踪乐观 push 的会话 id —— 这些会话在 load 后端列表时必须保留,
+  // 否则连续 create 会把之前的乐观项挤掉(Bug 1 根因)。
+  // 后端真正返该项时从集合中移除(在 load 的合并阶段处理)。
+  const optimisticIds = new Set<string>()
 
   function setError(msg: string | null) {
     error.value = msg
@@ -107,7 +111,36 @@ export function useSessionList(): UseSessionListResult {
     if (showLoading) loading.value = true
     try {
       const resp = await listSessions({ page: 1, page_size: 100 })
-      sessions.value = extractSessions(resp)
+      const remoteItems = extractSessions(resp)
+      // Bug 1 修复:与乐观项按 id 合并,保留所有仍在 optimisticIds 的本地项。
+      // 合并策略:
+      //   - 用后端项作为权威(覆盖本地同名项的 updatedAt/title/pinned)
+      //   - 乐观项若不在后端返回中,保留(用户能看到自己刚建的空会话)
+      //   - 后端真正命中乐观 id 后,从 optimisticIds 中移除,下次 load 不会再保留
+      const byId = new Map<string, AgentSession>()
+      for (const item of remoteItems) byId.set(item.id, item)
+      // 先放远程(顺序按后端 updatedAt desc),再追加远程没有的乐观项
+      const merged: AgentSession[] = [...remoteItems]
+      for (const id of optimisticIds) {
+        if (byId.has(id)) {
+          // 后端已返该项,不再是乐观 → 清标记,后续 load 不再"保留"
+          optimisticIds.delete(id)
+        }
+      }
+      // 把仍在 optimisticIds 且不在后端的本地项找出来,前置到头部
+      // (用户刚建的会话应在最上方,语义上"最新")
+      const localExtras = sessions.value.filter(
+        (s) => optimisticIds.has(s.id) && !byId.has(s.id)
+      )
+      // 去重:本地可能已包含某个 id 但被合并逻辑覆盖了,这里用 Map 兜底
+      const remoteIds = new Set(merged.map((s) => s.id))
+      const headExtras: AgentSession[] = []
+      for (const extra of localExtras) {
+        if (remoteIds.has(extra.id)) continue
+        headExtras.push(extra)
+        remoteIds.add(extra.id)
+      }
+      sessions.value = [...headExtras, ...merged]
       error.value = null
     } catch (e: unknown) {
       error.value = formatError(e, '加载会话列表失败')
@@ -127,11 +160,10 @@ export function useSessionList(): UseSessionListResult {
       // 后端响应: { success, sessionId, data: null }
       const r = resp as any
       const sid = r?.sessionId ?? r?.data?.sessionId
-      await load(false)
-      // 乐观 push:某些后端实现下,新建的空会话不会立刻出现在 listSessions
-      // 里(只列写过至少一条消息的会话)。load 之后再 check,远端拿到就跳过,
-      // 远端没拿到就补到头部 — 保证侧栏立即可见。
+      // Bug 1 修复:先标记乐观 id,再 await load(load 会保留该项),
+      // 避免"乐观 push 后被 load 覆盖"的回归。
       if (typeof sid === 'string' && sid.length > 0) {
+        optimisticIds.add(sid)
         const existing = sessions.value.findIndex((s) => s.id === sid)
         if (existing === -1) {
           sessions.value = [
@@ -146,6 +178,8 @@ export function useSessionList(): UseSessionListResult {
           ]
         }
       }
+      // load 会走合并路径:保留 optimisticIds 中的项,后端命中后清标记
+      await load(false)
       return typeof sid === 'string' ? sid : null
     } catch (e: unknown) {
       error.value = formatError(e, '创建会话失败')
@@ -198,6 +232,7 @@ export function useSessionList(): UseSessionListResult {
     sessions.value = sessions.value.filter((s) => s.id !== sessionId)
     try {
       await deleteSession(sessionId)
+      optimisticIds.delete(sessionId)
     } catch (e: unknown) {
       // 回滚:把会话放回原位置
       sessions.value = [...sessions.value.slice(0, idx), removed, ...sessions.value.slice(idx)]

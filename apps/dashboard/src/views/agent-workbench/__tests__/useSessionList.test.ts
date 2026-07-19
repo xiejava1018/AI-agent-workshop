@@ -188,6 +188,53 @@ describe('useSessionList — create()', () => {
     // 派生 unpinnedSessions 应包含 new(因为乐观 push 没设 pinned → undefined → falsy)
     expect(c.unpinnedSessions.value.map((s) => s.id)).toContain('new')
   })
+
+  /**
+   * Bug 1 回归:连续 create 两个新会话,后端 listSessions 始终不含(空会话)。
+   * 第一次 create 后 sessions 应包含 new1;第二次 create 后应同时包含 new1 和 new2。
+   * 修复前:第二次 create 的 load 会用 SAMPLE(3 项)整体覆盖,丢掉 new1。
+   */
+  it('preserves previously optimistic sessions when a second create fires', async () => {
+    // 所有 listSessions 都只返 SAMPLE(不含任何新建会话)
+    vi.mocked(api.listSessions).mockResolvedValue(okResp({ items: SAMPLE, total: 3 }))
+    vi.mocked(api.createSession)
+      .mockResolvedValueOnce({ sessionId: 'new1' } as any)
+      .mockResolvedValueOnce({ sessionId: 'new2' } as any)
+    const c = useSessionList()
+    await c.load()
+    await c.create()
+    await c.create()
+    // 后端 3 + 乐观 2 = 5
+    expect(c.sessions.value).toHaveLength(5)
+    expect(c.sessions.value.map((s) => s.id)).toEqual(
+      expect.arrayContaining(['new1', 'new2'])
+    )
+    // 两个新建会话都应出现在 unpinned 列表
+    const unpinnedIds = c.unpinnedSessions.value.map((s) => s.id)
+    expect(unpinnedIds).toEqual(expect.arrayContaining(['new1', 'new2']))
+  })
+
+  /**
+   * Bug 1 回归:load() 自身在已有乐观项时不应整体覆盖,只合并后端项。
+   */
+  it('load() merges with existing optimistic sessions instead of replacing', async () => {
+    // 第一次 load:仅 SAMPLE
+    vi.mocked(api.listSessions).mockResolvedValueOnce(okResp({ items: SAMPLE, total: 3 }))
+    vi.mocked(api.createSession).mockResolvedValueOnce({ sessionId: 'new1' } as any)
+    const c = useSessionList()
+    await c.load()
+    await c.create()
+    expect(c.sessions.value.map((s) => s.id)).toEqual(
+      expect.arrayContaining(['new1', 'a', 'b', 'c'])
+    )
+    // 第二次 load:后端仍未返 new1(模拟真实情况)
+    vi.mocked(api.listSessions).mockResolvedValueOnce(okResp({ items: SAMPLE, total: 3 }))
+    await c.load(true)
+    expect(c.sessions.value).toHaveLength(4)
+    expect(c.sessions.value.map((s) => s.id)).toEqual(
+      expect.arrayContaining(['new1', 'a', 'b', 'c'])
+    )
+  })
 })
 
 describe('useSessionList — error utilities', () => {
