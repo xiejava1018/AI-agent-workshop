@@ -121,6 +121,32 @@ export const deleteSession = (sessionId: string) => {
 // ============================================================================
 
 /**
+ * Bug 2 修复:按 session 拉历史消息
+ *
+ * 后端: GET /api/agent/[id]/messages?limit=50&before=<isoTimestamp>
+ *   响应: { code, data: { messages: AgentMessage[], hasMore, total } }
+ *
+ * 用于切 tab / 刷新页面时回填 useAgentSession 的本地 messages(否则只靠 SSE
+ * 实时事件流,历史全丢)。
+ */
+export interface FetchSessionMessagesResponse {
+  messages: import('@/views/agent-workbench/types').AgentMessage[]
+  hasMore: boolean
+  total: number
+}
+
+export const fetchSessionMessages = (
+  sessionId: string,
+  opts?: { limit?: number; before?: string }
+) => {
+  return httpClient.get<Http.BaseResponse<FetchSessionMessagesResponse>>({
+    url: `${PREFIX}/${encodeURIComponent(sessionId)}/messages`,
+    params: opts,
+    keepFullResponse: true
+  })
+}
+
+/**
  * 订阅全局「哪些 session 在跑」SSE。
  *
  * 后端: GET /api/agent/running/events
