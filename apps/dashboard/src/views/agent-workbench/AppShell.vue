@@ -10,14 +10,13 @@
   等价 apps/web/components/AppShell.tsx(1073 行)的 Vue 端。
 -->
 <template>
-  <div class="agent-workbench">
+  <div class="agent-workbench art-full-height">
     <div class="workbench-card">
       <!-- 左侧: 会话列表 -->
       <aside class="wb-session-list">
         <SessionSidebar
           :current-session-id="currentSessionId"
           @select="handleSelect"
-          @create="handleCreate"
           @rename="handleRename"
           @pin="handlePin"
           @delete="handleDelete"
@@ -27,7 +26,7 @@
       <!-- 中间: Tab 栏 + 聊天窗口 -->
       <main class="wb-chat-area">
         <TabBar
-          v-if="tabs.length > 1"
+          v-if="tabs.length > 0"
           :tabs="tabs"
           :active-tab-id="currentSessionId ?? ''"
           @select="handleSelect"
@@ -35,11 +34,16 @@
         />
 
         <!-- 未选会话:空态;已选:挂 ChatWindow,key 强制重建避免消息残留 -->
-        <ChatWindow
-          v-if="currentSessionId"
-          :key="currentSessionId"
-          :session-id="currentSessionId"
-        />
+        <ChatWindow v-if="currentSessionId" :key="currentSessionId" :session-id="currentSessionId">
+          <template #input="{ sendMessage, abort, isStreaming: streaming }">
+            <ChatInput
+              :session-id="currentSessionId"
+              :is-streaming="streaming"
+              @send="(text, attachments) => void sendMessage(text, attachments)"
+              @abort="abort"
+            />
+          </template>
+        </ChatWindow>
         <div v-else class="wb-empty">
           <el-empty description="选择左侧会话以开始聊天,或点击「新建」" />
         </div>
@@ -115,6 +119,7 @@
   import SessionSidebar from './components/SessionSidebar.vue'
   import TabBar from './components/TabBar.vue'
   import ChatWindow from './components/ChatWindow.vue'
+  import ChatInput from './components/ChatInput.vue'
   import ModelsConfig from './components/ModelsConfig.vue'
   import SkillsConfig from './components/SkillsConfig.vue'
   import PluginsConfig from './components/PluginsConfig.vue'
@@ -163,12 +168,6 @@
     } else {
       tabs.value = tabs.value.map((t) => ({ ...t, active: t.sessionId === sessionId }))
     }
-  }
-
-  function handleCreate(): void {
-    // SessionSidebar 内部已发请求;这里只 toast 提示。
-    // 真正的 select 由父组件监听 session 列表变化后处理。
-    ElMessage.info('请在侧栏点击新建按钮')
   }
 
   function handleRename(sessionId: string, newTitle: string): void {

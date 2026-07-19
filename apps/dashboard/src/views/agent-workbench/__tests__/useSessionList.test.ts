@@ -167,6 +167,27 @@ describe('useSessionList — create()', () => {
     expect(sid).toBeNull()
     expect(c.error.value).toBe('create failed')
   })
+
+  /**
+   * 真实场景:某些后端实现下,新建空会话不会立刻出现在 listSessions。
+   * 期望乐观 push 把 new 补到 sessions 头部,保证侧栏立即可见。
+   */
+  it('optimistically pushes new session when listSessions does not include it', async () => {
+    // 两次 list 都只返回 SAMPLE(不包含 new)
+    vi.mocked(api.listSessions)
+      .mockResolvedValueOnce(okResp({ items: SAMPLE, total: 3 }))
+      .mockResolvedValueOnce(okResp({ items: SAMPLE, total: 3 }))
+    vi.mocked(api.createSession).mockResolvedValueOnce({ sessionId: 'new' } as any)
+    const c = useSessionList()
+    await c.load()
+    const sid = await c.create()
+    expect(sid).toBe('new')
+    // 远端 3 项 + 乐观 push 1 项 = 4
+    expect(c.sessions.value).toHaveLength(4)
+    expect(c.sessions.value[0]?.id).toBe('new')
+    // 派生 unpinnedSessions 应包含 new(因为乐观 push 没设 pinned → undefined → falsy)
+    expect(c.unpinnedSessions.value.map((s) => s.id)).toContain('new')
+  })
 })
 
 describe('useSessionList — error utilities', () => {

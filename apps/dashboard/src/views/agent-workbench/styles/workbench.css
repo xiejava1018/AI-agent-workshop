@@ -74,7 +74,10 @@
 .agent-workbench {
   display: flex;
   width: 100%;
-  height: 100%;
+  /* 用模板约定 --art-full-height(已减去 header/tabs),缺失时回退 100%。
+   * 老 index.vue line 416-420 也是这个套路。height:100% 在 art-page-content
+   * 链路下拿不到父高度,工作台会被压缩成内容高度。 */
+  height: var(--art-full-height, 100%);
   background: var(--wb-bg);
   color: var(--wb-text);
   font-family: var(--wb-font-sans);
@@ -174,6 +177,14 @@
 
 /* ============ 消息区 ============ */
 
+.wb-chat-window {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .wb-messages {
   flex: 1 1 auto;
   min-height: 0;
@@ -219,6 +230,17 @@
   border-top: 1px solid var(--wb-border);
   background: var(--wb-bg-elevated);
   min-height: var(--wb-input-min-height);
+}
+
+.wb-chat-input {
+  flex: 0 0 auto;
+  padding: var(--wb-pad-md);
+  border-top: 1px solid var(--wb-border);
+  background: var(--wb-bg-elevated);
+  min-height: var(--wb-input-min-height);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wb-pad-sm);
 }
 
 .wb-input-actions {

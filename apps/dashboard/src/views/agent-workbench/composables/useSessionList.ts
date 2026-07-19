@@ -42,7 +42,7 @@ export interface UseSessionListResult {
   /** 拉取完整列表(showLoading 控制是否显示 loading 占位) */
   load: (showLoading?: boolean) => Promise<void>
   /** 新建会话(创建后自动刷新列表,返回新会话 id) */
-  create: () => Promise<string | null>
+  create: (userId?: string) => Promise<string | null>
   /** 重命名会话(乐观更新,失败回滚) */
   rename: (sessionId: string, newTitle: string) => Promise<void>
   /** 切换 pin(乐观更新,失败回滚) */
@@ -116,13 +116,36 @@ export function useSessionList(): UseSessionListResult {
     }
   }
 
-  async function create(): Promise<string | null> {
+  async function create(userId?: string): Promise<string | null> {
     try {
-      const resp = await createSession('default')
+      // 真实 userId 由调用方传入(避免在 composable 里直接 import userStore,
+      // 它的依赖图会引入 mock/changeLog 等测试环境不友好的模块)。
+      // 后端 listSessions 走 assertCanReadSessionScoped 鉴权,如果 userId
+      // 是字面量 'default' 会导致新建的 session 不属于任何用户,被过滤掉,
+      // 侧栏永远看不到。
+      const resp = await createSession(userId ?? 'default')
       // 后端响应: { success, sessionId, data: null }
       const r = resp as any
       const sid = r?.sessionId ?? r?.data?.sessionId
       await load(false)
+      // 乐观 push:某些后端实现下,新建的空会话不会立刻出现在 listSessions
+      // 里(只列写过至少一条消息的会话)。load 之后再 check,远端拿到就跳过,
+      // 远端没拿到就补到头部 — 保证侧栏立即可见。
+      if (typeof sid === 'string' && sid.length > 0) {
+        const existing = sessions.value.findIndex((s) => s.id === sid)
+        if (existing === -1) {
+          sessions.value = [
+            {
+              id: sid,
+              title: '新会话',
+              available: true,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            },
+            ...sessions.value
+          ]
+        }
+      }
       return typeof sid === 'string' ? sid : null
     } catch (e: unknown) {
       error.value = formatError(e, '创建会话失败')
@@ -177,11 +200,7 @@ export function useSessionList(): UseSessionListResult {
       await deleteSession(sessionId)
     } catch (e: unknown) {
       // 回滚:把会话放回原位置
-      sessions.value = [
-        ...sessions.value.slice(0, idx),
-        removed,
-        ...sessions.value.slice(idx)
-      ]
+      sessions.value = [...sessions.value.slice(0, idx), removed, ...sessions.value.slice(idx)]
       error.value = formatError(e, '删除失败')
     }
   }
