@@ -1,6 +1,6 @@
 workflow: hotfix
 language: zh-CN
-phase: build
+phase: verify
 context_compression: off
 build_mode: direct
 build_pause: null
@@ -14,7 +14,7 @@ base_ref: 0e94c2f2f18fff42fd6974b9bd2ef0fffee35057
 design_doc: null
 plan: null
 verify_result: pending
-verification_report: null
+verification_report: docs/superpowers/reports/2026-07-19-agent-workbench-session-bugs-verify.md
 branch_status: pending
 created_at: 2026-07-19
 verified_at: null
