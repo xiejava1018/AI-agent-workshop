@@ -148,7 +148,9 @@ describe('useEventStream — three-layer guard', () => {
     expect(es).toBeDefined()
 
     // 复用同一个 MessageEvent 对象投递两次
-    const reusedEvent = { data: JSON.stringify({ type: 'message_start' }) } as MessageEvent
+    const reusedEvent = {
+      data: JSON.stringify({ type: 'message_start', message: { role: 'assistant' } })
+    } as MessageEvent
     es?.onmessage?.(reusedEvent)
     es?.onmessage?.(reusedEvent)
     await nextTick()
@@ -182,7 +184,7 @@ describe('useEventStream — three-layer guard', () => {
     expect(first?.closed).toBe(true)
 
     // 新连接仍能正常接收事件
-    second?.emitMessage({ type: 'message_start' })
+    second?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
 
     wrapper.unmount()
   })
@@ -211,15 +213,55 @@ describe('useEventStream — narrow whitelist', () => {
 
     const es = stubInstances[0]
     es?.emitMessage({ type: 'connected' }) // 不 push
-    es?.emitMessage({ type: 'message_start' })
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
     es?.emitMessage({ type: 'message_delta', content: 'Hello' })
     es?.emitMessage({ type: 'message_delta', content: ' World' })
-    es?.emitMessage({ type: 'message_end' })
+    es?.emitMessage({ type: 'message_end', message: { role: 'assistant' } })
 
     expect(messages.value.length).toBe(1)
     expect(messages.value[0]?.role).toBe('assistant')
     expect(messages.value[0]?.content).toBe('Hello World')
     expect(messages.value[0]?.streamStatus).toBe('done')
+  })
+})
+
+describe('useEventStream — SDK event bridge', () => {
+  it('renders assistant text from the SDK message_update event', () => {
+    const sessionId = ref('sess-1')
+    const { messages } = useEventStream(sessionId, 'user-1')
+    const es = stubInstances[0]
+
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
+    es?.emitMessage({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_delta', delta: 'Hello from SDK' }
+    })
+    es?.emitMessage({ type: 'message_end', message: { role: 'assistant' } })
+
+    expect(messages.value).toHaveLength(1)
+    expect(messages.value[0]?.content).toBe('Hello from SDK')
+    expect(messages.value[0]?.streamStatus).toBe('done')
+  })
+
+  it('does not create an assistant placeholder for a user message_start event', () => {
+    const sessionId = ref('sess-1')
+    const { messages } = useEventStream(sessionId, 'user-1')
+    const es = stubInstances[0]
+
+    es?.emitMessage({ type: 'message_start', message: { role: 'user' } })
+
+    expect(messages.value).toHaveLength(0)
+  })
+
+  it('surfaces prompt_error from the SDK as a visible stream error', () => {
+    const sessionId = ref('sess-1')
+    const { error, streamStatus } = useEventStream(sessionId, 'user-1')
+    const es = stubInstances[0]
+
+    es?.emitMessage({ type: 'prompt_error', errorMessage: 'Model unavailable' })
+
+    expect(error.value).toBe('Model unavailable')
+    expect(streamStatus.value).toBe('error')
   })
 })
 
@@ -229,7 +271,7 @@ describe('useEventStream — abort()', () => {
     const { messages, abort, streamStatus } = useEventStream(sessionId, 'user-1')
 
     const es = stubInstances[0]
-    es?.emitMessage({ type: 'message_start' })
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
     es?.emitMessage({ type: 'message_delta', content: 'partial' })
 
     expect(messages.value.length).toBe(1)
@@ -260,8 +302,7 @@ describe('useEventStream — timeout', () => {
     const { messages, error, streamStatus } = useEventStream(sessionId, 'user-1')
 
     const es = stubInstances[0]
-    es?.emitMessage({ type: 'message_start' })
-    es?.emitMessage({ type: 'message_delta', content: 'thinking...' })
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
 
     // 推进 90s
     vi.advanceTimersByTime(90_000)
@@ -277,7 +318,7 @@ describe('useEventStream — timeout', () => {
     const { messages, streamStatus } = useEventStream(sessionId, 'user-1')
 
     const es = stubInstances[0]
-    es?.emitMessage({ type: 'message_start' })
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
 
     // 50s 后再发事件
     vi.advanceTimersByTime(50_000)
@@ -300,7 +341,7 @@ describe('useEventStream — sendMessage + resetMessages', () => {
     const { messages, resetMessages, streamStatus } = useEventStream(sessionId, 'user-1')
 
     const es = stubInstances[0]
-    es?.emitMessage({ type: 'message_start' })
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
     expect(messages.value.length).toBe(1)
 
     resetMessages()

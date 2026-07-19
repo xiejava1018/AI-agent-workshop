@@ -51,6 +51,81 @@ export interface StreamEvent {
   readonly data: unknown
 }
 
+/**
+ * 把 pi SDK 真实事件归一化为工作台内部事件。
+ *
+ * 关键修复:活跃的 AppShell → ChatWindow 路径在白名单判断前需要先把
+ * SDK 事件(例如 `message_update.assistantMessageEvent.text_delta` 和
+ * `prompt_error`)转为内部 `message_delta` / `error`,否则:
+ *   - 助手文本永远不进 messages,UI 只能看到空 assistant 容器
+ *   - prompt 失败原因被白名单丢弃,UI 永远停留在"已取消重试"
+ *   - 用户角色 `message_start` 也会被无差别建出 assistant 占位
+ *
+ * 返回 null 表示该事件对 UI 无意义,直接丢弃;返回的 payload 已对齐
+ * 内部事件形状,可继续走白名单 + handleEvent 状态机。
+ */
+export function normalizeAgentWorkbenchEvent(
+  raw: Record<string, unknown>
+): Record<string, unknown> | null {
+  const type = typeof raw.type === 'string' ? raw.type : ''
+
+  if (type === 'message_start') {
+    const role = (raw.message as { role?: unknown } | undefined)?.role
+    if (role !== 'assistant') return null
+    return { type: 'message_start', content: '' }
+  }
+
+  if (type === 'message_update') {
+    const inner = raw.assistantMessageEvent as { type?: unknown; delta?: unknown } | undefined
+    if (inner && inner.type === 'text_delta' && typeof inner.delta === 'string') {
+      return { type: 'message_delta', content: inner.delta }
+    }
+    return null
+  }
+
+  if (type === 'message_end') {
+    return { type: 'message_end' }
+  }
+
+  if (type === 'prompt_error') {
+    const message =
+      typeof raw.errorMessage === 'string' && raw.errorMessage ? raw.errorMessage : '未知错误'
+    return { type: 'error', content: message }
+  }
+
+  if (type === 'tool_execution_start') {
+    return {
+      type: 'tool_update',
+      toolName: raw.toolName,
+      toolInput: raw.args
+    }
+  }
+
+  if (type === 'tool_execution_end') {
+    return {
+      type: 'tool_update',
+      toolName: raw.toolName,
+      toolInput: { result: raw.result, isError: raw.isError }
+    }
+  }
+
+  if (type === 'turn_end') {
+    const toolErr = Array.isArray(raw.toolResults)
+      ? (raw.toolResults as Array<{ isError?: unknown }>).some((t) => t?.isError === true)
+      : false
+    if (toolErr) return { type: 'error', content: 'Tool execution failed' }
+    return { type: 'prompt_done' }
+  }
+
+  if (type === 'agent_start' || type === 'agent_end') {
+    return null
+  }
+
+  if (!type) return null
+
+  return { type, ...raw }
+}
+
 /** sendMessage 返回的 user 消息(sendMessage 调起后由调用方决定是否入栈,默认不入栈) */
 export interface SentUserMessage {
   readonly id: string
@@ -183,14 +258,18 @@ export function useEventStream(
         return
       }
 
-      const type = typeof raw.type === 'string' ? raw.type : ''
-      // 四:窄白名单过滤
+      // 先把 pi SDK 真实事件归一化为内部事件,然后再走白名单,
+      // 避免 SDK 事件类型(message_update / prompt_error / tool_execution_* …)
+      // 被窄白名单整体丢弃。
+      const normalized = normalizeAgentWorkbenchEvent(raw)
+      if (!normalized) return
+      const type = normalized.type
       if (!ALLOWED_SSE_EVENTS.includes(type as (typeof ALLOWED_SSE_EVENTS)[number])) {
         console.warn(`[useEventStream] 未授权事件: ${type},丢弃`)
         return
       }
 
-      handleEvent(type, raw)
+      handleEvent(type, normalized)
     }
   }
 
