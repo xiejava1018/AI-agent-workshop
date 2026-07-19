@@ -112,3 +112,20 @@ handleSelect(B)
 - 风险 1:后端 messages 端点解析 .jsonl 格式若与 AgentMessage 形状不一致 → 单元测试覆盖
 - 风险 2:乐观 push 5s 后台清理若和用户高频操作 race → 简化方案:不做 5s 清理,只用 `optimisticIds` 标识,后端真正返回时再清(实测 listSessions 已能命中新建空 session,见后端实现)
 - 回滚:每个 commit 独立,`git revert` 单个 commit 即可
+
+## 6. Implementation Divergence(2026-07-19 verify 记录)
+
+verify 阶段发现以下与原文 § 1 (Bug 2) 不符的偏差,经用户决策(选项 A)接受并在此留痕:
+
+| 维度 | design 原写 | 实际实现 | 原因 |
+|------|-----------|---------|------|
+| Bug 2 历史拉取的端点 | 新增 `GET /api/agent/[id]/messages`(T2.1) | **复用** Next.js 已有的 `GET /api/sessions/[id]` | (a) 端口 30141 的 React 参考界面一直用 `/api/sessions/[id]` 拉历史,Vue 端走同一端点避免双实现;(b) 该路由由 `SessionManager.open` + `buildSessionContext` 读 .jsonl,产物已经包含 UI 需要的完整 messages 分支路径,Vue 直接喂入 `useAgentSession.fetchHistory` 即可;(c) 真实根因是响应形状解析 bug(`res.data?.context` 应为 `res.context`),改端点不解决该 bug |
+| `apps/web/app/api/agent/[id]/messages/route.ts`(T2.1) | 应作为 Vue 端 fetchSessionMessages 的目标 | 文件确实新增(`38f2...` 期间),但 **当前没有 Vue 消费者** —— 暂时为未使用的端点 |
+
+接受的代价:
+1. design 制品与实现不完全对齐,后续归档时该 design doc 会被标记 `superseded-by-main-spec`,新 spec 应反映"实际用 `/api/sessions/[id]`"的事实。
+2. `/api/agent/[id]/messages` 成为未消费的端点 —— 建议后续 change 删除(或保留作通用化后端能力,但 Vue 端不用)。
+
+未触动:
+- `useAgentSession.fetchHistory` 的 race 防护 / merge 顺序与 design § 1 (Bug 2) 一致。
+- 其他设计决策(乐观合并 localStorage 持久化、消息按 messageId 索引、append-only 实时流)未变。
