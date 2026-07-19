@@ -141,6 +141,37 @@ export async function POST(req: NextRequest) {
     // .jsonl file override on the first-line fields.
     recordSessionMeta(realSessionId, userId, project.id, project.teamId);
 
+    // Hotfix 补回归:同步写 Prisma Session 元数据行。之前只调 recordSessionMeta
+    // 写内存索引,DB 没 row,导致 /api/agent/sessions 返不到这个 sid,前端只能
+    // 靠乐观 push 兑底,且 fetchHistory(切 tab)找不到 .jsonl。
+    //
+    // 字段:
+    //   - title: 初始为空,用户发第一条消息时由 sendMessage 侧 update。
+    //     (不在这里 derive title,因为 ensure_session 路径不一定会发消息,
+    //      写死了会误导 UI)
+    //   - jsonlPath: SDK 的 SessionManager.create 立即分配文件路径,
+    //     写盘等首条 assistant message 后 flush。这里用 wrapper.sessionFile
+    //     记录路径,listSessions 仍能返 row;fetchHistory 仍能解析路径。
+    //   - upsert: 重试幂等
+    await prisma.session.upsert({
+      where: { id: realSessionId },
+      create: {
+        id: realSessionId,
+        userId,
+        teamId: project.teamId,
+        projectId: project.id,
+        title: '',
+        status: 'active',
+        jsonlPath: session.sessionFile || '',
+        tokenUsage: 0
+      },
+      update: {
+        // 重试 / 已存在 row 时只更新 jsonlPath + updatedAt
+        jsonlPath: session.sessionFile || '',
+        updatedAt: new Date()
+      }
+    });
+
     // M2.4 audit: every successful session creation is logged so we can
     // reconstruct what user created which session in which team after the
     // fact. This is the entry that lets "what sessions exist" questions

@@ -93,6 +93,30 @@ export async function POST(
     const rawBody = await req.json() as { type: string; [key: string]: unknown };
     const { body } = await maybeExpandSkillCommand(rawBody, userId, meta?.teamId ?? null, id);
 
+    // Hotfix 补回归:用户首条 prompt 时,把会话 title 从 "" 改成首条消息摘要。
+    // createSession 路由不再 derive title(因为 ensure_session 路径不一定发消息),
+    // 这里统一在收到首条 prompt 时派生。后续不重复 update(title 已非空)。
+    // deriveInitialSessionName 的语义与 apps/web 现有会话命名一致。
+    if (body.type === "prompt" && typeof body.message === "string" && body.message.trim()) {
+      try {
+        const { prisma } = await import("@/lib/prisma");
+        const existing = await prisma.session.findUnique({
+          where: { id },
+          select: { title: true }
+        });
+        if (existing && !existing.title) {
+          const flat = body.message.replace(/\s+/g, " ").trim();
+          const derived = [...flat].slice(0, 30).join("") || "新会话";
+          await prisma.session.update({
+            where: { id },
+            data: { title: derived, updatedAt: new Date() }
+          });
+        }
+      } catch {
+        // 派生失败不影响 prompt 主路径
+      }
+    }
+
     // Fast path: already-running session
     const existing = getRpcSession(id);
     if (existing?.isAlive()) {
