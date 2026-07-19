@@ -79,7 +79,7 @@
   响应体,锁死形状契约。已验证是**真守卫**:回退到旧 `res.data?.context` 实现时 2/3 fail,修复后 3/3 pass。
 - [x] T6.4 全量回归:`pnpm exec vitest run`(整库 dashboard)→ 128/128 通过;
   `pnpm --filter @ai-agent-workshop/dashboard build`(含 vue-tsc)→ 通过。
-- [ ] T6.5 commit:`fix(dashboard): read top-level context from /api/sessions/[id] for history`(待用户确认提交策略)
+- [x] T6.5 commit:`fix(dashboard): read top-level context from /api/sessions/[id] for history`(commit a922a03,用户确认直接提 main)
 
 > ⚠️ verify 命令范围注意:前次记录的 verify 命令是 `vitest run src/views/agent-workbench/`,
 > **不覆盖** `src/api/agent.test.ts`。复检 verify 应改用整库 `vitest run`(或显式包含 `src/api/`),
