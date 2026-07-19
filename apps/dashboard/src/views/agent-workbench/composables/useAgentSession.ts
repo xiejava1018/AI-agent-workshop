@@ -141,16 +141,19 @@ export function useAgentSession(
   }
 
   // sessionId 变化时:resetSession → fetchHistory(自动回填)
+  //
+  // immediate: true 很关键:组件因 :key=sessionId 重建时,新 useAgentSession 实例
+  // 的 sessionId 是新值,但 watch 默认 lazy 不会 fire,首次切 tab 拉不到历史。
+  // 走 immediate 让挂载即触发,等同 useEventStream 的 connect() fallback 模式。
   watch(
     () => (typeof sessionId === 'string' ? sessionId : sessionId.value),
     (newSid, oldSid) => {
-      // 第一次触发(newSid === undefined 时不拉历史,避免挂载时白跑)
       if (!newSid) return
       if (newSid === oldSid) return
       resetSession()
       void fetchHistory()
     },
-    { immediate: false }
+    { immediate: true }
   )
 
   return {

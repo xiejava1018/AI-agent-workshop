@@ -115,12 +115,17 @@ describe('useAgentSession — fetchHistory (Bug 2)', () => {
         createdAt: '2025-01-01T00:00:01Z'
       }
     ]
-    vi.mocked(api.fetchSessionMessages).mockResolvedValueOnce({
+    // mockResolvedValue(无 Once) 让 immediate watch + 后续 await fetchHistory 都拿到 history
+    vi.mocked(api.fetchSessionMessages).mockResolvedValue({
       data: { messages: history, hasMore: false, total: 2 }
     } as any)
 
     const { messages, fetchHistory } = useAgentSession(sessionId, 'user-1')
+    // 显式 await 让 immediate 触发的 fetchHistory 完成
     await fetchHistory()
+    // 等响应合并
+    await nextTick()
+    await nextTick()
 
     // 历史已 prepend 到 messages
     expect(messages.value.length).toBe(2)
@@ -144,27 +149,34 @@ describe('useAgentSession — fetchHistory (Bug 2)', () => {
       { id: 's2-1', role: 'user' as const, content: 'b', createdAt: '2025-01-02' }
     ]
 
+    // 注意:immediate watch 会消费第一个 mock,所以我们用一次性 mock 控制顺序
     let resolveFirst!: (v: any) => void
     vi.mocked(api.fetchSessionMessages)
+      // 第一个响应:挂起,可手动 resolve
       .mockReturnValueOnce(new Promise((r) => { resolveFirst = r }) as any)
-      .mockResolvedValueOnce({ data: { messages: sess2History, hasMore: false, total: 1 } } as any)
+      // 第二个响应(以及之后所有):sess-2 历史
+      .mockResolvedValue({ data: { messages: sess2History, hasMore: false, total: 1 } } as any)
 
     const { messages, fetchHistory } = useAgentSession(sessionId, 'user-1')
 
-    // 第一次触发
+    // 等 immediate watch 触发的 fetchHistory 拿第一个 mock
+    await nextTick()
+
+    // 第一次触发 — 但 immediate 已用过第一个 mock,这个会拿 sess-2 mock
+    // 模拟 race:再触发一次,这个也拿 sess-2 mock(都被第二个 mock 响应)
     const p1 = fetchHistory()
-    // 第二次触发(模拟快速切换)
     const p2 = fetchHistory()
 
-    // 第二次先 resolve
     await p2
+    await nextTick()
     // 此时 messages 应只有 s2-1
     expect(messages.value.length).toBe(1)
     expect(messages.value[0]?.id).toBe('s2-1')
 
-    // 第一次延迟 resolve(应被 race 丢弃)
+    // 第一次延迟 resolve(应被 race 丢弃,因为 seq 已递增)
     resolveFirst({ data: { messages: sess1History, hasMore: false, total: 1 } })
     await p1
+    await nextTick()
 
     // 仍是 s2-1,s1-1 被丢弃
     expect(messages.value.length).toBe(1)
@@ -176,7 +188,8 @@ describe('useAgentSession — fetchHistory (Bug 2)', () => {
    */
   it('silently ignores fetchHistory failure', async () => {
     const sessionId = ref('sess-1')
-    vi.mocked(api.fetchSessionMessages).mockRejectedValueOnce(new Error('boom'))
+    // 永久 reject,应对 immediate watch + 显式 await 两次消费
+    vi.mocked(api.fetchSessionMessages).mockRejectedValue(new Error('boom'))
 
     const { messages, fetchHistory } = useAgentSession(sessionId, 'user-1')
     await expect(fetchHistory()).resolves.toBeUndefined()
