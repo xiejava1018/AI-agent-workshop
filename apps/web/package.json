@@ -25,7 +25,7 @@
     "package.json"
   ],
   "scripts": {
-    "dev": "prisma generate && tsx scripts/bootstrap-root.ts && next dev -p 30141",
+    "dev": "prisma generate && tsx scripts/bootstrap-root.ts && next dev --webpack -p 30141",
     "build": "next build --webpack",
     "start": "tsx scripts/bootstrap-root.ts && next start -p 30141",
     "lint": "eslint .",
