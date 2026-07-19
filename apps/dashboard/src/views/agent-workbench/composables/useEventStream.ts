@@ -263,9 +263,9 @@ export function useEventStream(
       // 被窄白名单整体丢弃。
       const normalized = normalizeAgentWorkbenchEvent(raw)
       if (!normalized) return
-      const type = normalized.type
-      if (!ALLOWED_SSE_EVENTS.includes(type as (typeof ALLOWED_SSE_EVENTS)[number])) {
-        console.warn(`[useEventStream] 未授权事件: ${type},丢弃`)
+      const type: string = typeof normalized.type === 'string' ? normalized.type : ''
+      if (!type || !ALLOWED_SSE_EVENTS.includes(type as (typeof ALLOWED_SSE_EVENTS)[number])) {
+        console.warn(`[useEventStream] 未授权事件: ${type || '<empty>'},丢弃`)
         return
       }
 
