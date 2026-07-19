@@ -15,4 +15,4 @@
 - [x] 3.2 GREEN 跑通：`pnpm vitest run tests/integration/list-sessions-zombie-filter.test.ts` 1 passed (1)。`pnpm tsc --noEmit` 0 errors。完整 `pnpm vitest run` 的 40 文件 × PostgresError 42704 baseline 失败与本次 fix 无关（DB schema migration 未跑），未引入新失败。
 - [x] 3.3 手动浏览器验证：用户刷新 dashboard，3 个 zombie session（Test Session for Admin/Member、Session With Secret Path）从侧栏消失，删除按钮可点。
 - [x] 3.4 根因消除检查：design.md Open Questions 段记录 H1 + falsification + 验证后的根因（DB 与磁盘双源不一致 + platform_admin bypass）；修改后的 `apps/web/app/api/agent/sessions/route.ts` 是单点 source-of-truth 修复。
-- [ ] 3.5 build → verify guard 通过后更新 `.comet.yaml` 字段（下一步执行）。
+- [x] 3.5 build → verify guard 通过后更新 `.comet.yaml` 字段。
