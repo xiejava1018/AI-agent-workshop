@@ -40,6 +40,9 @@ function okResp<T>(data: T) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Bug 3 修复涉及 localStorage 持久化,每个 case 之前清掉避免互相污染
+  try { localStorage.removeItem('wb:optimisticSessions') } catch { /* ignore */ }
+  try { localStorage.removeItem('wb:lastSessionId') } catch { /* ignore */ }
 })
 
 describe('useSessionList — load()', () => {
@@ -234,6 +237,47 @@ describe('useSessionList — create()', () => {
     expect(c.sessions.value.map((s) => s.id)).toEqual(
       expect.arrayContaining(['new1', 'a', 'b', 'c'])
     )
+  })
+
+  /**
+   * Bug 3 修复:乐观 push 的会话(从未发过消息的)持久化到 localStorage,
+   * 新组件实例 + 新 useSessionList 调用能从 localStorage 水化恢复。
+   */
+  it('hydrates optimistic sessions from localStorage on new composable instance', async () => {
+    // 第一个实例:create 一个乐观会话,触发 persistOptimisticMeta
+    vi.mocked(api.listSessions).mockResolvedValue(okResp({ items: SAMPLE, total: 3 }))
+    vi.mocked(api.createSession).mockResolvedValueOnce({ sessionId: 'persisted' } as any)
+    const c1 = useSessionList()
+    await c1.load()
+    await c1.create()
+    expect(c1.sessions.value.map((s) => s.id)).toContain('persisted')
+
+    // 模拟刷新:新的 composable 实例,sessions.value 初始为空
+    const c2 = useSessionList()
+    // 加载后端列表(SAMPLE,不含 'persisted' —— 因为后端 listSessions 不返空会话)
+    await c2.load(true)
+    // 验证 'persisted' 仍能从 localStorage 水化,出现在 sessions.value 中
+    expect(c2.sessions.value.map((s) => s.id)).toEqual(
+      expect.arrayContaining(['persisted', 'a', 'b', 'c'])
+    )
+  })
+
+  /**
+   * Bug 3 修复:delete 乐观会话后,localStorage 不再保留该项。
+   */
+  it('removes persisted optimistic session after delete', async () => {
+    vi.mocked(api.listSessions).mockResolvedValue(okResp({ items: SAMPLE, total: 3 }))
+    vi.mocked(api.createSession).mockResolvedValueOnce({ sessionId: 'gone-soon' } as any)
+    vi.mocked(api.deleteSession).mockResolvedValueOnce(okResp({ ok: true }))
+    const c = useSessionList()
+    await c.load()
+    await c.create()
+    expect(c.sessions.value.map((s) => s.id)).toContain('gone-soon')
+    await c.delete('gone-soon')
+    // 新实例 + 新 load:gone-soon 不应再出现
+    const c2 = useSessionList()
+    await c2.load(true)
+    expect(c2.sessions.value.map((s) => s.id)).not.toContain('gone-soon')
   })
 })
 

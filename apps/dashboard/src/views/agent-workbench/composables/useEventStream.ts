@@ -236,6 +236,10 @@ export function useEventStream(
     }
 
     es.onerror = () => {
+      // 幂等门:disconnect() 已主动 close 当前 ES,close() 后浏览器可能
+      // 仍触发一次 onerror(readyState=CLOSED)。这时不应报"连接已关闭"
+      // —— 这是我们主动行为,不是错误。
+      if (released.value.has(es)) return
       // 浏览器会自动重连,这里只清超时计时器(由 onmessage 重新 arm)
       // readyState === CLOSED → 服务器 4xx/5xx 或路由不存在 → 不重连
       if (es.readyState === EventSource.CLOSED) {

@@ -165,14 +165,18 @@
     writeLastSessionId(id)
   })
 
-  // 挂载时:1) 拉会话列表 2) 尝试恢复 lastSessionId(后端查得到才恢复)
-  // 注意:SessionSidebar 自己也调用 useSessionList(),这是独立实例;我们这里的
-  // sessionList 仅用于"读 sessions 列表查 lastSessionId 是否还存在",不写入
-  // 侧栏共享状态(避免双实例互相覆盖)。
+  // 挂载时:1) 拉会话列表(独立实例,仅读;SessionSidebar 自己的实例负责侧栏共享状态)
+  // 2) 尝试恢复 lastSessionId
+  //
+  // 为什么不在 sessions.value 里 find(lastId) 才恢复?
+  //   乐观 push 的会话(从未发过消息)在后端 listSessions 中不存在,严格 find
+  //   会跳过这些会话。但用户认为"刷新前选了它,刷新后还应该选中它"。所以
+  //   改为:只要 localStorage 有 lastSessionId,就直接 handleSelect —— 后端查不到
+  //   也无妨,useAgentSession 的 fetchHistory 会返回空数组,UI 显示空态。
   onMounted(async () => {
     await sessionList.load(true)
     const last = readLastSessionId()
-    if (last && sessionList.sessions.value.find((s) => s.id === last)) {
+    if (last) {
       handleSelect(last)
     }
   })

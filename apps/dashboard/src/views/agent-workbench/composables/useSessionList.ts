@@ -98,13 +98,47 @@ export function useSessionList(): UseSessionListResult {
   // 跟踪乐观 push 的会话 id —— 这些会话在 load 后端列表时必须保留,
   // 否则连续 create 会把之前的乐观项挤掉(Bug 1 根因)。
   // 后端真正返该项时从集合中移除(在 load 的合并阶段处理)。
-  const optimisticIds = new Set<string>()
+  //
+  // Bug 3 修复:乐观 push 的会话(用户从未发过消息的空会话)还必须跨刷新保留 —
+  // 后端 listSessions 不返回它们,组件重挂载会丢掉乐观 push 项。所以这些
+  // 会话(包括 optimisticIds 和它们的 title/createdAt)持久化到 localStorage,
+  // 模块加载时水化。
+  const OPTIMISTIC_KEY = 'wb:optimisticSessions'
+  const optimisticIds = new Set<string>(loadOptimisticMeta().map((s) => s.id))
 
   function setError(msg: string | null) {
     error.value = msg
   }
   function clearError() {
     error.value = null
+  }
+
+  /** 从 localStorage 读乐观 push 的会话清单(模块加载时调一次) */
+  function loadOptimisticMeta(): AgentSession[] {
+    try {
+      const raw = localStorage.getItem(OPTIMISTIC_KEY)
+      if (!raw) return []
+      const arr = JSON.parse(raw) as unknown
+      if (!Array.isArray(arr)) return []
+      return arr.filter(
+        (s): s is AgentSession =>
+          !!s &&
+          typeof (s as AgentSession).id === 'string' &&
+          typeof (s as AgentSession).title === 'string'
+      )
+    } catch {
+      return []
+    }
+  }
+
+  function persistOptimisticMeta(): void {
+    try {
+      // 只持久化乐观项的最小必要字段(id/title/createdAt)
+      const extras = sessions.value.filter((s) => optimisticIds.has(s.id))
+      localStorage.setItem(OPTIMISTIC_KEY, JSON.stringify(extras))
+    } catch {
+      /* 隐私模式 / quota 异常静默 */
+    }
   }
 
   async function load(showLoading = false) {
@@ -129,7 +163,12 @@ export function useSessionList(): UseSessionListResult {
       }
       // 把仍在 optimisticIds 且不在后端的本地项找出来,前置到头部
       // (用户刚建的会话应在最上方,语义上"最新")
-      const localExtras = sessions.value.filter(
+      //
+      // Bug 3 修复:首次 load 时 sessions.value 可能是空(模块刚加载),
+      // 这时 localStorage 水化的乐观项要作为本地来源 — 否则组件挂载后
+      // 侧栏看不到任何"乐观会话"。
+      const localSource = sessions.value.length > 0 ? sessions.value : loadOptimisticMeta()
+      const localExtras = localSource.filter(
         (s) => optimisticIds.has(s.id) && !byId.has(s.id)
       )
       // 去重:本地可能已包含某个 id 但被合并逻辑覆盖了,这里用 Map 兜底
@@ -141,6 +180,8 @@ export function useSessionList(): UseSessionListResult {
         remoteIds.add(extra.id)
       }
       sessions.value = [...headExtras, ...merged]
+      // Bug 3 修复:乐观项变更后写回 localStorage(供下次刷新)
+      persistOptimisticMeta()
       error.value = null
     } catch (e: unknown) {
       error.value = formatError(e, '加载会话列表失败')
@@ -177,6 +218,8 @@ export function useSessionList(): UseSessionListResult {
             ...sessions.value
           ]
         }
+        // Bug 3 修复:乐观 push 后立即写回 localStorage,避免刷新丢
+        persistOptimisticMeta()
       }
       // load 会走合并路径:保留 optimisticIds 中的项,后端命中后清标记
       await load(false)
@@ -233,6 +276,8 @@ export function useSessionList(): UseSessionListResult {
     try {
       await deleteSession(sessionId)
       optimisticIds.delete(sessionId)
+      // Bug 3 修复:delete 后写回 localStorage,避免幽灵会话
+      persistOptimisticMeta()
     } catch (e: unknown) {
       // 回滚:把会话放回原位置
       sessions.value = [...sessions.value.slice(0, idx), removed, ...sessions.value.slice(idx)]
