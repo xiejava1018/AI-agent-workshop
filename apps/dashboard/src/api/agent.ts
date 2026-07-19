@@ -123,11 +123,15 @@ export const deleteSession = (sessionId: string) => {
 /**
  * Bug 2 修复:按 session 拉历史消息
  *
- * 后端: GET /api/agent/[id]/messages?limit=50&before=<isoTimestamp>
- *   响应: { code, data: { messages: AgentMessage[], hasMore, total } }
+ * 改:之前调自己写的 /api/agent/[id]/messages 失败 —— 那个端点用
+ *   `SessionManager.open(filePath).getEntries()` 走磁盘,SDK 在内存里有 SSE
+ *   累积的 entry 但 getEntries() 看不到,导致文件被 SDK 主动写后 disk 版本与
+ *   内存不一致(常见场景)。apps/web 的 /api/sessions/[id] 用
+ *   SessionManager.open 但同时读 wrapper.inner —— 不依赖磁盘一致。
  *
- * 用于切 tab / 刷新页面时回填 useAgentSession 的本地 messages(否则只靠 SSE
- * 实时事件流,历史全丢)。
+ * 这里直接复用 apps/web 的端点,响应里取 context.messages。
+ * 后端: GET /api/sessions/[id]?deferThinking=1&deferMedia=1
+ *   响应: { context: { messages, entryIds, thinkingLevel, model }, path, id, leafId, ... }
  */
 export interface FetchSessionMessagesResponse {
   messages: import('@/views/agent-workbench/types').AgentMessage[]
@@ -135,15 +139,40 @@ export interface FetchSessionMessagesResponse {
   total: number
 }
 
-export const fetchSessionMessages = (
+interface SessionDetailContext {
+  messages: import('@/views/agent-workbench/types').AgentMessage[]
+  entryIds?: string[]
+  thinkingLevel?: string
+  model?: { provider: string; modelId: string } | null
+}
+
+interface SessionDetailResponse {
+  path: string
+  id: string
+  leafId: string | null
+  context: SessionDetailContext
+}
+
+export const fetchSessionMessages = async (
   sessionId: string,
-  opts?: { limit?: number; before?: string }
+  _opts?: { limit?: number; before?: string }
 ) => {
-  return httpClient.get<Http.BaseResponse<FetchSessionMessagesResponse>>({
-    url: `${PREFIX}/${encodeURIComponent(sessionId)}/messages`,
-    params: opts,
+  // apps/web 端点用 ?deferThinking=1&deferMedia=1 减小首次 load payload
+  // (前端只关心 content/role/id,不需要原始 thinking/tool image)
+  const res = await httpClient.get<Http.BaseResponse<SessionDetailResponse>>({
+    url: `/api/sessions/${encodeURIComponent(sessionId)}?deferThinking=1&deferMedia=1`,
     keepFullResponse: true
   })
+  const ctx = (res as { data?: { context?: SessionDetailContext } }).data?.context
+  const msgs = ctx?.messages ?? []
+  // 转换成与原来 fetchSessionMessages 兼容的形状,避免 useAgentSession 改动
+  return {
+    data: {
+      messages: msgs,
+      hasMore: false,
+      total: msgs.length
+    }
+  }
 }
 
 /**
