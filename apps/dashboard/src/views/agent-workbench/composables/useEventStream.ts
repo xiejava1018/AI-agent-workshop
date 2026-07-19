@@ -141,6 +141,12 @@ export interface UseEventStreamReturn {
   abort: () => void
   clearError: () => void
   resetMessages: () => void
+  /**
+   * Bug 2 修复:把历史消息前置到 messages 头部。
+   * 切 tab 时由 useAgentSession.fetchHistory 调用,按 messageId 去重避免
+   * 重复(SSE 实时流的最新 messageId 优先保留)。
+   */
+  prependMessages: (history: readonly AgentMessage[]) => void
 }
 
 /**
@@ -443,6 +449,23 @@ export function useEventStream(
     clearStreamTimer()
   }
 
+  /**
+   * Bug 2 修复:把历史消息合并到 messages(按 id 去重)。
+   * 注意:历史消息应在 resetMessages() 之后调用,避免和上一次会话的消息混在一起。
+   * SSE 实时流的最新消息若已 push 进 messages.value(同 id),会跳过历史中重复的。
+   */
+  function prependMessages(history: readonly AgentMessage[]): void {
+    if (!history.length) return
+    const seen = new Set(messages.value.map((m) => m.id))
+    const prepend: AgentMessage[] = []
+    for (const m of history) {
+      if (seen.has(m.id)) continue
+      seen.add(m.id)
+      prepend.push(m)
+    }
+    if (prepend.length) messages.value = [...prepend, ...messages.value]
+  }
+
   // 5. sessionId 变化时重连
   watch(
     () => (typeof sessionId === 'string' ? sessionId : sessionId.value),
@@ -470,6 +493,7 @@ export function useEventStream(
     sendMessage: send,
     abort,
     clearError,
-    resetMessages
+    resetMessages,
+    prependMessages
   }
 }

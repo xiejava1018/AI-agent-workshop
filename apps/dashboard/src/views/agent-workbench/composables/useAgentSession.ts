@@ -12,6 +12,7 @@
 
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { useEventStream } from './useEventStream'
+import { fetchSessionMessages } from '@/api/agent'
 import type { AgentMessage, StreamStatus } from '../types'
 
 export interface UseAgentSessionReturn {
@@ -24,6 +25,8 @@ export interface UseAgentSessionReturn {
   clearError: () => void
   /** 切换 session 时由调用方主动调 — 清空本地消息缓存 */
   resetSession: () => void
+  /** Bug 2:拉历史消息回填(切 tab 时自动调用,也可手动触发刷新) */
+  fetchHistory: (limit?: number) => Promise<void>
 }
 
 /**
@@ -47,7 +50,8 @@ export function useAgentSession(
     sendMessage: rawSend,
     abort: rawAbort,
     clearError,
-    resetMessages: rawReset
+    resetMessages: rawReset,
+    prependMessages: rawPrepend
   } = useEventStream(sessionId, userId)
 
   // —— 合并层:把同 messageId 的相邻 delta 合并成单条消息 ——
@@ -108,12 +112,45 @@ export function useAgentSession(
     messageById.value = new Map()
   }
 
-  // sessionId 变化时重置合并层
+  /**
+   * Bug 2 修复:拉历史消息回填。切 tab 时由 watch(sessionId) 自动触发,
+   * 也可手动调用(如"加载更多")。
+   *
+   * 防 race:用 fetchHistorySeq 记录最新请求序号,只有"最后一次"请求的响应
+   * 才写回 messageById,否则快速切两次时,旧响应的 messages 会污染新会话。
+   *
+   * merge 策略:按 messageId 去重,如果 SSE 实时流已在 messageById 中推过同 id
+   * 消息,优先保留 SSE 的(因为它含最新 streaming 状态)。
+   */
+  let fetchHistorySeq = 0
+  async function fetchHistory(limit = 100): Promise<void> {
+    const sid = typeof sessionId === 'string' ? sessionId : sessionId.value
+    if (!sid) return
+    const seq = ++fetchHistorySeq
+    try {
+      const resp = await fetchSessionMessages(sid, { limit })
+      const data = (resp as { data?: { messages?: AgentMessage[] } }).data
+      const history = data?.messages ?? []
+      // race 检查:若期间 sessionId 已切换,放弃本次结果
+      if (seq !== fetchHistorySeq) return
+      rawPrepend(history)
+    } catch {
+      // 静默失败:历史拉不到不影响 SSE 实时流,UI 只是没历史不会崩
+      if (seq !== fetchHistorySeq) return
+    }
+  }
+
+  // sessionId 变化时:resetSession → fetchHistory(自动回填)
   watch(
     () => (typeof sessionId === 'string' ? sessionId : sessionId.value),
-    () => {
+    (newSid, oldSid) => {
+      // 第一次触发(newSid === undefined 时不拉历史,避免挂载时白跑)
+      if (!newSid) return
+      if (newSid === oldSid) return
       resetSession()
-    }
+      void fetchHistory()
+    },
+    { immediate: false }
   )
 
   return {
@@ -124,6 +161,7 @@ export function useAgentSession(
     sendMessage,
     abort,
     clearError,
-    resetSession
+    resetSession,
+    fetchHistory
   }
 }
