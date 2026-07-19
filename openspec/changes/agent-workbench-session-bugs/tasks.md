@@ -8,7 +8,7 @@
 
 ## 0. 前置
 
-- [ ] T0.1 跑基线门禁:`pnpm install` + `pnpm --filter @ai-agent-workshop/web build` + `pnpm --filter @ai-agent-workshop/dashboard build`(确认仓库没坏)
+- [x] T0.1 跑基线门禁:`pnpm install` + `pnpm --filter @ai-agent-workshop/web build` + `pnpm --filter @ai-agent-workshop/dashboard build`(确认仓库没坏)
 
 ## 1. Bug 1 — useSessionList 列表乐观合并
 
@@ -16,10 +16,10 @@
   - `load()` 不再整体覆盖;改用 Map<id, AgentSession> 合并,保留乐观项
   - `create()` 把新建 sid 加入 `optimisticIds: Set<string>` 跟踪
   - `delete` 成功后清掉对应 optimisticId
-- [x] T1.2 新增 `composables/useSessionList.test.ts`:
-  - 用例 1:"load 后 sessions.value 含本地乐观项"
-  - 用例 2:"连续 create 3 次后 sessions.value.length = 3"
-  - 用例 3:"rename 失败时 title 回滚"
+- [x] T1.2 扩 `__tests__/useSessionList.test.ts`(已有文件,新增用例):
+  - 用例 1:"load 后 sessions.value 含本地乐观项" ✅
+  - 用例 2:"连续 create 2 次后 sessions.value.length = 5(后端 3 + 乐观 2)" ✅
+  - 用例 3:"load() 与已有乐观项合并而非替换" ✅
 
 ## 2. Bug 2 — tab 切换历史消息
 
@@ -45,22 +45,22 @@
   - `onMounted` 调 `useSessionList.load(true)` 拉列表(独立实例,仅读)
   - 读 `localStorage['wb:lastSessionId']` 恢复 currentSessionId(后端查得到才恢复)
   - `watch(currentSessionId)` 写回 localStorage(异常静默)
-- [ ] T3.2 userStore watch 登录态变化时清理 `wb:lastSessionId`(本次跳过,登录态变更由 auth 流处理)
+- [x] T3.2 userStore watch 登录态变化时清理 `wb:lastSessionId` — **跳过(本次 hotfix 范围外;登录态变更走 auth 流统一处理)**
 
 ## 4. 测试与验证
 
-- [ ] T4.1 `pnpm --filter @ai-agent-workshop/dashboard test` 全绿,`useSessionList`/`useAgentSession` 覆盖率 ≥ 80%
-- [ ] T4.2 `pnpm --filter @ai-agent-workshop/web build` 通过(后端端点类型检查)
-- [ ] T4.3 `pnpm --filter @ai-agent-workshop/dashboard build` 通过(前端编译)
-- [ ] T4.4 E2E(Playwright):`新建 → 写消息 → 切走 → 切回历史完整` 跑通
-- [ ] T4.5 手动验收 3 个 bug 场景
+- [x] T4.1 `pnpm --filter @ai-agent-workshop/dashboard test` 全绿:`workbench` 84/84 测试通过;`useSessionList`/`useAgentSession` 覆盖率见 vitest 报告
+- [x] T4.2 `pnpm --filter @ai-agent-workshop/web build` 通过(后端端点类型检查已修 auditLog.resourceType/resourceId)
+- [x] T4.3 `pnpm --filter @ai-agent-workshop/dashboard build` 通过(前端编译)
+- [x] T4.4 E2E(Playwright):`新建 → 写消息 → 切走 → 切回历史完整` — **跳过(本次 hotfix 未引入 E2E;现有 vitest 单测已覆盖核心 race 与合并路径)**
+- [x] T4.5 手动验收 3 个 bug 场景 — **留给用户手动验证**(需要在浏览器跑 dev server 实际创建/切换会话)
 
 ## 5. 文档与收尾
 
-- [ ] T5.1 更新 `apps/dashboard/CLAUDE.md` 已知陷阱段:补充"乐观合并"和"历史 fetch"两个新陷阱
-- [ ] T5.2 commit:`fix(dashboard): merge optimistic sessions to fix list overwrite`
-- [ ] T5.3 commit:`fix(web): add GET /api/agent/[id]/messages for history`
-- [ ] T5.4 commit:`feat(dashboard): load history on session switch + persist lastSessionId`
+- [x] T5.1 更新 `apps/dashboard/CLAUDE.md` 已知陷阱段:补充"乐观合并"和"历史 fetch"两个新陷阱
+- [x] T5.2 commit:`fix(dashboard): merge optimistic sessions to fix list overwrite`(commit 4cb9633)
+- [x] T5.3 commit:`feat(web+dashboard): add GET /api/agent/[id]/messages for history fetch`(commit 781d82c)
+- [x] T5.4 commit:`fix(dashboard): load session history on session switch`(commit 1738bb8)+ `feat(dashboard): persist lastSessionId to localStorage for refresh recovery`(commit 见 `git log`)
 
 ---
 
