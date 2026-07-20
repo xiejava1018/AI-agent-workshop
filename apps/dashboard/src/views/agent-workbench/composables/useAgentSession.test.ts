@@ -34,7 +34,14 @@ class StubEventSource {
 
 vi.mock('@/api/agent', () => ({
   sendMessage: vi.fn().mockResolvedValue({ data: { ok: true } }),
-  fetchSessionMessages: vi.fn()
+  fetchSessionMessages: vi.fn(),
+  sendAgentCommand: vi.fn(),
+  getSlashCommands: vi.fn(),
+  setModel: vi.fn(),
+  setThinkingLevel: vi.fn(),
+  setTools: vi.fn(),
+  getTools: vi.fn(),
+  cancelQueue: vi.fn()
 }))
 
 import { useAgentSession } from '../composables/useAgentSession'
@@ -194,5 +201,68 @@ describe('useAgentSession — fetchHistory (Bug 2)', () => {
     const { messages, fetchHistory } = useAgentSession(sessionId, 'user-1')
     await expect(fetchHistory()).resolves.toBeUndefined()
     expect(messages.value.length).toBe(0)
+  })
+})
+
+// ─────────────── chrome v1 新增测试 ───────────────
+
+describe('useAgentSession — chrome v1 surface', () => {
+  it('exposes chrome v1 refs and method wrappers', () => {
+    const sessionId = ref('sess-1')
+    const s = useAgentSession(sessionId, 'user-1')
+
+    // ref 集合
+    expect(s.modelNames).toBeDefined()
+    expect(s.modelList).toBeDefined()
+    expect(s.thinkingLevel).toBeDefined()
+    expect(s.availableThinkingLevels).toBeDefined()
+    expect(s.currentModel).toBeDefined()
+    expect(s.toolPreset).toBeDefined()
+    expect(s.tools).toBeDefined()
+    expect(s.queuedMessages).toBeDefined()
+    expect(s.slashCommands).toBeDefined()
+    // 方法
+    expect(typeof s.loadSlashCommands).toBe('function')
+    expect(typeof s.refreshTools).toBe('function')
+    expect(typeof s.setModel).toBe('function')
+    expect(typeof s.setThinkingLevel).toBe('function')
+    expect(typeof s.setTools).toBe('function')
+    expect(typeof s.sendSteer).toBe('function')
+    expect(typeof s.sendFollowUp).toBe('function')
+    expect(typeof s.cancelQueue).toBe('function')
+  })
+
+  it('setModel 乐观更新 + 失败回滚', async () => {
+    const sessionId = ref('sess-1')
+    vi.mocked(api.sendAgentCommand).mockRejectedValueOnce(new Error('failed'))
+
+    const s = useAgentSession(sessionId, 'user-1')
+    // 初始 null
+    expect(s.currentModel.value).toBeNull()
+    // 乐观 → set
+    const p = s.setModel('anthropic', 'claude-opus-4-8[1m]')
+    expect(s.currentModel.value).toEqual({
+      provider: 'anthropic',
+      modelId: 'claude-opus-4-8[1m]'
+    })
+    await p
+    // 失败 → 回滚到 null
+    expect(s.currentModel.value).toBeNull()
+  })
+
+  it('loadSlashCommands 调 get_commands 并写入 slashCommands', async () => {
+    const sessionId = ref('sess-1')
+    const mockCommands = [
+      { name: '/compact', source: 'extension', description: '压缩上下文' },
+      { name: '/fork', source: 'prompt', description: '分叉当前 entry' }
+    ]
+    vi.mocked(api.getSlashCommands).mockResolvedValue({
+      data: { commands: mockCommands }
+    } as any)
+
+    const s = useAgentSession(sessionId, 'user-1')
+    await s.loadSlashCommands()
+    expect(s.slashCommands.value.length).toBe(2)
+    expect(s.slashCommands.value[0]?.name).toBe('/compact')
   })
 })

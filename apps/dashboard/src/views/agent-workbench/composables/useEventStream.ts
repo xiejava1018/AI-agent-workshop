@@ -33,6 +33,13 @@
  *
  *   8. onUnmounted 清理(幂等门)
  *
+ * chrome v1 增量: + 3 个新 SSE 事件 + message_start 上保留 usage/modelProvider/modelId
+ *   - queue_update        → pendingQueueUpdate(useAgentSession 拷给 queuedMessages)
+ *   - thinking_level_changed → pendingThinkingLevel
+ *   - model_changed       → pendingModelUpdate
+ *   - message_start       → 必须保留 payload 里的 message.usage/model/provider,否则
+ *                            chrome v1 footer + header 永远拿不到数据。
+ *
  * 不在白名单的事件直接 console.warn + 丢弃,不做泛洪累加。
  */
 
@@ -61,6 +68,11 @@ export interface StreamEvent {
  *   - prompt 失败原因被白名单丢弃,UI 永远停留在"已取消重试"
  *   - 用户角色 `message_start` 也会被无差别建出 assistant 占位
  *
+ * chrome v1:必须在 message_start 归一化阶段保留 SDK payload 里的
+ *   - message.usage(token 计数,header footer 用)
+ *   - message.provider / message.model(modelId)(A1 header chrome 用)
+ * 否则 UI 永远拿不到这些字段。
+ *
  * 返回 null 表示该事件对 UI 无意义,直接丢弃;返回的 payload 已对齐
  * 内部事件形状,可继续走白名单 + handleEvent 状态机。
  */
@@ -70,9 +82,27 @@ export function normalizeAgentWorkbenchEvent(
   const type = typeof raw.type === 'string' ? raw.type : ''
 
   if (type === 'message_start') {
-    const role = (raw.message as { role?: unknown } | undefined)?.role
-    if (role !== 'assistant') return null
-    return { type: 'message_start', content: '' }
+    const rawMsg = raw.message as
+      | { role?: unknown; usage?: unknown; provider?: unknown; model?: unknown; modelId?: unknown }
+      | undefined
+    if (rawMsg?.role !== 'assistant') return null
+    // chrome v1:把 SDK AssistantMessage 上的 usage/provider/model 透出
+    // SDK 真实字段是 model(向后兼容),但新版本可能用 modelId — 两个都尝试一下
+    const provider = typeof rawMsg.provider === 'string' ? rawMsg.provider : null
+    const modelId =
+      typeof rawMsg.modelId === 'string'
+        ? rawMsg.modelId
+        : typeof rawMsg.model === 'string'
+          ? rawMsg.model
+          : null
+    return {
+      type: 'message_start',
+      content: '',
+      // 透传归一化字段,供 handleEvent 写入 AssistantMessage
+      ...(rawMsg.usage ? { usage: rawMsg.usage } : {}),
+      ...(provider ? { provider } : {}),
+      ...(modelId ? { modelId } : {})
+    }
   }
 
   if (type === 'message_update') {
@@ -84,7 +114,11 @@ export function normalizeAgentWorkbenchEvent(
   }
 
   if (type === 'message_end') {
-    return { type: 'message_end' }
+    // chrome v1:message_end 上有时也会带最终 usage(provider 计费修改)。
+    // 注意:SDK 在 message_start 一次性给完成 usage 时 message_end 没有;
+    // 反过来,某些 provider 在 message_end 上结算,这里我们也要透传。
+    const rawMsg = raw.message as { usage?: unknown } | undefined
+    return rawMsg?.usage ? { type: 'message_end', usage: rawMsg.usage } : { type: 'message_end' }
   }
 
   if (type === 'prompt_error') {
@@ -147,6 +181,15 @@ export interface UseEventStreamReturn {
    * 重复(SSE 实时流的最新 messageId 优先保留)。
    */
   prependMessages: (history: readonly AgentMessage[]) => void
+  // ↓ chrome v1:暴露 SSE 事件 ref,useAgentSession 在 watch 中 reconcile 到
+  // 自身的业务 ref(queuedMessages/thinkingLevel/modelProvider/modelId)。
+  // 这里只在内部使用,useEventStream 的"公共表面"仍以 SSE 流控制为主。
+  /** queue_update 事件最新值: { steer: QueueItem[], followUp: QueueItem[] } */
+  pendingQueueUpdate: Ref<{ steer: import('../types').QueueItem[]; followUp: import('../types').QueueItem[] } | null>
+  /** thinking_level_changed 事件最新值(字符串 level) */
+  pendingThinkingLevel: Ref<string | null>
+  /** model_changed 事件最新值:{ provider, modelId } */
+  pendingModelUpdate: Ref<{ provider: string; modelId: string } | null>
 }
 
 /**
@@ -165,6 +208,15 @@ export function useEventStream(
   const messages = ref<AgentMessage[]>([]) as Ref<AgentMessage[]>
   const streamStatus = ref<StreamStatus>('idle')
   const error = ref<string | null>(null)
+
+  // chrome v1:SSE 事件 ref,useAgentSession 监听这些 ref 写入自己的业务 ref。
+  // 由于 SSE 流可能高频,这些 ref 只在事件触发时 push 新值,不做轮询或合并。
+  const pendingQueueUpdate = ref<{
+    steer: import('../types').QueueItem[]
+    followUp: import('../types').QueueItem[]
+  } | null>(null)
+  const pendingThinkingLevel = ref<string | null>(null)
+  const pendingModelUpdate = ref<{ provider: string; modelId: string } | null>(null)
 
   // 三层防护 #1:released 幂等门。值是 WeakSet<EventSource>。
   // 组件 onUnmounted 时整个 WeakSet 重建为 new WeakSet() 一次性作废,旧的
@@ -286,9 +338,11 @@ export function useEventStream(
   /**
    * 单一事件分发:
    *   message_start / message_delta / message_end → 累积到当前 assistant 消息
+   *     (chrome v1:保留 payload.usage / provider / modelId 到 message 上)
    *   tool_update → 推一条 tool 消息
    *   prompt_done → 收尾(标记 done)
    *   error → 报错
+   *   queue_update / thinking_level_changed / model_changed → 写入 pending* ref
    *   其它白名单事件 → 暂不映射到 messages(留给 useAgentSession 决定)
    */
   function handleEvent(type: string, raw: Record<string, unknown>): void {
@@ -296,17 +350,23 @@ export function useEventStream(
       case 'connected':
         return
       case 'message_start': {
-        // 开新 assistant 占位
-        messages.value = [
-          ...messages.value,
-          {
-            id: `asst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            role: 'assistant',
-            content: '',
-            createdAt: new Date().toISOString(),
-            streamStatus: 'streaming'
-          }
-        ]
+        // chrome v1:如果归一化阶段透出了 usage/provider/modelId,把它们写到
+        // 占位 assistant 消息上,这样 footer + header 后续能直接拿到。
+        // 类型守卫:normalizeAgentWorkbenchEvent 仅在 usage 为真值时透传。
+        const usage = raw.usage as AgentMessage['usage'] | undefined
+        const provider = typeof raw.provider === 'string' ? raw.provider : undefined
+        const modelId = typeof raw.modelId === 'string' ? raw.modelId : undefined
+        const next: AgentMessage = {
+          id: `asst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date().toISOString(),
+          streamStatus: 'streaming',
+          ...(usage ? { usage } : {}),
+          ...(provider ? { modelProvider: provider } : {}),
+          ...(modelId ? { modelId } : {})
+        }
+        messages.value = [...messages.value, next]
         streamStatus.value = 'streaming'
         return
       }
@@ -337,9 +397,16 @@ export function useEventStream(
       case 'message_end': {
         const last = messages.value[messages.value.length - 1]
         if (last && last.role === 'assistant') {
+          // chrome v1:某些 provider 在 message_end 上结算最终 usage,
+          // 这里覆盖(空值不写)。
+          const usage = raw.usage as AgentMessage['usage'] | undefined
           messages.value = [
             ...messages.value.slice(0, -1),
-            { ...last, streamStatus: 'done' as StreamStatus }
+            {
+              ...last,
+              streamStatus: 'done' as StreamStatus,
+              ...(usage ? { usage } : {})
+            }
           ]
         }
         return
@@ -379,6 +446,50 @@ export function useEventStream(
       case 'done': {
         streamStatus.value = 'done'
         clearStreamTimer()
+        return
+      }
+      // ↓ chrome v1:3 个新事件,只 push 到 pending* ref,不污染 messages
+      case 'queue_update': {
+        // payload 形状:{ steer: string[]; followUp: string[] }(SDK 约定)
+        // 我们要把它规整成 { steer: QueueItem[]; followUp: QueueItem[] }
+        // —— 每条分配一个新 id + createdAt 以满足 QueueItem 类型,真实 id 由
+        // 后端在重连时回传决定(本阶段简化用前端的临时 id)。
+        const steerRaw = Array.isArray(raw.steer) ? raw.steer : []
+        const followUpRaw = Array.isArray(raw.followUp) ? raw.followUp : []
+        const now = new Date().toISOString()
+        pendingQueueUpdate.value = {
+          steer: steerRaw.map((s, i) => ({
+            id: `q-steer-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+            kind: 'steer',
+            text: typeof s === 'string' ? s : '',
+            createdAt: now
+          })),
+          followUp: followUpRaw.map((s, i) => ({
+            id: `q-follow-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+            kind: 'followUp',
+            text: typeof s === 'string' ? s : '',
+            createdAt: now
+          }))
+        }
+        return
+      }
+      case 'thinking_level_changed': {
+        const level = raw.level
+        if (typeof level === 'string') {
+          pendingThinkingLevel.value = level
+        } else {
+          console.warn('[useEventStream] thinking_level_changed 缺 level 字段')
+        }
+        return
+      }
+      case 'model_changed': {
+        const provider = raw.provider
+        const modelId = raw.modelId
+        if (typeof provider === 'string' && typeof modelId === 'string') {
+          pendingModelUpdate.value = { provider, modelId }
+        } else {
+          console.warn('[useEventStream] model_changed 缺 provider/modelId 字段')
+        }
         return
       }
       default:
@@ -451,6 +562,10 @@ export function useEventStream(
     streamStatus.value = 'idle'
     error.value = null
     clearStreamTimer()
+    // chrome v1:session 切换时一并清空 pending ref,避免跨会话串味。
+    pendingQueueUpdate.value = null
+    pendingThinkingLevel.value = null
+    pendingModelUpdate.value = null
   }
 
   /**
@@ -498,6 +613,10 @@ export function useEventStream(
     abort,
     clearError,
     resetMessages,
-    prependMessages
+    prependMessages,
+    // chrome v1:暴露 pending ref 给 useAgentSession reconcile
+    pendingQueueUpdate,
+    pendingThinkingLevel,
+    pendingModelUpdate
   }
 }

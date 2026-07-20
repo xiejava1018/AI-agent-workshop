@@ -1,5 +1,14 @@
 /**
  * Agent API
+ *
+ * v1.6 (chrome v1):引入通用 RPC 包装 `sendAgentCommand<T>`;
+ *   - sendMessage 重构为 sendAgentCommand 内部调用,签名不变
+ *   - 新增 6 个 chrome v1 command:
+ *       getSlashCommands / setModel / setThinkingLevel / setTools / getTools / cancelQueue
+ *   - 新增 ToolEntry / SlashCommandInfo / SlashCommandsResponse 类型(自包含,
+ *     不依赖 apps/web 的类型导出)
+ *   - 新增 ToolPreset 常量(对齐 apps/web/lib/tool-presets.ts PRESET_*) + 纯函数
+ *     getToolNamesForPreset(preset)
  */
 import request from '@/utils/http'
 import type { HttpClient } from '@/utils/http'
@@ -7,6 +16,69 @@ import type { HttpClient } from '@/utils/http'
 const httpClient = request as HttpClient
 
 const PREFIX = '/api/agent'
+
+/** 工具预设常量(对齐 apps/web/lib/tool-presets.ts) */
+export const PRESET_NONE: string[] = []
+export const PRESET_DEFAULT: string[] = ['read', 'bash', 'edit', 'write']
+export const PRESET_FULL: string[] = ['bash', 'read', 'edit', 'write', 'grep', 'find', 'ls']
+
+/**
+ * 工具 preset(对齐 apps/web/lib/tool-presets.ts ToolPreset):"none" 而非 "off"。
+ * Vue 端在 types.ts ToolPreset 已对齐这里。
+ */
+export type ToolPreset = 'none' | 'default' | 'full'
+
+/**
+ * get_tools 响应单条(对齐 apps/web/lib/tool-presets.ts ToolEntry)。
+ * description / active 在 SDK 里通常都会带,Vue 端保留可选。
+ */
+export interface ToolEntry {
+  name: string
+  description?: string
+  active?: boolean
+}
+
+/**
+ * get_commands 单条(对齐 apps/web/hooks/useAgentSession.ts SlashCommandInfo)。
+ * 这里复制完整 sourceInfo 形状以备 T5 palette 渲染,apps/dashboard 自包含。
+ */
+export interface SlashCommandInfo {
+  name: string
+  description?: string
+  source: 'extension' | 'prompt' | 'skill' | 'builtin'
+  sourceInfo?: {
+    path: string
+    source: string
+    scope: 'user' | 'project' | 'temporary'
+    origin: 'package' | 'top-level'
+    baseDir?: string
+  }
+}
+
+/** get_commands 响应:服务端包成 `{ commands?: SlashCommandInfo[] }` */
+export interface SlashCommandsResponse {
+  commands?: SlashCommandInfo[]
+}
+
+/**
+ * 通用 RPC 包装 —— POST /api/agent/[id],body 是任意 `{ type: ... }` command。
+ *
+ * 为什么放在这里:apps/web 的 apps/web/lib/agent-client.ts 有同样的
+ * sendAgentCommand<T>(sid, command);Vue 端之前只有 sendMessage(sid, text, userId)
+ * 这个特殊化包装,所有新 command 都要在它身上重复 6 次样板代码;这里抽到一处。
+ *
+ * 错误约定:httpClient 已把 2xx 之外的响应 reject。调用方只需要 catch 业务错。
+ */
+export const sendAgentCommand = <T = unknown>(
+  sessionId: string,
+  body: Record<string, unknown>
+) => {
+  return httpClient.post<Http.BaseResponse<T>>({
+    url: `${PREFIX}/${encodeURIComponent(sessionId)}`,
+    data: body,
+    keepFullResponse: true
+  })
+}
 
 export interface AgentSession {
   id: string
@@ -53,17 +125,105 @@ export const createSession = (userId: string) => {
   })
 }
 
-/** 发送消息
- * 改:原 /api/agent/sessions/[id]/messages 404。
- * 后端真实端点是 POST /api/agent/[id](body.type 必填),
- * SSE agent type 接受 'prompt' | 'steer' | 'follow_up'。
+/**
+ * 发送消息。
+ *
+ * 历史:之前每个新 command 都手写一次 POST /api/agent/[id] 的样板代码;
+ *      现在统一走 sendAgentCommand 通用包装。这里只做 {type:'prompt'} 专属包装,
+ *      保留 (sessionId, content, userId) 三参签名,useEventStream.send() 调用方不破。
+ *
+ * 后端:`POST /api/agent/[id]`,body 必含 `type` 字段(否则 500)。
+ *   `'prompt' | 'steer' | 'follow_up' | 'get_commands'` 触发会话状态变更,
+ *   其它 type 走 apps/web/lib/rpc-manager.ts 的 withFinalRunningNotification 路径。
  */
 export const sendMessage = (sessionId: string, content: string, userId: string) => {
-  return httpClient.post<Http.BaseResponse<{ ok: boolean }>>({
-    url: `${PREFIX}/${sessionId}`,
-    data: { type: 'prompt', message: content, userId },
-    keepFullResponse: true
+  return sendAgentCommand<{ ok: boolean }>(sessionId, {
+    type: 'prompt',
+    message: content,
+    userId
   })
+}
+
+// ============================================================================
+// chrome v1:6 个新 RPC 包装(sendAgentCommand 复用层)
+// ============================================================================
+
+/**
+ * 拉取 slash 命令列表。
+ *
+ * 后端:`{ type: 'get_commands' }` → 响应 `{ commands?: SlashCommandInfo[] }`。
+ * 响应实际由 apps/web/lib/rpc-manager.ts `case 'get_commands'` 返回。
+ */
+export const getSlashCommands = (sessionId: string) => {
+  return sendAgentCommand<SlashCommandsResponse>(sessionId, { type: 'get_commands' })
+}
+
+/**
+ * 切换模型。
+ *
+ * 后端:`{ type: 'set_model', provider, modelId }` →
+ *   apps/web/lib/rpc-manager.ts `case 'set_model'` 直接调 registry.find + setModel。
+ */
+export const setModel = (sessionId: string, provider: string, modelId: string) => {
+  return sendAgentCommand<{ id: string; provider: string }>(sessionId, {
+    type: 'set_model',
+    provider,
+    modelId
+  })
+}
+
+/**
+ * 切换 thinking level。
+ *
+ * 后端:`{ type: 'set_thinking_level', level }` → 直接调 inner.setThinkingLevel。
+ * 注意:某些 model 上 xhigh 自动 clamp 到 high,client 端按用户原始选择显示,但
+ * SSE thinking_level_changed 会回传真实生效的 level(若 SDK 实现)。
+ */
+export const setThinkingLevel = (sessionId: string, level: string) => {
+  return sendAgentCommand<null>(sessionId, { type: 'set_thinking_level', level })
+}
+
+/**
+ * 设置激活的工具子集。
+ *
+ * 后端:`{ type: 'set_tools', toolNames: string[] }` → 调 inner.setActiveToolsByName。
+ * 空数组会 force-empty system prompt(SDK 的工具全 off 时不希望看到工具描述)。
+ */
+export const setTools = (sessionId: string, toolNames: string[]) => {
+  return sendAgentCommand<null>(sessionId, { type: 'set_tools', toolNames })
+}
+
+/**
+ * 拉取工具列表(全表 + 是否激活)。
+ *
+ * 后端:`{ type: 'get_tools' }` → 返 ToolEntry[]。
+ */
+export const getTools = (sessionId: string) => {
+  return sendAgentCommand<ToolEntry[]>(sessionId, { type: 'get_tools' })
+}
+
+/**
+ * 取消某条排队项。
+ *
+ * OQ-2 已知后端 SDK 没有 cancel_queue 单条指令(apps/web/lib/rpc-manager.ts
+ * 只有 `case 'clear_queue'` 全量清)。这里仍走 RPC 试一下:服务端若不认识该
+ * type,会 rejected,composable 层捕获并降级为本地移除。详见 useAgentSession.cancelQueue。
+ */
+export const cancelQueue = (sessionId: string, id: string) => {
+  return sendAgentCommand<null>(sessionId, { type: 'cancel_queue', id })
+}
+
+/**
+ * 将 ToolPreset 映射到具体 tool name 列表(纯函数,无 IO)。
+ *
+ * 这里与 apps/web/lib/tool-presets.ts getToolNamesForPreset 完全对齐:不走 allTools 过滤,
+ * 三档写死。这是 chrome v1 与 design §3.1 的偏差 —— design 误用了 allTools.filter,
+ * React 参考实现是常量数组。
+ */
+export function getToolNamesForPreset(preset: ToolPreset): string[] {
+  if (preset === 'none') return [...PRESET_NONE]
+  if (preset === 'full') return [...PRESET_FULL]
+  return [...PRESET_DEFAULT]
 }
 
 /** 获取可用的 Digital Employees */

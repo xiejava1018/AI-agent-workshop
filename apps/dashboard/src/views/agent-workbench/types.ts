@@ -11,6 +11,13 @@
  * - v1.5: 合并 Track A / Track C 注释(行尾字段说明从其他分支同步)
  */
 
+/**
+ * v1.6: + AgentMessage.usage/entryId/prevAssistantEntryId/modelProvider/modelId
+ *        (chrome v1 头部 + token footer 需要)
+ *      + QueueItem(steer/followUp 队列)
+ *      + SlashCommandInfo / ToolEntry / ThinkingLevel 枚举(slash palette + 状态条用)
+ */
+
 import type { AgentSession } from '@/api/agent'
 
 // ============================================================================
@@ -39,6 +46,25 @@ export interface ToolCall {
 
 export type StreamStatus = 'idle' | 'streaming' | 'done' | 'error' | 'cancelled'
 
+/**
+ * AgentMessage.usage —— SDK 在 message_start 上携带的 token 使用统计。
+ * 字段镜像 apps/web/lib/types.ts AssistantMessage.usage,但 cost? 可选(v1 footer
+ * 不展示 cost,见 A2-b 决策)。
+ */
+export interface AgentMessageUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
+}
+
 export interface AgentMessage {
   id: string
   role: AgentRole
@@ -53,6 +79,17 @@ export interface AgentMessage {
   cancelled?: boolean
   /** Track B: 流状态机,用于 UI 区分 idle/streaming/done/error/cancelled */
   streamStatus?: StreamStatus
+  // ↓ chrome v1 新增字段
+  /** SDK 在 message_start 携带的 token 用量(仅 assistant 有);footer 渲染依据 */
+  usage?: AgentMessageUsage
+  /** SDK entryId(stable id,用于 fork / navigate) */
+  entryId?: string
+  /** 上一条 assistant 的 entryId(用于 Navigate Up 按钮) */
+  prevAssistantEntryId?: string
+  /** SDK 在 message_start 携带的模型来源(provider id) */
+  modelProvider?: string
+  /** SDK 在 message_start 携带的模型 id */
+  modelId?: string
 }
 
 export interface Branch {
@@ -87,7 +124,14 @@ export const ALLOWED_SSE_EVENTS = [
   'session_renamed',
   'prompt_done',
   'error',
-  'done'
+  'done',
+  // chrome v1:3 个新事件
+  // - queue_update:后端推 { steer, followUp } 更新,直接覆盖 queuedMessages
+  // - thinking_level_changed:模型 thinking 档位变化
+  // - model_changed:模型切换(provider+modelId)
+  'queue_update',
+  'thinking_level_changed',
+  'model_changed'
 ] as const
 
 export type AllowedSseEvent = (typeof ALLOWED_SSE_EVENTS)[number]
@@ -116,6 +160,10 @@ export type SSEEventPayload =
   | { type: 'prompt_done' }
   | { type: 'error'; message: string; code?: string }
   | { type: 'done' }
+  // chrome v1 新增
+  | { type: 'queue_update'; steer: QueueItem[]; followUp: QueueItem[] }
+  | { type: 'thinking_level_changed'; level: ThinkingLevel }
+  | { type: 'model_changed'; provider: string; modelId: string }
 
 // ============================================================================
 // Running SSE(全局,侧栏用 /api/agent/running/events)
@@ -203,6 +251,82 @@ export interface PluginConfig {
 }
 
 export type ConfigPanelKey = 'none' | 'files' | 'models' | 'skills' | 'plugins'
+
+// ============================================================================
+// chrome v1(v1.6 新增):streaming 队列 / thinking 档 / tool preset / slash 命令
+// ============================================================================
+
+/**
+ * Streaming-time queue 中的单条消息。
+ * - kind='steer':当前轮内插入,会抢断当前 assistant
+ * - kind='followUp':当前轮结束后追加
+ */
+export interface QueueItem {
+  id: string
+  kind: 'steer' | 'followUp'
+  text: string
+  createdAt: string
+}
+
+/** Thinking 档位枚举(对齐 apps/web/lib/types 提供的 8 档)。 */
+export type ThinkingLevel =
+  | 'auto'
+  | 'off'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
+
+/** Tool preset(对齐 apps/web/lib/tool-presets.ts ToolPreset —— 用 "none" 而非 "off") */
+export type ToolPreset = 'none' | 'default' | 'full'
+
+/**
+ * 单条 tool 注册项(对齐 apps/web/lib/tool-presets.ts ToolEntry)。
+ * 浅拷贝避免跨应用类型依赖,apps/dashboard 自包含。
+ *
+ * chrome v1 修订:description / active 在 React 参考实现里都是 required;
+ * Vue 端保留兼容(可选),现有 /api/agent get_tools 响应里可能没有
+ * description / active,我们也允许省略。
+ */
+export interface ToolEntry {
+  name: string
+  description?: string
+  /** 是否在当前 preset 中启用 */
+  active?: boolean
+}
+
+/**
+ * 单条 slash 命令(对齐 apps/web/hooks/useAgentSession.ts SlashCommandInfo)。
+ *
+ * source:
+ *   - "extension": 来自 extension 注册
+ *   - "prompt":    prompt template
+ *   - "skill":     skill:xxx 形式
+ *   - "builtin":   Vue 端内置(/compact /branch /model /fork),由 T5 添加
+ */
+export interface SlashCommandInfo {
+  name: string
+  description?: string
+  source: 'extension' | 'prompt' | 'skill' | 'builtin'
+  sourceInfo?: {
+    path: string
+    source: string
+    scope: 'user' | 'project' | 'temporary'
+    origin: 'package' | 'top-level'
+    baseDir?: string
+  }
+}
+
+/**
+ * get_commands 响应(由 apps/web/lib/rpc-manager.ts `case 'get_commands'` 实测
+ * 确认):服务端返回 `{ commands?: SlashCommandInfo[] }`,commands 是可选数组
+ * (apps/web/hooks/useAgentSession.ts:139 把它定义为可选)。
+ */
+export interface SlashCommandsResponse {
+  commands?: SlashCommandInfo[]
+}
 
 // ============================================================================
 // 安全工具
