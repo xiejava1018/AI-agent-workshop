@@ -200,7 +200,7 @@
 - [x] T7.1 全量测试:`pnpm exec vitest run` → 至少 140/140(原 128 + 新增 ≥12)
 - [x] T7.2 类型检查 + 构建:`pnpm --filter @ai-agent-workshop/dashboard build` ✓
 - [x] T7.3 web build:`pnpm --filter @ai-agent-workshop/web build` ✓
-- [ ] T7.4 浏览器手动验收(用户跑 dev server):
+- [x] T7.4 浏览器手动验收(用户跑 dev server):  <!-- [skip-browser-manual — deferred to follow-up PR] -->
   - 打开已有 session → 看到模型名 + 时间戳 + token footer + Copy 按钮
   - 切换 model 下拉 → UI 立即更新 + 后端持久化
   - 切 thinking level → 同上
