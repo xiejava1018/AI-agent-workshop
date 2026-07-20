@@ -202,6 +202,30 @@
   flex-direction: row-reverse;
 }
 
+/* T5 反馈修复 1:user/assistant 左右对齐布局
+ *  .wb-message--user / .wb-message--assistant 是模板当前使用的 BEM 类
+ *  (MessageView.vue 的 `:class="\`wb-message--${message.role}\`"`)
+ *  .wb-message__bubble 是消息气泡子元素。user 靠右 75% 宽 + 浅底色;
+ *  assistant 靠左 90% 宽 + 无底色,贴近参考实现的聊天体验。
+ */
+.wb-message--user {
+  justify-content: flex-end;
+}
+.wb-message--user .wb-message__bubble {
+  max-width: 75%;
+  background: var(--wb-bg-elevated);
+  padding: var(--wb-pad-md);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-lg) var(--wb-radius-lg) var(--wb-radius-sm)
+    var(--wb-radius-lg);
+}
+.wb-message--assistant {
+  justify-content: flex-start;
+}
+.wb-message--assistant .wb-message__bubble {
+  max-width: 90%;
+}
+
 @keyframes wb-fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -297,44 +321,141 @@
   flex-shrink: 0;
 }
 
-/* ============ Markdown 渲染 ============ */
+/* ============ Markdown 渲染 ============
+ *
+ * T5 反馈修复 3:之前 .wb-markdown 只覆盖了 pre/code/a/blockquote 4 个标签,
+ * markdown-it 输出的 <p>/<strong>/<em>/<h1-6>/<ul>/<ol>/<li>/<hr>/<table>/<kbd>/<img>
+ * 全部裸奔,视觉上等同于纯文本。这里补齐选择器以匹配参考实现的渲染质量。
+ *
+ * 注意:这些规则必须在 .agent-workbench 作用域外也能工作
+ * —— MarkdownBody.vue 用 v-html 输出,v-html 内容不会被 Vue 的 scoped CSS 命中,
+ * 所以规则放在全局 CSS(.workbench.css)里。
+ */
 
 .wb-markdown {
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
+  color: var(--wb-text);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.wb-markdown p {
+  margin: 0 0 8px 0;
+}
+.wb-markdown p:last-child {
+  margin-bottom: 0;
+}
+.wb-markdown h1,
+.wb-markdown h2,
+.wb-markdown h3,
+.wb-markdown h4,
+.wb-markdown h5,
+.wb-markdown h6 {
+  margin: 12px 0 6px 0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.wb-markdown h1 { font-size: 22px; }
+.wb-markdown h2 { font-size: 19px; }
+.wb-markdown h3 { font-size: 16px; }
+.wb-markdown h4,
+.wb-markdown h5,
+.wb-markdown h6 { font-size: 14px; }
+.wb-markdown strong { font-weight: 600; }
+.wb-markdown em { font-style: italic; }
+.wb-markdown del,
+.wb-markdown s { text-decoration: line-through; color: var(--wb-text-muted); }
+.wb-markdown a {
+  color: var(--wb-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.wb-markdown a:hover {
+  text-decoration: none;
+}
+.wb-markdown ul,
+.wb-markdown ol {
+  padding-left: 20px;
+  margin: 6px 0 8px 0;
+}
+.wb-markdown li {
+  margin: 2px 0;
+}
+.wb-markdown li::marker {
+  color: var(--wb-text-muted);
+}
+.wb-markdown code {
+  font-family: var(--wb-font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  background: var(--wb-bg-hover);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-sm);
 }
 .wb-markdown pre {
+  margin: 8px 0;
+  padding: var(--wb-pad-md);
   background: var(--el-color-black, #1e1e1e);
   color: #d4d4d4;
-  padding: var(--wb-pad-md);
   border-radius: var(--wb-radius-md);
   overflow-x: auto;
   font-family: var(--wb-font-mono);
   font-size: 13px;
 }
-.wb-markdown code {
+.wb-markdown pre code {
   font-family: var(--wb-font-mono);
   font-size: 0.9em;
-  background: var(--wb-bg-hover);
-  padding: 2px 4px;
-  border-radius: var(--wb-radius-sm);
-}
-.wb-markdown pre code {
-  background: transparent;
   padding: 0;
-}
-.wb-markdown a {
-  color: var(--wb-accent);
-  text-decoration: none;
-}
-.wb-markdown a:hover {
-  text-decoration: underline;
+  background: transparent;
+  border: none;
+  color: inherit;
 }
 .wb-markdown blockquote {
   margin: var(--wb-pad-md) 0;
-  padding: var(--wb-pad-sm) var(--wb-pad-md);
+  padding: 6px var(--wb-pad-md);
   border-left: 3px solid var(--wb-border-strong);
   color: var(--wb-text-secondary);
+  background: var(--wb-bg-elevated);
+  border-radius: 0 var(--wb-radius-sm) var(--wb-radius-sm) 0;
+}
+.wb-markdown blockquote p {
+  margin: 0;
+}
+.wb-markdown hr {
+  border: none;
+  border-top: 1px solid var(--wb-border);
+  margin: 12px 0;
+}
+.wb-markdown table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+  font-size: 13px;
+}
+.wb-markdown th,
+.wb-markdown td {
+  padding: 6px 10px;
+  border: 1px solid var(--wb-border);
+  text-align: left;
+}
+.wb-markdown th {
+  background: var(--wb-bg-elevated);
+  font-weight: 600;
+}
+.wb-markdown kbd {
+  display: inline-block;
+  font-family: var(--wb-font-mono);
+  font-size: 0.85em;
+  padding: 1px 6px;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-border-strong);
+  border-radius: var(--wb-radius-sm);
+  box-shadow: 0 1px 0 var(--wb-border-strong);
+}
+.wb-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
 }
 
 /* ============ 文件浏览器 ============ */

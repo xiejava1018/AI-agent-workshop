@@ -353,3 +353,79 @@ describe('MessageView — action buttons (chrome v1 A 组)', () => {
     }
   })
 })
+
+// =============================================================================
+// T5 反馈修复:user/assistant 左右对齐 + assistant 显示模型名纯文本
+// =============================================================================
+
+describe('MessageView — T5 UI feedback fixes', () => {
+  it('user 消息应用 wb-message--user 类(模板使用此 BEM 类做布局)', () => {
+    const wrapper = mount(MessageView, {
+      props: { message: baseMsg({ role: 'user', content: 'hi' }) }
+    })
+    const msg = wrapper.find('.wb-message')
+    expect(msg.exists()).toBe(true)
+    expect(msg.classes()).toContain('wb-message--user')
+    expect(msg.classes()).not.toContain('wb-message--assistant')
+  })
+
+  it('assistant 消息应用 wb-message--assistant 类(与 user 互斥)', () => {
+    const wrapper = mount(MessageView, {
+      props: { message: baseMsg({ role: 'assistant', content: 'hi' }) }
+    })
+    const msg = wrapper.find('.wb-message')
+    expect(msg.exists()).toBe(true)
+    expect(msg.classes()).toContain('wb-message--assistant')
+    expect(msg.classes()).not.toContain('wb-message--user')
+  })
+
+  it('assistant 消息头部显示模型名文本(无 el-tag)', () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        message: baseMsg({
+          role: 'assistant',
+          content: 'reply',
+          modelProvider: 'anthropic',
+          modelId: 'claude-opus-4-8'
+        }),
+        modelNames: { 'anthropic:claude-opus-4-8': 'MiniMax-M3' }
+      }
+    })
+    // 头部应存在 .wb-message__model-name 元素
+    const modelNameEl = wrapper.find('.wb-message__model-name')
+    expect(modelNameEl.exists()).toBe(true)
+    expect(modelNameEl.text()).toBe('MiniMax-M3')
+    // assistant 不再用 el-tag(role-tag 类应仅在 user 路径存在)
+    // 这里用 HTML 兜底:不应出现 el-tag 在 assistant 头部
+    // 注:el-tag 会渲染成 <span class="el-tag ..."> 之类,我们检查 role-tag 不再出现
+    expect(wrapper.find('.wb-message__header .wb-message__role-tag').exists()).toBe(false)
+  })
+
+  it('user 消息头部仍使用 el-tag(WB-MESSAGE__ROLE-TAG 存在)', () => {
+    const wrapper = mount(MessageView, {
+      props: { message: baseMsg({ role: 'user', content: 'hi' }) }
+    })
+    // user 仍走 el-tag(用 .wb-message__role-tag 标识)
+    expect(wrapper.find('.wb-message__role-tag').exists()).toBe(true)
+    expect(wrapper.find('.wb-message__model-name').exists()).toBe(false)
+  })
+
+  it('assistant 模型名 fallback 为 "assistant" 时也走纯文本路径', () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        message: baseMsg({
+          role: 'assistant',
+          content: 'reply',
+          modelProvider: 'unknown',
+          modelId: 'unknown'
+        }),
+        modelNames: {}
+      }
+    })
+    const modelNameEl = wrapper.find('.wb-message__model-name')
+    expect(modelNameEl.exists()).toBe(true)
+    expect(modelNameEl.text()).toBe('assistant')
+    // 同样不应再有 el-tag 角色标签
+    expect(wrapper.find('.wb-message__header .wb-message__role-tag').exists()).toBe(false)
+  })
+})

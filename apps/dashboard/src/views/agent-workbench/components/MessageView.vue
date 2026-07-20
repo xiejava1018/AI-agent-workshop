@@ -149,7 +149,9 @@
     <!-- User / Assistant: MarkdownBody 渲染 + 头部 chrome + token footer + action bar -->
     <template v-if="message.role === 'user' || message.role === 'assistant'">
       <div class="wb-message__bubble">
-        <!-- 头部 chrome:角色标签 + 时间戳 -->
+        <!-- 头部 chrome:角色标签 + 时间戳
+             user 角色用 el-tag(可视化强),assistant 改用纯文本模型名(与 React 参考一致,
+             头部更轻盈、model name 与 time 同行)。fallback 'assistant' 仍走纯文本。 -->
         <header class="wb-message__header">
           <el-tag
             v-if="isUser"
@@ -158,13 +160,10 @@
             plain
             size="small"
           >USER</el-tag>
-          <el-tag
+          <span
             v-else-if="isAssistant"
-            class="wb-message__role-tag"
-            type="primary"
-            plain
-            size="small"
-          >{{ assistantLabel }}</el-tag>
+            class="wb-message__model-name"
+          >{{ assistantLabel }}</span>
           <time
             class="wb-message__time"
             :datetime="message.createdAt"
@@ -259,6 +258,11 @@
   .wb-message__role-tag {
     font-size: 11px;
     line-height: 18px;
+  }
+  .wb-message__model-name {
+    font-size: 12px;
+    color: var(--wb-text-secondary);
+    font-weight: 500;
   }
   .wb-message__time {
     font-size: 11px;
