@@ -214,7 +214,7 @@
 
 ## 8. 文档与收尾
 
-- [ ] T8.1 更新 `apps/dashboard/CLAUDE.md` 已知陷阱段:
+- [x] T8.1 更新 `apps/dashboard/CLAUDE.md` 已知陷阱段:
   - 头部 chrome 的 modelName 查表 fallback 规则
   - IME 事件绑定的必要性
   - 操作按钮 emit 模式(presentational 不调 hook)
