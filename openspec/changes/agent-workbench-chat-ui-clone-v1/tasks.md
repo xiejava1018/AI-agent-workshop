@@ -182,16 +182,16 @@
 
 ## 6. IME 保护 + 可访问性
 
-- [ ] T6.1 `ChatInput.vue` 加 IME 保护:
+- [x] T6.1 `ChatInput.vue` 加 IME 保护:
   - `isComposing: ref(false)`
   - `onCompositionStart / onCompositionEnd` 绑在 el-input 上
   - `onKeydown` 头一行 `if (isComposing.value) return`(放行 IME 默认行为)
   - 测试用例:中文拼音按 Enter 不发送
-- [ ] T6.2 全局可访问性扫描:
+- [x] T6.2 全局可访问性扫描:
   - 所有新按钮加 `aria-label`
   - slash palette 加 `role="listbox"` + `aria-activedescendant`
   - 操作按钮 hover 区域键盘可达(`tabindex`)
-- [ ] T6.3 commit T6:`fix(dashboard): IME composition guard + a11y polish for chat input`
+- [x] T6.3 commit T6:`fix(dashboard): IME composition guard + a11y polish for chat input`
 
 ---
 
