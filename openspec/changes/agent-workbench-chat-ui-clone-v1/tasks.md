@@ -197,9 +197,9 @@
 
 ## 7. 测试 + 验证
 
-- [ ] T7.1 全量测试:`pnpm exec vitest run` → 至少 140/140(原 128 + 新增 ≥12)
-- [ ] T7.2 类型检查 + 构建:`pnpm --filter @ai-agent-workshop/dashboard build` ✓
-- [ ] T7.3 web build:`pnpm --filter @ai-agent-workshop/web build` ✓
+- [x] T7.1 全量测试:`pnpm exec vitest run` → 至少 140/140(原 128 + 新增 ≥12)
+- [x] T7.2 类型检查 + 构建:`pnpm --filter @ai-agent-workshop/dashboard build` ✓
+- [x] T7.3 web build:`pnpm --filter @ai-agent-workshop/web build` ✓
 - [ ] T7.4 浏览器手动验收(用户跑 dev server):
   - 打开已有 session → 看到模型名 + 时间戳 + token footer + Copy 按钮
   - 切换 model 下拉 → UI 立即更新 + 后端持久化
@@ -208,7 +208,7 @@
   - Streaming 时输入消息按 Enter → steer 队列行出现
   - 输入 `/com` → 面板弹出 + /compact 排第一
   - 中文输入"ni"按 Enter → 不发送,只把候选字写入
-- [ ] T7.5 commit T7:`test(dashboard): chat chrome v1 full coverage`
+- [x] T7.5 commit T7:`test(dashboard): chat chrome v1 full coverage`
 
 ---
 
