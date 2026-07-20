@@ -158,25 +158,25 @@
 
 > 覆盖 spec `chat-streaming-queue` 的 B8 部分。
 
-- [ ] T5.1 内置命令清单(`apps/dashboard/src/views/agent-workbench/slash/builtin.ts`):
+- [x] T5.1 内置命令清单(`apps/dashboard/src/views/agent-workbench/slash/builtin.ts`):
   - `/compact` — `{name, aliases: ['压缩'], description: '压缩上下文', source: 'builtin'}`
   - `/branch` — `{name, aliases: [], description: '分叉当前 assistant 消息', source: 'builtin'}`
   - `/model` — `{name, aliases: [], description: '切换模型', source: 'builtin'}`
   - `/fork` — `{name, aliases: [], description: '分叉当前 entry', source: 'builtin'}`
   - 导出 `BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[]`
-- [ ] T5.2 `SlashPalette.vue`(新增):
+- [x] T5.2 `SlashPalette.vue`(新增):
   - props: `query: string`,`items: SlashCommandPaletteItem[]`,`modelNames: Record<string, string>`
   - emits: `select:[item]`,`close`
   - `role="listbox"`,每个项 `role="option" aria-selected`
   - `aria-activedescendant` 跟随 activeIndex
   - 模糊匹配:精确前缀 > 包含 > 字符级子序列
   - 写测试用例 4 条(触发 / 匹配 / 键盘 / 选中)
-- [ ] T5.3 `ChatInput.vue` 接 slash palette:
+- [x] T5.3 `ChatInput.vue` 接 slash palette:
   - 监听 `inputText`,`isSlashPaletteOpen = computed(() => inputText.startsWith('/') && inputText.length > 1)`
   - 面板 absolute 定位在 input 下方
   - ↑↓ Enter ESC 事件
   - 选中后:`inputText = item.name + ' '`(末尾空格)+ 关闭面板
-- [ ] T5.4 commit T5:`feat(dashboard): slash command palette with builtin + session commands`
+- [x] T5.4 commit T5:`feat(dashboard): slash command palette with builtin + session commands`
 
 ---
 
