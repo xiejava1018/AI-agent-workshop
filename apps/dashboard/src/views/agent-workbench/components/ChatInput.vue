@@ -17,15 +17,17 @@
    *   `StreamingQueueBar`,显示 steer / followUp 队列项。
    *   Enter = send(已有);Shift+Enter = steer;Cmd/Ctrl+Enter = followUp。
    */
-  import { computed, onMounted, onUnmounted, ref } from 'vue'
+  import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
   import { ElButton, ElInput, ElIcon } from 'element-plus'
   import { Promotion, CircleClose } from '@element-plus/icons-vue'
   import { useAgentSession } from '../composables/useAgentSession'
   import { getToolNamesForPreset } from '@/api/agent'
-  import type { ToolPreset } from '../types'
+  import type { SlashCommandPaletteItem, ToolPreset } from '../types'
+  import { BUILTIN_SLASH_COMMANDS } from '../slash/builtin'
   import ModelSelector from './ModelSelector.vue'
   import ThinkingLevelSelector from './ThinkingLevelSelector.vue'
   import ToolPresetSelector from './ToolPresetSelector.vue'
+  import SlashPalette from './SlashPalette.vue'
 
   interface Props {
     disabled?: boolean
@@ -60,7 +62,9 @@
     setTools,
     refreshTools,
     sendSteer,
-    sendFollowUp
+    sendFollowUp,
+    slashCommands,
+    loadSlashCommands
   } = useAgentSession(props.sessionId, userId)
 
   /** 当前模型限定可用的 thinking level 子集;无数据时让子组件走默认全集 */
@@ -144,6 +148,93 @@
   // —— Mention hint ——
   const showMentionHint = computed(() => inputText.value.endsWith('@'))
 
+  // —— Slash palette(T5.3)——
+  // builtin + session commands 合并(去重),统一转成 palette item shape
+  const slashActiveIndex = ref(0)
+
+  /** builtin + useAgentSession.slashCommands 合并,转成 SlashCommandPaletteItem[] */
+  const mergedSlashCommands = computed<SlashCommandPaletteItem[]>(() => {
+    const seen = new Set<string>()
+    const out: SlashCommandPaletteItem[] = []
+    for (const cmd of BUILTIN_SLASH_COMMANDS) {
+      if (!seen.has(cmd.name)) {
+        seen.add(cmd.name)
+        out.push(cmd)
+      }
+    }
+    for (const cmd of slashCommands.value) {
+      if (seen.has(cmd.name)) continue
+      seen.add(cmd.name)
+      out.push({
+        name: cmd.name,
+        aliases: [],
+        description: cmd.description ?? '',
+        source: cmd.source === 'builtin' ? 'builtin' : cmd.source
+      })
+    }
+    return out
+  })
+
+  /**
+   * 3 档模糊匹配:
+   * 1) 精确前缀(name / aliases 都查)
+   * 2) 包含
+   * 3) 字符级子序列(query 字符按顺序在 name 中出现)
+   * query 已包含前导 "/"(例如 "/com"),直接 match。
+   * palette 在 query 长度 <= 1(只有 "/")时显示全部 4 项 builtin。
+   */
+  const slashVisibleItems = computed<SlashCommandPaletteItem[]>(() => {
+    const q = inputText.value
+    if (!q.startsWith('/')) return []
+    if (q.length <= 1) return mergedSlashCommands.value
+
+    const lc = q.toLowerCase()
+    const exactPrefix: SlashCommandPaletteItem[] = []
+    const contains: SlashCommandPaletteItem[] = []
+    const subsequence: SlashCommandPaletteItem[] = []
+
+    const matchesPrefix = (item: SlashCommandPaletteItem): boolean =>
+      item.name.toLowerCase().startsWith(lc) ||
+      item.aliases.some((a) => a.toLowerCase().startsWith(lc))
+
+    const matchesContains = (item: SlashCommandPaletteItem): boolean =>
+      item.name.toLowerCase().includes(lc) ||
+      item.aliases.some((a) => a.toLowerCase().includes(lc))
+
+    const matchesSubsequence = (item: SlashCommandPaletteItem): boolean => {
+      const name = item.name.toLowerCase()
+      let pi = 0
+      for (let i = 0; i < name.length && pi < lc.length; i++) {
+        if (name[i] === lc[pi]) pi++
+      }
+      return pi === lc.length
+    }
+
+    for (const item of mergedSlashCommands.value) {
+      if (matchesPrefix(item)) exactPrefix.push(item)
+      else if (matchesContains(item)) contains.push(item)
+      else if (matchesSubsequence(item)) subsequence.push(item)
+    }
+    return [...exactPrefix, ...contains, ...subsequence]
+  })
+
+  /** palette 打开条件:以 "/" 开头且长度 > 1(参考 B8 spec) */
+  const isSlashPaletteOpen = computed(
+    () => inputText.value.startsWith('/') && inputText.value.length > 1
+  )
+
+  // inputText 变化导致 palette 重新过滤时,把 activeIndex 拉回 0 防止越界
+  watch(inputText, () => {
+    if (slashActiveIndex.value >= slashVisibleItems.value.length) {
+      slashActiveIndex.value = 0
+    }
+  })
+
+  /** 选择 slash 项后填充 inputText(name + 末尾空格) */
+  function onSlashSelect(item: SlashCommandPaletteItem): void {
+    inputText.value = item.name + ' '
+  }
+
   // —— 发送 ——
   async function handleSend(): Promise<void> {
     if (props.isStreaming) return // streaming 时按钮是「停止」,不发
@@ -167,6 +258,9 @@
   // —— 键盘 ——
   function onKeydown(evt: Event | KeyboardEvent): void {
     const e = evt as KeyboardEvent
+    // T5.3:slash palette 打开时把键盘交给父级 ChatInput 内的 palette 拦截逻辑
+    // (T6 再与 isComposing 合并成 OR)。此处先独立短路,后续统一调整。
+    if (isSlashPaletteOpen.value) return
     // Enter:发送(Shift+Enter 换行,留作浏览器默认行为)
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
@@ -262,6 +356,7 @@
 
   onMounted(() => {
     loadHistory()
+    void loadSlashCommands()
     window.addEventListener('dragenter', onDragEnter)
     window.addEventListener('dragover', onDragOver)
     window.addEventListener('dragleave', onDragLeave)
@@ -330,6 +425,17 @@
       :disabled="disabled"
       class="wb-chat-input__textarea"
       @keydown="onKeydown"
+    />
+
+    <!-- T5:slash palette(以 "/" 开头且长度 > 1 时打开) -->
+    <SlashPalette
+      v-if="isSlashPaletteOpen"
+      :query="inputText"
+      :items="slashVisibleItems"
+      :active-index="slashActiveIndex"
+      @select="onSlashSelect"
+      @update:active-index="(i: number) => (slashActiveIndex = i)"
+      @close="isSlashPaletteOpen = false"
     />
 
     <!-- @mention 提示(v1 占位) -->

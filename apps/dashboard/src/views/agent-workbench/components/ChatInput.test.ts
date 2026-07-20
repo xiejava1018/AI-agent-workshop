@@ -38,6 +38,7 @@ const setToolsMock = vi.fn().mockResolvedValue(undefined)
 const refreshToolsMock = vi.fn().mockResolvedValue(undefined)
 const sendSteerMock = vi.fn().mockResolvedValue(undefined)
 const sendFollowUpMock = vi.fn().mockResolvedValue(undefined)
+const loadSlashCommandsMock = vi.fn().mockResolvedValue(undefined)
 
 const refs = {
   modelList: ref<Array<{ provider: string; modelId: string; name: string }>>([]),
@@ -46,7 +47,10 @@ const refs = {
   isAutoModelSelection: ref(false),
   thinkingLevel: ref<string>('auto'),
   availableThinkingLevels: ref<Record<string, string[]>>({}),
-  toolPreset: ref<'none' | 'default' | 'full'>('none')
+  toolPreset: ref<'none' | 'default' | 'full'>('none'),
+  slashCommands: ref<
+    Array<{ name: string; description?: string; source: 'extension' | 'prompt' | 'skill' | 'builtin' }>
+  >([])
 }
 
 // 每次 mount 前重置 ref(避免测试间状态污染)
@@ -58,12 +62,14 @@ function resetRefs(): void {
   refs.thinkingLevel.value = 'auto'
   refs.availableThinkingLevels.value = {}
   refs.toolPreset.value = 'none'
+  refs.slashCommands.value = []
   setModelMock.mockClear()
   setThinkingLevelMock.mockClear()
   setToolsMock.mockClear()
   refreshToolsMock.mockClear()
   sendSteerMock.mockClear()
   sendFollowUpMock.mockClear()
+  loadSlashCommandsMock.mockClear()
 }
 
 vi.mock('../composables/useAgentSession', () => ({
@@ -80,7 +86,9 @@ vi.mock('../composables/useAgentSession', () => ({
     setTools: setToolsMock,
     refreshTools: refreshToolsMock,
     sendSteer: sendSteerMock,
-    sendFollowUp: sendFollowUpMock
+    sendFollowUp: sendFollowUpMock,
+    slashCommands: refs.slashCommands,
+    loadSlashCommands: loadSlashCommandsMock
   }))
 }))
 
@@ -425,6 +433,91 @@ describe('ToolPresetSelector', () => {
     await noneLi!.trigger('click')
     await flushPromises()
     expect(setToolsMock.mock.calls[0]?.[0]).toEqual([])
+  })
+})
+
+// =============================================================================
+// T5.3:slash palette 集成
+// =============================================================================
+
+describe('ChatInput — slash palette 集成', () => {
+  it('onMounted 时调一次 loadSlashCommands()', async () => {
+    const wrapper = makeWrapper()
+    // 等 mount 完 microtask 跑
+    await nextTick()
+    await flushPromises()
+    expect(loadSlashCommandsMock).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('inputText="/" 时 palette 不显示(长度恰好 1 不开)', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/')
+    await nextTick()
+    // 长度 == 1 不开 palette(B8 spec 长度 > 1)
+    expect(wrapper.find('[data-testid="wb-slash-palette"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('inputText="/com" 时 palette 打开,可见 /compact 排在第一', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/com')
+    await nextTick()
+    const palette = wrapper.find('[data-testid="wb-slash-palette"]')
+    expect(palette.exists()).toBe(true)
+    const options = palette.findAll('[role="option"]')
+    expect(options.length).toBeGreaterThan(0)
+    expect(options[0]?.attributes('data-slash-name')).toBe('/compact')
+    expect(options[0]?.attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('inputText="" 时 palette 关闭', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/compact ')
+    await nextTick()
+    // 设为 /compact 后清空
+    await input.setValue('')
+    await nextTick()
+    expect(wrapper.find('[data-testid="wb-slash-palette"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('选中 slash 项后 inputText 被填充为 "name + 末尾空格"', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/co')
+    await nextTick()
+    const palette = wrapper.find('[data-testid="wb-slash-palette"]')
+    const firstOption = palette.find('[role="option"]')
+    await firstOption.trigger('click')
+    await nextTick()
+    expect(input.element.value).toBe('/compact ')
+    wrapper.unmount()
+  })
+
+  it('palette 打开时 Enter 不发送,只走 palette 自身的 select 路径(由 onKeydown 短路拦截)', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/com')
+    await nextTick()
+    // 触发 Enter——onKeydown 第一行检测到 isSlashPaletteOpen 直接 return,
+    // 不会调 handleSend 也不会 emit send。
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('send')).toBeFalsy()
+    wrapper.unmount()
+  })
+
+  it('inputText 非 "/" 开头时 palette 永不打开', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('hello')
+    await nextTick()
+    expect(wrapper.find('[data-testid="wb-slash-palette"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })
 

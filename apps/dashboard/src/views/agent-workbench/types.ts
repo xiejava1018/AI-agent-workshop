@@ -320,6 +320,20 @@ export interface SlashCommandInfo {
 }
 
 /**
+ * Slash palette 单项(对齐 B8 spec:slash 命令面板):
+ * - name: 命令主名(如 "/compact")
+ * - aliases: 别名数组(中文 / 简短别名,如 "/压缩")
+ * - description: 单行描述
+ * - source: 同 SlashCommandInfo.source 的子集(palette 仅展示内置 / 扩展 / prompt / skill)
+ */
+export interface SlashCommandPaletteItem {
+  name: string
+  aliases: string[]
+  description: string
+  source: 'builtin' | 'extension' | 'prompt' | 'skill'
+}
+
+/**
  * get_commands 响应(由 apps/web/lib/rpc-manager.ts `case 'get_commands'` 实测
  * 确认):服务端返回 `{ commands?: SlashCommandInfo[] }`,commands 是可选数组
  * (apps/web/hooks/useAgentSession.ts:139 把它定义为可选)。
