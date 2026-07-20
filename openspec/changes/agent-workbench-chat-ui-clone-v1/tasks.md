@@ -33,7 +33,7 @@
   - `model_changed` → 暂存
   - 在 `handleEvent` switch 中加 4 个 case
   - 在 `ALLOWED_SSE_EVENTS` 数组中加 4 个常量
-- [ ] T1.2b 补齐遗漏的 `message_usage` 白名单、handler 与回归测试
+- [x] T1.2b 补齐遗漏的 `message_usage` 白名单、handler 与回归测试
 - [x] T1.3 扩展 `useAgentSession.ts` ref 集合(从 5 → 30+ ref):
   - `modelNames: Ref<Record<string, string>>`(从 session metadata 推)
   - `modelList: Ref<Array<{provider, modelId, name}>>`(从 `/api/models-config` 拉)
