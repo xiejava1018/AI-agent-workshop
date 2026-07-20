@@ -8,10 +8,20 @@
    *   - 文本历史(↑↓ 翻历史,localStorage 存最近 50 条)
    *   - 快捷键:Enter 发送,Shift+Enter 换行,@ 提示 mention(占位,不实际触发)
    *   - streaming 时按钮变「停止」,点击调 abort()
+   *
+   * chrome v1(B 组):底部状态条 —— 三档控件(model / thinking / tool preset),
+   *   仅展示 + emit,实际 setModel / setThinkingLevel / setTools 由父级传下来的
+   *   useAgentSession 方法处理。streaming 时整体禁用避免中途切换状态。
    */
   import { computed, onMounted, onUnmounted, ref } from 'vue'
   import { ElButton, ElInput, ElIcon } from 'element-plus'
   import { Promotion, CircleClose } from '@element-plus/icons-vue'
+  import { useAgentSession } from '../composables/useAgentSession'
+  import { getToolNamesForPreset } from '@/api/agent'
+  import type { ToolPreset } from '../types'
+  import ModelSelector from './ModelSelector.vue'
+  import ThinkingLevelSelector from './ThinkingLevelSelector.vue'
+  import ToolPresetSelector from './ToolPresetSelector.vue'
 
   interface Props {
     disabled?: boolean
@@ -30,6 +40,52 @@
     send: [text: string, attachments: File[]]
     abort: []
   }>()
+
+  // —— chrome v1:状态条所需 useAgentSession 状态 ——
+  const userId = localStorage.getItem('user_id') || ''
+  const {
+    modelList,
+    modelNames,
+    currentModel,
+    isAutoModelSelection,
+    thinkingLevel,
+    availableThinkingLevels,
+    toolPreset,
+    setModel,
+    setThinkingLevel,
+    setTools,
+    refreshTools
+  } = useAgentSession(props.sessionId, userId)
+
+  /** 当前模型限定可用的 thinking level 子集;无数据时让子组件走默认全集 */
+  const availableThinkingLevelsForCurrentModel = computed<string[]>(() => {
+    if (!currentModel.value) return []
+    const key = `${currentModel.value.provider}:${currentModel.value.modelId}`
+    return availableThinkingLevels.value?.[key] ?? []
+  })
+
+  /** Tool preset 切换:setTools(走 preset 常量映射) → refreshTools 同步本地 */
+  async function handlePresetChange(preset: ToolPreset): Promise<void> {
+    await setTools(getToolNamesForPreset(preset))
+    await refreshTools()
+  }
+
+  /** Thinking level 切换:narrow string → ThinkingLevel 联合 */
+  async function handleThinkingLevelChange(level: string): Promise<void> {
+    const allowed = [
+      'auto',
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max'
+    ] as const
+    if ((allowed as readonly string[]).includes(level)) {
+      await setThinkingLevel(level as (typeof allowed)[number])
+    }
+  }
 
   // —— Refs ——
   const inputText = ref('')
@@ -217,6 +273,27 @@
       </span>
     </div>
 
+    <!-- 状态条(model / thinking / tool preset)—— chrome v1 B 组 -->
+    <footer
+      class="wb-chat-input__statusbar"
+      :class="{ 'is-disabled': isStreaming }"
+      data-testid="wb-chat-input-statusbar"
+    >
+      <ModelSelector
+        :model="currentModel"
+        :model-list="modelList"
+        :model-names="modelNames"
+        :is-auto="isAutoModelSelection"
+        @update:model="(p, m) => setModel(p, m)"
+      />
+      <ThinkingLevelSelector
+        :level="thinkingLevel"
+        :available-levels="availableThinkingLevelsForCurrentModel"
+        @update:level="handleThinkingLevelChange"
+      />
+      <ToolPresetSelector :preset="toolPreset" @update:preset="handlePresetChange" />
+    </footer>
+
     <!-- 输入框 -->
     <el-input
       v-model="inputText"
@@ -279,5 +356,20 @@
     font-size: 14px;
     pointer-events: none;
     border-radius: 8px;
+  }
+
+  /* chrome v1 B 组:状态条 —— 横向布局,8px 间距 */
+  .wb-chat-input__statusbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12px;
+    color: var(--wb-text-dim);
+  }
+
+  .wb-chat-input__statusbar.is-disabled {
+    pointer-events: none;
+    opacity: 0.5;
   }
 </style>

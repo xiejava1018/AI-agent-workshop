@@ -63,6 +63,8 @@ export interface UseAgentSessionReturn {
   availableThinkingLevels: Ref<Record<string, string[]>>
   /** 当前 model 的 provider/modelId(由 SSE model_changed 或 setModel 乐观) */
   currentModel: Ref<{ provider: string; modelId: string } | null>
+  /** 当前是否处于「自动选择模型」模式(SSE 未推 model_changed 时认为非 auto) */
+  isAutoModelSelection: Ref<boolean>
   /** 当前 tool preset(由 setTools 推断或 UI 直接设置) */
   toolPreset: Ref<ToolPreset>
   /** 全部 tool 列表(从 get_tools 拉) */
@@ -179,6 +181,7 @@ export function useAgentSession(
     // 实际生产路径通常靠 `<ChatWindow :key="currentSessionId">` 重建组件来掩盖,
     // 但任何直接 resetSession() 调用方仍可能 leak 旧 session 的 model/queue/commands。
     currentModel.value = null
+    isAutoModelSelection.value = false
     thinkingLevel.value = 'auto'
     toolPreset.value = 'none'
     tools.value = []
@@ -225,6 +228,13 @@ export function useAgentSession(
   const modelNames = ref<Record<string, string>>({})
   /** 当前 model(provider + modelId);null 表示还没拿到 */
   const currentModel = ref<{ provider: string; modelId: string } | null>(null)
+  /**
+   * 当前是否处于「自动选择模型」模式。
+   * chrome v1 阶段:SSE 不会推送 auto 标志;setModel 总是显式切换。
+   * 因此保持 false,UI 不会显示 'auto' 文本 —— 若后续产品需要恢复自动选择,
+   * 由 setModel 之外的 reset() / 单独 command 推 auto 状态。
+   */
+  const isAutoModelSelection = ref<boolean>(false)
   /**
    * 当前 thinking level。'auto' 作为初始无值状态(由后端 SSE thinking_level_changed
    * 推真实值,或 setThinkingLevel 乐观设置)。
@@ -494,6 +504,7 @@ export function useAgentSession(
     thinkingLevel,
     availableThinkingLevels,
     currentModel,
+    isAutoModelSelection,
     toolPreset,
     tools,
     queuedMessages,
