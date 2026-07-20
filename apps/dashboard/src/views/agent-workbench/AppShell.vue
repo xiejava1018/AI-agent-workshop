@@ -35,13 +35,23 @@
 
         <!-- 未选会话:空态;已选:挂 ChatWindow,key 强制重建避免消息残留 -->
         <ChatWindow v-if="currentSessionId" :key="currentSessionId" :session-id="currentSessionId">
-          <template #input="{ sendMessage, abort, isStreaming: streaming }">
+          <template
+            #input="{ sendMessage, abort, isStreaming: streaming, queueItems, cancelQueue }"
+          >
             <ChatInput
               :session-id="currentSessionId"
               :is-streaming="streaming"
               @send="(text, attachments) => void sendMessage(text, attachments)"
               @abort="abort"
-            />
+            >
+              <template #queue>
+                <StreamingQueueBar
+                  :items="queueItems"
+                  :is-streaming="streaming"
+                  @recall="(id) => void cancelQueue(id)"
+                />
+              </template>
+            </ChatInput>
           </template>
         </ChatWindow>
         <div v-else class="wb-empty">
@@ -120,6 +130,7 @@
   import TabBar from './components/TabBar.vue'
   import ChatWindow from './components/ChatWindow.vue'
   import ChatInput from './components/ChatInput.vue'
+  import StreamingQueueBar from './components/StreamingQueueBar.vue'
   import ModelsConfig from './components/ModelsConfig.vue'
   import SkillsConfig from './components/SkillsConfig.vue'
   import PluginsConfig from './components/PluginsConfig.vue'

@@ -13,12 +13,16 @@
    *     这里只在复制失败时记日志,失败通知由 MessageView 自行 ElNotification)
    *   - edit / fork / navigate:阶段 1 仅 console.log,后续 Track 接入
    *   - retry:实做 —— 找到该消息前的最后一条 user 消息,调 useAgentSession.sendMessage 重发
+   *
+   * chrome v1(B7):把 useAgentSession 的 queuedMessages 透传给 input slot,
+   *   父级 AppShell 在 slot 内挂 StreamingQueueBar。同一份 useAgentSession 实例
+   *   (不另开 SSE 连接)。
    */
   import { computed, nextTick, onMounted, ref, watch } from 'vue'
   import { ElNotification } from 'element-plus'
   import MessageView from './MessageView.vue'
   import { useAgentSession } from '../composables/useAgentSession'
-  import type { AgentMessage, Branch } from '../types'
+  import type { AgentMessage, Branch, QueueItem } from '../types'
 
   interface Props {
     sessionId: string
@@ -39,8 +43,16 @@
     sendMessage,
     abort,
     clearError,
-    modelNames
+    modelNames,
+    queuedMessages,
+    cancelQueue
   } = useAgentSession(props.sessionId, userId)
+
+  // chrome v1 B7:队列数据派生(follow-up 排前,steer 排后,匹配 React 端视觉顺序)。
+  const queueItems = computed<readonly QueueItem[]>(() => [
+    ...queuedMessages.value.followUp,
+    ...queuedMessages.value.steer
+  ])
 
   const messagesScrollRef = ref<{ wrap?: { scrollTop?: number; scrollHeight?: number } } | null>(
     null
@@ -216,7 +228,14 @@
     </el-scrollbar>
 
     <!-- ChatInput 由父级通过 slot 注入 -->
-    <slot name="input" :send-message="sendMessage" :abort="abort" :is-streaming="isStreaming" />
+    <slot
+      name="input"
+      :send-message="sendMessage"
+      :abort="abort"
+      :is-streaming="isStreaming"
+      :queue-items="queueItems"
+      :cancel-queue="cancelQueue"
+    />
   </div>
 </template>
 

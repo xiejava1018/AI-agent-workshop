@@ -12,6 +12,10 @@
    * chrome v1(B 组):底部状态条 —— 三档控件(model / thinking / tool preset),
    *   仅展示 + emit,实际 setModel / setThinkingLevel / setTools 由父级传下来的
    *   useAgentSession 方法处理。streaming 时整体禁用避免中途切换状态。
+   *
+   * chrome v1(B7):streaming 期间通过 `<slot name="queue" />` 让父级注入
+   *   `StreamingQueueBar`,显示 steer / followUp 队列项。
+   *   Enter = send(已有);Shift+Enter = steer;Cmd/Ctrl+Enter = followUp。
    */
   import { computed, onMounted, onUnmounted, ref } from 'vue'
   import { ElButton, ElInput, ElIcon } from 'element-plus'
@@ -41,7 +45,7 @@
     abort: []
   }>()
 
-  // —— chrome v1:状态条所需 useAgentSession 状态 ——
+  // —— chrome v1:状态条 + queue 条所需 useAgentSession 状态 ——
   const userId = localStorage.getItem('user_id') || ''
   const {
     modelList,
@@ -54,7 +58,9 @@
     setModel,
     setThinkingLevel,
     setTools,
-    refreshTools
+    refreshTools,
+    sendSteer,
+    sendFollowUp
   } = useAgentSession(props.sessionId, userId)
 
   /** 当前模型限定可用的 thinking level 子集;无数据时让子组件走默认全集 */
@@ -167,6 +173,24 @@
       void handleSend()
       return
     }
+    // chrome v1 B7:Shift+Enter = steer(抢断当前 assistant 轮),仅 streaming 时有效
+    if (e.key === 'Enter' && e.shiftKey) {
+      if (!props.isStreaming) return // 非 streaming 时退回默认换行
+      e.preventDefault()
+      const text = inputText.value
+      if (!text.trim() && attachments.value.length === 0) return
+      void sendSteer(text, attachments.value.slice())
+      return
+    }
+    // chrome v1 B7:Cmd/Ctrl+Enter = followUp(等当前轮结束再发),仅 streaming 时有效
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      if (!props.isStreaming) return
+      e.preventDefault()
+      const text = inputText.value
+      if (!text.trim() && attachments.value.length === 0) return
+      void sendFollowUp(text, attachments.value.slice())
+      return
+    }
     // ↑↓ 翻历史
     if (e.key === 'ArrowUp' && textHistory.value.length > 0) {
       e.preventDefault()
@@ -254,6 +278,9 @@
 
 <template>
   <div class="wb-chat-input" :class="{ 'wb-chat-input--drag': isDragOver }">
+    <!-- chrome v1 B7:streaming 队列条(slot 由父级填充 StreamingQueueBar) -->
+    <slot name="queue" />
+
     <!-- 附件列表 -->
     <div v-if="attachments.length > 0" class="wb-chat-input__attachments">
       <span

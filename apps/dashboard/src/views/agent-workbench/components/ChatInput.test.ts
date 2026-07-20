@@ -36,6 +36,8 @@ const setModelMock = vi.fn().mockResolvedValue(undefined)
 const setThinkingLevelMock = vi.fn().mockResolvedValue(undefined)
 const setToolsMock = vi.fn().mockResolvedValue(undefined)
 const refreshToolsMock = vi.fn().mockResolvedValue(undefined)
+const sendSteerMock = vi.fn().mockResolvedValue(undefined)
+const sendFollowUpMock = vi.fn().mockResolvedValue(undefined)
 
 const refs = {
   modelList: ref<Array<{ provider: string; modelId: string; name: string }>>([]),
@@ -60,6 +62,8 @@ function resetRefs(): void {
   setThinkingLevelMock.mockClear()
   setToolsMock.mockClear()
   refreshToolsMock.mockClear()
+  sendSteerMock.mockClear()
+  sendFollowUpMock.mockClear()
 }
 
 vi.mock('../composables/useAgentSession', () => ({
@@ -74,7 +78,9 @@ vi.mock('../composables/useAgentSession', () => ({
     setModel: setModelMock,
     setThinkingLevel: setThinkingLevelMock,
     setTools: setToolsMock,
-    refreshTools: refreshToolsMock
+    refreshTools: refreshToolsMock,
+    sendSteer: sendSteerMock,
+    sendFollowUp: sendFollowUpMock
   }))
 }))
 
@@ -175,6 +181,32 @@ describe('ChatInput — keyboard shortcuts', () => {
     // 不阻止默认行为
     await input.trigger('keydown', { key: 'Enter', shiftKey: true })
 
+    expect(wrapper.emitted('send')).toBeFalsy()
+  })
+
+  it('streaming 时 Shift+Enter 调 sendSteer(steer 快捷键)', async () => {
+    const wrapper = makeWrapper({ isStreaming: true })
+    const input = wrapper.find('textarea')
+    await input.setValue('steer me')
+    await input.trigger('keydown', { key: 'Enter', shiftKey: true })
+    await flushPromises()
+
+    expect(sendSteerMock).toHaveBeenCalledTimes(1)
+    expect(sendSteerMock.mock.calls[0]?.[0]).toBe('steer me')
+    // 非 Enter 单按:不会调 sendMessage
+    expect(wrapper.emitted('send')).toBeFalsy()
+  })
+
+  it('streaming 时 Cmd/Ctrl+Enter 调 sendFollowUp(followUp 快捷键)', async () => {
+    const wrapper = makeWrapper({ isStreaming: true })
+    const input = wrapper.find('textarea')
+    await input.setValue('follow up')
+    // Cmd+Enter(macOS)
+    await input.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(sendFollowUpMock).toHaveBeenCalledTimes(1)
+    expect(sendFollowUpMock.mock.calls[0]?.[0]).toBe('follow up')
     expect(wrapper.emitted('send')).toBeFalsy()
   })
 
