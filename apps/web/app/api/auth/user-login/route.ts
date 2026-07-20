@@ -5,6 +5,7 @@ import {
   validateLoginBody,
   INVALID_CREDENTIALS_MESSAGE,
 } from "./validation";
+import { auditLog } from "@/lib/audit-log";
 
 const provider = getPasswordAuthProvider();
 
@@ -50,10 +51,23 @@ export async function POST(req: NextRequest) {
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
     });
+    void auditLog({
+      userId: user.userId,
+      action: "auth.login",
+      resourceType: "user",
+      resourceId: user.userId,
+      metadata: { username: validated.username },
+    });
     return res;
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     if (message === INVALID_CREDENTIALS_MESSAGE) {
+      void auditLog({
+        userId: null,
+        action: "auth.login_failed",
+        resourceType: "user",
+        metadata: { username: validated.username },
+      });
       return NextResponse.json(
         { error: "invalid credentials" },
         { status: 401 }

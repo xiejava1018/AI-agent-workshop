@@ -32,16 +32,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertPlatformAdmin } from "@/lib/permissions";
+import {
+  buildAuditLogWhere,
+  DEFAULT_AUDIT_LIMIT,
+  DEFAULT_AUDIT_PAGE,
+  MAX_AUDIT_LIMIT,
+  parseAuditLogFilters,
+  parsePositiveInt,
+} from "@/lib/audit-query";
 
 export const dynamic = "force-dynamic";
-
-// -----------------------------------------------------------------------------
-// Constants
-// -----------------------------------------------------------------------------
-
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 100;
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -59,26 +59,6 @@ function badRequestResponse(msg: string): NextResponse {
   return NextResponse.json({ error: msg }, { status: 400 });
 }
 
-/**
- * Parse a positive integer query param, falling back to `fallback` when the
- * value is absent or malformed. Never returns < 1.
- */
-function parsePositiveInt(raw: string | null, fallback: number): number {
-  if (raw == null) return fallback;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 1) return fallback;
-  return n;
-}
-
-/**
- * Parse an ISO date string into a Date, or return null if absent/invalid.
- */
-function parseIsoDate(raw: string | null): Date | null {
-  if (raw == null || raw.trim().length === 0) return null;
-  const d = new Date(raw);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
 // -----------------------------------------------------------------------------
 // GET — query audit logs (admin-only, paginated)
 // -----------------------------------------------------------------------------
@@ -91,32 +71,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const { searchParams } = new URL(req.url);
-
-  const userId = searchParams.get("userId");
-  const action = searchParams.get("action");
-  const resourceType = searchParams.get("resourceType");
-  const resourceId = searchParams.get("resourceId");
-  const from = parseIsoDate(searchParams.get("from"));
-  const to = parseIsoDate(searchParams.get("to"));
-
-  const page = parsePositiveInt(searchParams.get("page"), DEFAULT_PAGE);
+  const page = parsePositiveInt(searchParams.get("page"), DEFAULT_AUDIT_PAGE);
   const limit = Math.min(
-    parsePositiveInt(searchParams.get("limit"), DEFAULT_LIMIT),
-    MAX_LIMIT,
+    parsePositiveInt(searchParams.get("limit"), DEFAULT_AUDIT_LIMIT),
+    MAX_AUDIT_LIMIT,
   );
-
-  // Build the where clause from optional filters.
-  const where: Record<string, unknown> = {};
-  if (userId) where.userId = userId;
-  if (action) where.action = action;
-  if (resourceType) where.resourceType = resourceType;
-  if (resourceId) where.resourceId = resourceId;
-  if (from || to) {
-    const createdAt: Record<string, Date> = {};
-    if (from) createdAt.gte = from;
-    if (to) createdAt.lte = to;
-    where.createdAt = createdAt;
-  }
+  const where = buildAuditLogWhere(parseAuditLogFilters(searchParams));
 
   // Run count + page query in parallel. Newest first.
   const [total, entries] = await Promise.all([

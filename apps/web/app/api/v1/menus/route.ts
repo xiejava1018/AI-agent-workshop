@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +88,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       meta: JSON.stringify(meta),
     },
     select: { id: true, name: true },
+  });
+
+  void auditLog({
+    userId: callerId,
+    action: "menu.create",
+    resourceType: "menu",
+    resourceId: created.id,
+    metadata: { after: { ...body, meta } },
   });
 
   return NextResponse.json({

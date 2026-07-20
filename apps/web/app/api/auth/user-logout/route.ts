@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { revokeRefreshToken } from "@/lib/token-blacklist";
+import { auditLog } from "@/lib/audit-log";
 
 const COOKIE_AT = "pw_at";
 const COOKIE_RT = "pw_rt";
@@ -46,10 +47,14 @@ function clearBothCookies(res: NextResponse): void {
 
 export async function POST(req: NextRequest) {
   const refreshToken = req.cookies.get(COOKIE_RT)?.value;
+  let auditUserId = req.headers.get("x-user-id");
 
   if (refreshToken) {
     try {
       const { payload } = await jwtVerify(refreshToken, loadSecret());
+      if (!auditUserId && typeof payload.sub === "string") {
+        auditUserId = payload.sub;
+      }
       if (
         payload.type === "refresh" &&
         typeof payload.jti === "string" &&
@@ -64,5 +69,13 @@ export async function POST(req: NextRequest) {
 
   const res = NextResponse.json({ ok: true });
   clearBothCookies(res);
+  if (auditUserId) {
+    void auditLog({
+      userId: auditUserId,
+      action: "auth.logout",
+      resourceType: "user",
+      resourceId: auditUserId,
+    });
+  }
   return res;
 }

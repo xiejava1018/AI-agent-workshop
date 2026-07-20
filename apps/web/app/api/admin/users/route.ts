@@ -27,6 +27,7 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { assertPlatformAdmin } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 const BCRYPT_COST = 10;
 const PASSWORD_BYTES = 16; // 16 random bytes → 22-char base64url string
@@ -163,6 +164,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       data: { lastProjectId: projectId },
     });
     return { id: created.id, username: created.username };
+  });
+
+  void auditLog({
+    userId: callerId,
+    action: "user.create",
+    resourceType: "user",
+    resourceId: result.id,
+    metadata: { after: { username: result.username } },
   });
 
   return NextResponse.json({
