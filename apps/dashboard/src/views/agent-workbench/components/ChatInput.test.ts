@@ -499,15 +499,79 @@ describe('ChatInput — slash palette 集成', () => {
     wrapper.unmount()
   })
 
-  it('palette 打开时 Enter 不发送,只走 palette 自身的 select 路径(由 onKeydown 短路拦截)', async () => {
+  it('palette 打开时 Enter 选中 activeIndex 项,把 inputText 填为 "name + 末尾空格" 且不发送', async () => {
     const wrapper = makeWrapper()
     const input = wrapper.find('textarea')
     await input.setValue('/com')
     await nextTick()
-    // 触发 Enter——onKeydown 第一行检测到 isSlashPaletteOpen 直接 return,
-    // 不会调 handleSend 也不会 emit send。
+    // 默认 activeIndex=0,首项是 /compact(prefix 命中)
     await input.trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    // 真实断言:select 真的发生 → inputText 被填充为 "/compact "
+    expect(input.element.value).toBe('/compact ')
+    // 且没有走发送路径
     expect(wrapper.emitted('send')).toBeFalsy()
+    wrapper.unmount()
+  })
+
+  it('palette 打开时 ArrowUp 循环上移 activeIndex(从 0 wrap 到末项)', async () => {
+    // 构造 2 项命中:builtin /compact(prefix) + session /coampact(subsequence)
+    refs.slashCommands.value = [
+      { name: '/coampact', description: 'subsequence 命中', source: 'extension' }
+    ]
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/compact')
+    await nextTick()
+    let palette = wrapper.find('[data-testid="wb-slash-palette"]')
+    let options = palette.findAll('[role="option"]')
+    expect(options.length).toBe(2)
+    expect(options[0]?.attributes('aria-selected')).toBe('true')
+    // ArrowUp 从 0 循环到末项(index 1)
+    await input.trigger('keydown', { key: 'ArrowUp' })
+    await nextTick()
+    palette = wrapper.find('[data-testid="wb-slash-palette"]')
+    options = palette.findAll('[role="option"]')
+    expect(options[1]?.attributes('aria-selected')).toBe('true')
+    expect(options[0]?.attributes('aria-selected')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('palette 打开时 Escape 关闭面板且不清空 inputText', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/com')
+    await nextTick()
+    expect(wrapper.find('[data-testid="wb-slash-palette"]').exists()).toBe(true)
+    await input.trigger('keydown', { key: 'Escape' })
+    await nextTick()
+    // 面板消失
+    expect(wrapper.find('[data-testid="wb-slash-palette"]').exists()).toBe(false)
+    // inputText 不被 Escape 清空(只关面板,不删文本)
+    expect(input.element.value).toBe('/com')
+    wrapper.unmount()
+  })
+
+  it('3 档匹配顺序:prefix > contains > subsequence(builtin + mock session 混合)', async () => {
+    // /sub/compact 命中 contains(name 含 "/compact" 子串但非前缀)
+    // /coampact 命中 subsequence(query 字符按顺序出现,无连续子串)
+    refs.slashCommands.value = [
+      { name: '/sub/compact', description: 'contains 命中', source: 'extension' },
+      { name: '/coampact', description: 'subsequence 命中', source: 'extension' }
+    ]
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('/compact')
+    await nextTick()
+    const palette = wrapper.find('[data-testid="wb-slash-palette"]')
+    expect(palette.exists()).toBe(true)
+    const options = palette.findAll('[role="option"]')
+    // builtin /compact(prefix) > /sub/compact(contains) > /coampact(subsequence)
+    expect(options.map((o) => o.attributes('data-slash-name'))).toEqual([
+      '/compact',
+      '/sub/compact',
+      '/coampact'
+    ])
     wrapper.unmount()
   })
 

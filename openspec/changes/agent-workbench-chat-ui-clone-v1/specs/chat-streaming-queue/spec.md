@@ -61,13 +61,13 @@ Streaming 期间,Composer 上方显示一行或多行队列项。每项左侧带
 
 ### Requirement: slash 命令面板
 
-When `inputText.startsWith('/')` and length > 0, the system SHALL display a palette below the input showing a deduplicated union of: built-in commands (`/compact` / `/branch` / `/model` / `/fork`) and session commands loaded via `loadSlashCommands(sid)`. The system MUST fuzzy-match the query (after stripping `/`) using the ranking: exact prefix > contains > character-subsequence. The palette MUST use `role="listbox"`, items `role="option"`, and `aria-activedescendant` tracking the active item. ArrowUp/ArrowDown MUST move the active item; Enter SHALL select and replace the input text with the command name + trailing space; Escape or removal of `/` MUST close.
+When `inputText.startsWith('/')` and length > 1, the system SHALL display a palette below the input showing a deduplicated union of: built-in commands (`/compact` / `/branch` / `/model` / `/fork`) and session commands loaded via `loadSlashCommands(sid)`. The system MUST fuzzy-match the query (after stripping `/`) using the ranking: exact prefix > contains > character-subsequence. The palette MUST use `role="listbox"`, items `role="option"`, and `aria-activedescendant` tracking the active item. ArrowUp/ArrowDown MUST move the active item; Enter SHALL select and replace the input text with the command name + trailing space; Escape or removal of `/` MUST close.
 
 输入框文本以 `/` 开头时,在输入框下方弹出命令面板。面板按模型可见命令 + session 自定义命令 + 内置命令 union,模糊匹配文本(支持按命令名 + 别名 + 描述关键词)。
 
 #### Scenario: 触发面板
 
-- **WHEN** 输入框 `inputText.startsWith('/')` 且长度 > 0
+- **WHEN** 输入框 `inputText.startsWith('/')` 且长度 > 1
 - **THEN** 弹出命令面板(覆盖在输入框上方)
 - **AND** 自动 focus 到第一项
 - **AND** 计算 query = `inputText.slice(1)`(去掉 `/`)

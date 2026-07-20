@@ -151,6 +151,9 @@
   // —— Slash palette(T5.3)——
   // builtin + session commands 合并(去重),统一转成 palette item shape
   const slashActiveIndex = ref(0)
+  // 用户按 Escape 或外部 close 触发的手动关闭标志;inputText 变化时由下方 watch 重置,
+  // 让用户重新输入 / 后能再次打开面板。避免向只读 computed isSlashPaletteOpen 赋值。
+  const slashPaletteClosed = ref(false)
 
   /** builtin + useAgentSession.slashCommands 合并,转成 SlashCommandPaletteItem[] */
   const mergedSlashCommands = computed<SlashCommandPaletteItem[]>(() => {
@@ -218,13 +221,18 @@
     return [...exactPrefix, ...contains, ...subsequence]
   })
 
-  /** palette 打开条件:以 "/" 开头且长度 > 1(参考 B8 spec) */
+  /** palette 打开条件:以 "/" 开头且长度 > 1,且未被手动关闭(参考 B8 spec) */
   const isSlashPaletteOpen = computed(
-    () => inputText.value.startsWith('/') && inputText.value.length > 1
+    () =>
+      inputText.value.startsWith('/') &&
+      inputText.value.length > 1 &&
+      !slashPaletteClosed.value
   )
 
-  // inputText 变化导致 palette 重新过滤时,把 activeIndex 拉回 0 防止越界
+  // inputText 变化时:1) 清掉手动关闭标志(让重新输入 / 能再次打开);
+  // 2) activeIndex 越界时拉回 0 防止空指针。
   watch(inputText, () => {
+    slashPaletteClosed.value = false
     if (slashActiveIndex.value >= slashVisibleItems.value.length) {
       slashActiveIndex.value = 0
     }
@@ -233,6 +241,11 @@
   /** 选择 slash 项后填充 inputText(name + 末尾空格) */
   function onSlashSelect(item: SlashCommandPaletteItem): void {
     inputText.value = item.name + ' '
+  }
+
+  /** 关闭面板(Escape 或 SlashPalette @close 兜底)。不直接写 isSlashPaletteOpen(只读 computed)。 */
+  function closeSlashPalette(): void {
+    slashPaletteClosed.value = true
   }
 
   // —— 发送 ——
@@ -258,9 +271,49 @@
   // —— 键盘 ——
   function onKeydown(evt: Event | KeyboardEvent): void {
     const e = evt as KeyboardEvent
-    // T5.3:slash palette 打开时把键盘交给父级 ChatInput 内的 palette 拦截逻辑
-    // (T6 再与 isComposing 合并成 OR)。此处先独立短路,后续统一调整。
-    if (isSlashPaletteOpen.value) return
+    // T5.3:slash palette 打开时,面板专属键(ArrowUp/ArrowDown/Enter/Escape)优先拦截;
+    // 其它键 fall through 让 inputText 继续更新(用户能在面板打开时继续打字)。
+    // 结构与 T6 IME 守卫解耦:T6 会在本块之后、既有 Enter/steer/followUp/history 逻辑
+    // 之前插入 `if (isComposing.value) return`,此处不要把面板逻辑与 IME 耦合。
+    if (isSlashPaletteOpen.value) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        const n = slashVisibleItems.value.length
+        if (n > 0) {
+          slashActiveIndex.value = (slashActiveIndex.value + 1) % n
+        }
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        const n = slashVisibleItems.value.length
+        if (n > 0) {
+          // 循环减一:(-1 + n) % n = n - 1,避免 JS 负数取模负值
+          slashActiveIndex.value = (slashActiveIndex.value - 1 + n) % n
+        }
+        return
+      }
+      if (
+        e.key === 'Enter' &&
+        !e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        const item = slashVisibleItems.value[slashActiveIndex.value]
+        if (item) {
+          e.preventDefault()
+          onSlashSelect(item)
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeSlashPalette()
+        return
+      }
+      // 其它键(字符输入 / Tab 等)fall through,让 inputText 继续更新
+    }
     // Enter:发送(Shift+Enter 换行,留作浏览器默认行为)
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
@@ -435,7 +488,7 @@
       :active-index="slashActiveIndex"
       @select="onSlashSelect"
       @update:active-index="(i: number) => (slashActiveIndex = i)"
-      @close="isSlashPaletteOpen = false"
+      @close="closeSlashPalette"
     />
 
     <!-- @mention 提示(v1 占位) -->
