@@ -585,6 +585,51 @@ describe('ChatInput — slash palette 集成', () => {
   })
 })
 
+// =============================================================================
+// T6.1:IME 组合输入保护
+// =============================================================================
+
+describe('ChatInput — IME composition guard', () => {
+  it('compositionstart 后按 Enter 不发送(中文拼音 Enter 仅确认候选)', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('你好')
+    // 模拟 IME 组合开始:中文拼音尚未确认
+    await input.trigger('compositionstart')
+    await input.trigger('keydown', { key: 'Enter' })
+
+    // composition 期间 Enter 不应发送
+    expect(wrapper.emitted('send')).toBeFalsy()
+  })
+
+  it('compositionend 后按 Enter 正常发送', async () => {
+    const wrapper = makeWrapper()
+    const input = wrapper.find('textarea')
+    await input.setValue('你好')
+    await input.trigger('compositionstart')
+    // IME 组合结束,候选已确认写入
+    await input.trigger('compositionend')
+    await input.trigger('keydown', { key: 'Enter' })
+
+    const emitted = wrapper.emitted('send')
+    expect(emitted).toBeTruthy()
+    expect(emitted?.[0]?.[0]).toBe('你好')
+  })
+})
+
+// =============================================================================
+// T6.2:a11y —— queue slot region wrapper
+// =============================================================================
+
+describe('ChatInput — a11y', () => {
+  it('queue slot 被 role="region" 容器包裹(aria-label="Queued messages")', () => {
+    const wrapper = makeWrapper()
+    const region = wrapper.find('[role="region"]')
+    expect(region.exists()).toBe(true)
+    expect(region.attributes('aria-label')).toBe('Queued messages')
+  })
+})
+
 // 让 microtask 跑完(vi.fn().mockResolvedValue 链路)
 async function flushPromises(): Promise<void> {
   await Promise.resolve()

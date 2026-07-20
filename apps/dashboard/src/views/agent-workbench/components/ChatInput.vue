@@ -104,6 +104,10 @@
   const historyCursor = ref<number>(-1) // -1 = 不在历史模式
   const historyDraft = ref('') // 进入历史模式时保存的当前 draft,退出时还原
 
+  // IME 组合输入状态(T6.1):compositionstart 置 true,compositionend 置 false。
+  // onKeydown 顶部据此放行,避免中文拼音按 Enter 确认候选时误触发 handleSend。
+  const isComposing = ref(false)
+
   // 文本历史(从 localStorage)
   const HISTORY_KEY = 'wb-chat-input-history'
   const HISTORY_LIMIT = 50
@@ -268,13 +272,23 @@
     emit('abort')
   }
 
+  // —— IME 组合输入保护(T6.1)——
+  function onCompositionStart(): void {
+    isComposing.value = true
+  }
+
+  function onCompositionEnd(): void {
+    isComposing.value = false
+  }
+
   // —— 键盘 ——
   function onKeydown(evt: Event | KeyboardEvent): void {
     const e = evt as KeyboardEvent
+    // IME 保护:组合输入期间(中文拼音未确认)放行浏览器/IME 默认行为。
+    // 必须在 slash palette 块之前 —— 组合期间方向键等应交给 IME 候选,而非移动 palette activeIndex。
+    if (isComposing.value) return
     // T5.3:slash palette 打开时,面板专属键(ArrowUp/ArrowDown/Enter/Escape)优先拦截;
     // 其它键 fall through 让 inputText 继续更新(用户能在面板打开时继续打字)。
-    // 结构与 T6 IME 守卫解耦:T6 会在本块之后、既有 Enter/steer/followUp/history 逻辑
-    // 之前插入 `if (isComposing.value) return`,此处不要把面板逻辑与 IME 耦合。
     if (isSlashPaletteOpen.value) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -427,7 +441,9 @@
 <template>
   <div class="wb-chat-input" :class="{ 'wb-chat-input--drag': isDragOver }">
     <!-- chrome v1 B7:streaming 队列条(slot 由父级填充 StreamingQueueBar) -->
-    <slot name="queue" />
+    <div role="region" aria-label="Queued messages">
+      <slot name="queue" />
+    </div>
 
     <!-- 附件列表 -->
     <div v-if="attachments.length > 0" class="wb-chat-input__attachments">
@@ -478,6 +494,8 @@
       :disabled="disabled"
       class="wb-chat-input__textarea"
       @keydown="onKeydown"
+      @compositionstart="onCompositionStart"
+      @compositionend="onCompositionEnd"
     />
 
     <!-- T5:slash palette(以 "/" 开头且长度 > 1 时打开) -->
