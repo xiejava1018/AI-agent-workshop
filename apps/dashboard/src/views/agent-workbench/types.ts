@@ -44,6 +44,26 @@ export interface ToolCall {
   completedAt?: string
 }
 
+/**
+ * AgentMessage.usage —— SDK 在流期间(message_start / message_usage)携带的
+ * token 使用统计。chrome v1 T1.2b 由 useEventStream.message_usage case 写入
+ * rawMessages 中最后一条 assistant 消息的 usage 字段,供 T2.2 token footer
+ * 渲染使用。cost 为可选,产品决策不在 v1 footer 展示。
+ */
+export interface AgentMessageUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
+}
+
 export type StreamStatus = 'idle' | 'streaming' | 'done' | 'error' | 'cancelled'
 
 /**
@@ -80,7 +100,7 @@ export interface AgentMessage {
   /** Track B: 流状态机,用于 UI 区分 idle/streaming/done/error/cancelled */
   streamStatus?: StreamStatus
   // ↓ chrome v1 新增字段
-  /** SDK 在 message_start 携带的 token 用量(仅 assistant 有);footer 渲染依据 */
+  /** SDK 在 message_start / message_usage 携带的 token 用量(仅 assistant 有);footer 渲染依据 */
   usage?: AgentMessageUsage
   /** SDK entryId(stable id,用于 fork / navigate) */
   entryId?: string
@@ -125,13 +145,17 @@ export const ALLOWED_SSE_EVENTS = [
   'prompt_done',
   'error',
   'done',
-  // chrome v1:3 个新事件
+// chrome v1:4 个新事件
   // - queue_update:后端推 { steer, followUp } 更新,直接覆盖 queuedMessages
   // - thinking_level_changed:模型 thinking 档位变化
   // - model_changed:模型切换(provider+modelId)
+  // - message_usage(T1.2b):SDK 在流期间追加的 token 计数,
+  //   写入 rawMessages 中最后一条 assistant 消息的 usage 字段,
+  //   是 T2.2 token footer 渲染的依据
   'queue_update',
   'thinking_level_changed',
-  'model_changed'
+  'model_changed',
+  'message_usage'
 ] as const
 
 export type AllowedSseEvent = (typeof ALLOWED_SSE_EVENTS)[number]

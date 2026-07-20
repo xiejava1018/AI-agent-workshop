@@ -349,3 +349,83 @@ describe('useEventStream — sendMessage + resetMessages', () => {
     expect(streamStatus.value).toBe('idle')
   })
 })
+
+describe('useEventStream — message_usage event', () => {
+  it('writes usage into the last assistant message in rawMessages', () => {
+    const sessionId = ref('sess-1')
+    const { messages } = useEventStream(sessionId, 'user-1')
+    const es = stubInstances[0]
+
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
+    es?.emitMessage({ type: 'message_delta', content: 'hi' })
+    es?.emitMessage({
+      type: 'message_usage',
+      input: 100,
+      output: 50,
+      cacheRead: 0,
+      cacheWrite: 0
+    })
+
+    const assistantMsgs = messages.value.filter((m) => m.role === 'assistant')
+    expect(assistantMsgs.length).toBe(1)
+    expect(assistantMsgs[0]?.usage).toEqual({
+      input: 100,
+      output: 50,
+      cacheRead: 0,
+      cacheWrite: 0
+    })
+    // 内容与流状态保持不变,只追加 usage 字段
+    expect(assistantMsgs[0]?.content).toBe('hi')
+  })
+
+  it('warns and discards message_usage when payload is missing required fields', () => {
+    const sessionId = ref('sess-1')
+    const { messages } = useEventStream(sessionId, 'user-1')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const es = stubInstances[0]
+    es?.emitMessage({ type: 'message_start', message: { role: 'assistant' } })
+    const before = messages.value.length
+    const beforeSnapshot = JSON.stringify(messages.value)
+
+    // 缺 input / output
+    es?.emitMessage({ type: 'message_usage', cacheRead: 0, cacheWrite: 0 })
+    // 字段类型错误
+    es?.emitMessage({
+      type: 'message_usage',
+      input: 'bad',
+      output: 50,
+      cacheRead: 0,
+      cacheWrite: 0
+    })
+
+    expect(messages.value.length).toBe(before)
+    expect(JSON.stringify(messages.value)).toBe(beforeSnapshot)
+    expect(warnSpy).toHaveBeenCalled()
+    // assistant 消息上不应出现 usage
+    expect(messages.value[0]?.usage).toBeUndefined()
+
+    warnSpy.mockRestore()
+  })
+
+  it('warns and discards message_usage when no assistant message exists', () => {
+    const sessionId = ref('sess-1')
+    const { messages } = useEventStream(sessionId, 'user-1')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const es = stubInstances[0]
+    // 不发 message_start,messages 为空
+    es?.emitMessage({
+      type: 'message_usage',
+      input: 10,
+      output: 20,
+      cacheRead: 0,
+      cacheWrite: 0
+    })
+
+    expect(messages.value.length).toBe(0)
+    expect(warnSpy).toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
+})

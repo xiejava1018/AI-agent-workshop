@@ -49,6 +49,7 @@ import {
   ALLOWED_SSE_EVENTS,
   STREAM_TIMEOUT_MS,
   type AgentMessage,
+  type AgentMessageUsage,
   type StreamStatus
 } from '../types'
 
@@ -490,6 +491,45 @@ export function useEventStream(
         } else {
           console.warn('[useEventStream] model_changed 缺 provider/modelId 字段')
         }
+        return
+      }
+      // chrome v1 T1.2b:把 SDK 流期间追加的 token 计数写入 rawMessages 中
+      // 最后一条 assistant 消息的 usage 字段(不可变更新,新数组 + 新对象)。
+      // T2.2 token footer 渲染依赖该字段。
+      case 'message_usage': {
+        const input = raw.input
+        const output = raw.output
+        const cacheRead = raw.cacheRead
+        const cacheWrite = raw.cacheWrite
+        if (
+          typeof input !== 'number' ||
+          typeof output !== 'number' ||
+          typeof cacheRead !== 'number' ||
+          typeof cacheWrite !== 'number'
+        ) {
+          console.warn('[useEventStream] message_usage 缺字段或类型错误,丢弃')
+          return
+        }
+        const last = messages.value[messages.value.length - 1]
+        if (!last || last.role !== 'assistant') {
+          console.warn('[useEventStream] message_usage 无对应 assistant 消息,丢弃')
+          return
+        }
+        messages.value = [
+          ...messages.value.slice(0, -1),
+          {
+            ...last,
+            usage: {
+              input,
+              output,
+              cacheRead,
+              cacheWrite,
+              ...(raw.cost && typeof raw.cost === 'object'
+                ? { cost: raw.cost as AgentMessageUsage['cost'] }
+                : {})
+            }
+          }
+        ]
         return
       }
       default:
