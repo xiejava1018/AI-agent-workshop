@@ -194,6 +194,26 @@ describe("POST /api/v1/users", () => {
     expect(binding).not.toBeNull();
   });
 
+  it("XIE-23: records a user.create audit log entry", async () => {
+    const userId = await makePlatformAdmin();
+    const newUsername = uniqueUsername("audited");
+    const res = await POST(makePostReq({ userId, body: { username: newUsername } }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const auditRow = await prisma.auditLog.findFirst({
+      where: {
+        userId,
+        action: "user.create",
+        resourceType: "user",
+        resourceId: body.data.id,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    const meta = JSON.parse(auditRow!.metadata ?? "{}");
+    expect(meta.after.username).toBe(newUsername);
+  });
+
   it("returns 400 when roleCode unknown", async () => {
     const userId = await makePlatformAdmin();
     const res = await POST(

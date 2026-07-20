@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,12 @@ export async function PUT(
   const codes = body.permissionCodes.filter(
     (c): c is string => typeof c === "string"
   );
+  const beforeRows = await prisma.rolePermission.findMany({
+    where: { roleId },
+    select: { permission: { select: { code: true } } },
+  });
+  const beforeCodes = beforeRows.map((row) => row.permission.code);
+
   // 验所有 code 存在(防错字/越权)
   if (codes.length > 0) {
     const found = await prisma.permission.findMany({
@@ -104,6 +111,17 @@ export async function PUT(
   } else {
     await prisma.rolePermission.deleteMany({ where: { roleId } });
   }
+
+  void auditLog({
+    userId,
+    action: "role.assign_permission",
+    resourceType: "role",
+    resourceId: roleId,
+    metadata: {
+      before: { permissionCodes: beforeCodes },
+      after: { permissionCodes: codes },
+    },
+  });
 
   return NextResponse.json({
     code: 200,

@@ -290,6 +290,13 @@ export async function GET(
 
       const html = readFileSync(outputPath, "utf8");
       const patchedHtml = patchExportHtml(html);
+      void auditLog({
+        userId,
+        action: "session.export",
+        resourceType: "session",
+        resourceId: id,
+        metadata: { path: "/api/sessions/[id]/export" },
+      });
       return new Response(patchedHtml, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

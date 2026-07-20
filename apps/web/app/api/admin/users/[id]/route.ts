@@ -36,6 +36,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertPlatformAdmin } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 function unauthorizedResponse(): NextResponse {
   return NextResponse.json({ error: "auth required" }, { status: 401 });
@@ -127,6 +128,13 @@ export async function PATCH(
     data: { disabled },
     select: { id: true, username: true, disabled: true },
   });
+  void auditLog({
+    userId: callerId,
+    action: "user.disable",
+    resourceType: "user",
+    resourceId: targetId,
+    metadata: { before: { disabled: !disabled }, after: { disabled } },
+  });
 
   return NextResponse.json(updated);
 }
@@ -176,6 +184,13 @@ export async function DELETE(
     prisma.teamMember.deleteMany({ where: { userId: targetId } }),
     prisma.user.delete({ where: { id: targetId } }),
   ]);
+  void auditLog({
+    userId: callerId,
+    action: "user.delete",
+    resourceType: "user",
+    resourceId: targetId,
+    metadata: { before: target },
+  });
 
   return NextResponse.json({ id: targetId, deleted: true });
 }

@@ -14,6 +14,7 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,13 @@ export async function PUT(
   await prisma.user.update({
     where: { id },
     data: { passwordHash, mustChangePassword: true },
+  });
+  void auditLog({
+    userId: callerId,
+    action: "user.reset_password",
+    resourceType: "user",
+    resourceId: id,
+    metadata: { username: target.username },
   });
 
   return NextResponse.json({

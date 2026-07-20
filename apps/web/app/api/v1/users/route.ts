@@ -21,6 +21,7 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -151,6 +152,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       data: roleIds.map((rid) => ({ userId: user.id, roleId: rid })),
     });
   }
+
+  void auditLog({
+    userId: callerId,
+    action: "user.create",
+    resourceType: "user",
+    resourceId: user.id,
+    metadata: { after: { username: user.username, roleCodes: body.roleCodes ?? [] } },
+  });
 
   return NextResponse.json({
     code: 200,

@@ -23,6 +23,7 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { assertPlatformAdmin } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 const BCRYPT_COST = 10;
 const PASSWORD_BYTES = 16; // 16 random bytes → 22-char base64url string
@@ -88,6 +89,13 @@ export async function POST(
   await prisma.user.update({
     where: { id: targetId },
     data: { passwordHash, mustChangePassword: true },
+  });
+  void auditLog({
+    userId: callerId,
+    action: "user.reset_password",
+    resourceType: "user",
+    resourceId: targetId,
+    metadata: { username: target.username },
   });
 
   return NextResponse.json({ initialPassword });
