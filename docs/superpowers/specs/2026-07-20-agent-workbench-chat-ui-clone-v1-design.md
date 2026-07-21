@@ -2,6 +2,8 @@
 comet_change: agent-workbench-chat-ui-clone-v1
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-21-agent-workbench-chat-ui-clone-v1
+status: final
 ---
 
 # Technical Design: Agent 工作台聊天窗口 · 阶段 1 复刻

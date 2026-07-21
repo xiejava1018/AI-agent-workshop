@@ -2,6 +2,7 @@
 change: agent-workbench-chat-ui-clone-v1
 design-doc: docs/superpowers/specs/2026-07-20-agent-workbench-chat-ui-clone-v1-design.md
 base-ref: 081c98b415d97826eacebfa87cbeade30c300d28
+archived-with: 2026-07-21-agent-workbench-chat-ui-clone-v1
 ---
 
 # Agent 工作台聊天窗口 · 阶段 1 复刻 —— 恢复实施计划
