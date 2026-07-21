@@ -167,7 +167,7 @@ const MENUS: ParentSeed[] = [
         name: "platform-models",
         title: "模型配置",
         path: "/admin/models",
-        component: "/platform/index",
+        component: "/system/models/index",
         sort: 4,
         permissionCodes: ["model:view"],
         icon: "ri:cpu-line"

@@ -17,6 +17,7 @@ export enum RoutesAlias {
   Menu = '/system/menu', // 菜单
   AuditLog = '/system/audit-log/index', // 审计日志
   SystemConfig = '/system/config', // 系统配置
+  ModelsConfig = '/system/models/index', // 模型配置
   Assets = '/asset/list/index', // 资产管理
   AssetOverview = '/asset/overview/index', // 资产概览
   AssetDetail = '/asset/detail/index', // 资产详情
