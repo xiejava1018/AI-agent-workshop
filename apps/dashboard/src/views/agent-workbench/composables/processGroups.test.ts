@@ -8,6 +8,8 @@ import {
   hasFinalAssistantAnswer,
   isEmptyThinkingBlock,
   processGroups,
+  splitAssistantMessageByBlocks,
+  processMessagesForDisplay,
 } from './processGroups'
 
 const makeText = (role: AgentMessage['role'], content: string, id: string): AgentMessage => ({
@@ -221,5 +223,86 @@ describe('isEmptyThinkingBlock', () => {
   })
   it('含 text block → false', () => {
     expect(isEmptyThinkingBlock(assistantArrayAt([{ type: 'text', text: 'hi' }], 'a1'))).toBe(false)
+  })
+})
+
+describe('splitAssistantMessageByBlocks', () => {
+  it('content string 不拆', () => {
+    const m: AgentMessage = { id: 'a1', role: 'assistant', content: 'plain text', createdAt: 't' }
+    expect(splitAssistantMessageByBlocks(m)).toEqual([m])
+  })
+  it('<3 blocks 不拆', () => {
+    const m: AgentMessage = {
+      id: 'a1', role: 'assistant',
+      content: [{ type: 'text', text: 'a' }, { type: 'thinking', thinking: 't' }],
+      createdAt: 't',
+    }
+    expect(splitAssistantMessageByBlocks(m)).toEqual([m])
+  })
+  it('≥3 blocks 但全 thinking 不拆', () => {
+    const m: AgentMessage = {
+      id: 'a1', role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 't1' },
+        { type: 'thinking', thinking: 't2' },
+        { type: 'thinking', thinking: 't3' },
+      ],
+      createdAt: 't',
+    }
+    expect(splitAssistantMessageByBlocks(m)).toEqual([m])
+  })
+  it('≥3 blocks 含 toolCall → 拆为 n 条虚拟 message', () => {
+    const m: AgentMessage = {
+      id: 'a1', role: 'assistant',
+      content: [
+        { type: 'text', text: 'hi' },
+        { type: 'toolCall', toolCallId: 't1', toolName: 'bash', input: {} },
+        { type: 'text', text: 'result' },
+        { type: 'thinking', thinking: 'tail' },
+      ],
+      createdAt: 't',
+    }
+    const out = splitAssistantMessageByBlocks(m)
+    expect(out.length).toBe(4)
+    expect(out[0]?.id).toBe('a1__block-0')
+    expect(out[3]?.id).toBe('a1__block-3')
+  })
+})
+
+describe('processMessagesForDisplay - block-level 折叠', () => {
+  it('单 assistant message 多 blocks (≥3 + displayable) → 进 group', () => {
+    const assistantMsg: AgentMessage = {
+      id: 'a1', role: 'assistant',
+      content: [
+        { type: 'text', text: 'step 1' },
+        { type: 'toolCall', toolCallId: 't1', toolName: 'bash', input: {} },
+        { type: 'text', text: 'step 2' },
+        { type: 'text', text: 'final' },
+      ],
+      createdAt: 't',
+    }
+    // u1 → flat. a1 拆 4 → 4 virtual assistants → segment len=4 ≥3 + displayable → last final → group[3] + flat[1]
+    const out = processMessagesForDisplay([userAt('u1', 'u1'), assistantMsg])
+    expect(out.length).toBe(3)
+    expect(out[0]?.type).toBe('message')
+    expect(out[1]?.type).toBe('group')
+    if (out[1]?.type === 'group') expect(out[1].messages.length).toBe(3)
+    expect(out[2]?.type).toBe('message')
+  })
+
+  it('单 message 3 blocks 全 thinking → 不折叠', () => {
+    const m: AgentMessage = {
+      id: 'a1', role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 't1' },
+        { type: 'thinking', thinking: 't2' },
+        { type: 'thinking', thinking: 't3' },
+      ],
+      createdAt: 't',
+    }
+    const out = processMessagesForDisplay([userAt('u1', 'u1'), m])
+    expect(out.length).toBe(2)
+    expect(out[0]?.type).toBe('message')
+    expect(out[1]?.type).toBe('message')
   })
 })

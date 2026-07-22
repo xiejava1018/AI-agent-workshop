@@ -73,6 +73,71 @@ export function countToolCallsInGroup(messages: readonly AgentMessage[]): number
 }
 
 /**
+ * 把单条 assistant message 按 block 拆开成多条虚拟 message(仅在 content 是 array 形态时)。
+ * 用于在一条 assistant message 同时含多 block 时也能触发折叠。
+ *
+ * 拆解策略:
+ *   - thinking + toolCall 类型的 block → 拆出独立虚拟 message(role=assistant, content: [{type:block}])
+ *   - text 类型 block → 注入相邻 content message 形成单 assistant 的"完整内容"
+ *   - image 类型 block → 独立虚拟 message
+ *
+ * 返回原 message(若无需拆解)+ 拆出的虚拟 message 列表(用于 processGroups 折叠)。
+ *
+ * 触发条件(单条 assistant message content 是 array ≥ 3 blocks):
+ *   - cnt(blocks) ≥ 3
+ *   - cnt(blocks where type !== 'thinking') ≥ 1 (有 text / toolCall / image 显示性)
+ */
+export function splitAssistantMessageByBlocks(msg: AgentMessage): AgentMessage[] {
+  if (msg.role !== 'assistant') return [msg]
+  const c = msg.content
+  if (!Array.isArray(c)) return [msg]
+  if (c.length < 3) return [msg]
+  // 算 displayable 数量
+  let displayable = 0
+  for (const b of c) {
+    if (b.type !== 'thinking') displayable++
+  }
+  if (displayable < 1) return [msg]
+
+  // 拆:每个 block 独立成虚拟 message,共享同一原始 id + 创建时间
+  const baseProps = {
+    id: msg.id,
+    role: 'assistant' as const,
+    createdAt: msg.createdAt,
+    modelProvider: msg.modelProvider,
+    modelId: msg.modelId,
+    entryId: msg.entryId,
+    prevAssistantEntryId: msg.prevAssistantEntryId,
+  }
+  // 拆是 n 条相同 id 会让 v-for key 冲突 → 给每条加 suffix
+  const out: AgentMessage[] = []
+  for (let i = 0; i < c.length; i++) {
+    const block = c[i]!
+    out.push({
+      ...baseProps,
+      id: `${msg.id}__block-${i}`,
+      content: [block] as AssistantContentBlock[],
+    })
+  }
+  return out
+}
+
+/**
+ * 按 block 拆解所有 assistant messages,然后调用 processGroups。
+ * 一个 message ≥ 3 blocks 的 special case 触发 ProcessDetailsGroup。
+ */
+export function processMessagesForDisplay(messages: readonly AgentMessage[]): RenderItem[] {
+  // Step 1: 把多 block 的 assistant messages 展开为多条虚拟 messages
+  const expanded: AgentMessage[] = []
+  for (const m of messages) {
+    const splitted = splitAssistantMessageByBlocks(m)
+    for (const s of splitted) expanded.push(s)
+  }
+  // Step 2: 跑 processGroups
+  return processGroups(expanded)
+}
+
+/**
  * 扫描 messages,寻找可折叠的连续 assistant 序列。
  * Trigger:
  *   - segment.length ≥ 3 consecutive assistant

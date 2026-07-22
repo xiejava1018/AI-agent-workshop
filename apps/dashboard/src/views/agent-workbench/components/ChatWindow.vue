@@ -23,7 +23,7 @@
   import MessageView from './MessageView.vue'
   import { useAgentSession } from '../composables/useAgentSession'
   import type { AgentMessage, Branch, QueueItem } from '../types'
-  import { processGroups, type RenderItem } from '../composables/processGroups'
+  import { processMessagesForDisplay, type RenderItem } from '../composables/processGroups'
   import ProcessDetailsGroup from './ProcessDetailsGroup.vue'
 
   interface Props {
@@ -182,7 +182,7 @@
    * 把连续 assistant 序列折叠成 RenderItem 序列(参考 apps/web 的 ProcessDetailsGroup 行为)。
    * 模板用 v-for 渲染;group 类型用 ProcessDetailsGroup 包裹,message 类型用 MessageView 平铺。
    */
-  const renderItems = computed<readonly RenderItem[]>(() => processGroups(readonlyMessages.value))
+  const renderItems = computed<readonly RenderItem[]>(() => processMessagesForDisplay(readonlyMessages.value))
 
   /**
    * 计算每条 message 的 entryId / prevAssistantEntryId:
