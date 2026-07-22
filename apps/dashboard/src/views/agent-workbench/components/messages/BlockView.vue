@@ -14,19 +14,53 @@
  * 对应 OpenSpec spec.md "BlockView 组件契约" Requirement。
  */
 import type { AssistantContentBlock } from '../../types/assistant-blocks'
+import TextBlock from './TextBlock.vue'
+import ThinkingBlock from './ThinkingBlock.vue'
+import ToolCallBlock from './ToolCallBlock.vue'
+import ImageBlock from './ImageBlock.vue'
 
 interface Props {
   blocks: readonly AssistantContentBlock[]
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   blocks: () => [] as readonly AssistantContentBlock[]
 })
+
+/**
+ * T3.4 MVP stable-key strategy: prefer block.id when present (future T4.x may add it),
+ * else fall back to `${type}-${index}` which is stable across re-renders for the same
+ * blocks array reference. Good enough for v-for dispatch; will revisit when subcomponents
+ * need persistent keyed state.
+ */
+function blockKey(block: AssistantContentBlock, index: number): string | number {
+  const id = (block as { id?: string }).id
+  return id ?? `${block.type}-${index}`
+}
 </script>
 
 <template>
-  <!-- T3.2 will fill the v-for dispatch; T3.1 leaves it empty for now -->
-  <span data-testid="wb-block-view-placeholder" />
+  <template v-if="props.blocks && props.blocks.length > 0">
+    <template v-for="(block, index) in props.blocks" :key="blockKey(block, index)">
+      <TextBlock
+        v-if="block.type === 'text'"
+        :block="block"
+      />
+      <ThinkingBlock
+        v-else-if="block.type === 'thinking'"
+        :block="block"
+        :streaming="false"
+      />
+      <ToolCallBlock
+        v-else-if="block.type === 'toolCall'"
+        :block="block"
+      />
+      <ImageBlock
+        v-else-if="block.type === 'image'"
+        :block="block"
+      />
+    </template>
+  </template>
 </template>
 
 <style scoped>
