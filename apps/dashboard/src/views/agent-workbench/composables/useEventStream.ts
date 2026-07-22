@@ -52,11 +52,28 @@ import {
   type AgentMessageUsage,
   type StreamStatus
 } from '../types'
+import type { AssistantContentBlock } from '../types/assistant-blocks'
 
 /** 内部窄事件:useEventStream 透传的所有事件 type */
 export interface StreamEvent {
   readonly type: string
   readonly data: unknown
+}
+
+/**
+ * normalizeContent — 把 SSE event 的 content 字段归一化为 AssistantContentBlock[]。
+ * 4 种输入形态:
+ *   null / undefined → []
+ *   string → [{type:'text', text:string}]
+ *   单对象(block 但不在数组里) → [block]
+ *   array → array(identity,不 copy)
+ * idempotent。调用方(T2.4)在所有 emit AgentMessage 的点位跑这个函数。
+ *
+ * 对应 OpenSpec spec.md "SSE 入口归一化" Requirement 的 scenario (a)–(d)。
+ */
+export function normalizeContent(raw: unknown): AssistantContentBlock[] {
+  // T2.2 implementer 将在此填入 4 形态 dispatch。
+  return []
 }
 
 /**
