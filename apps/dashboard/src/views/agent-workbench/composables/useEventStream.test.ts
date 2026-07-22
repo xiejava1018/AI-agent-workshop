@@ -220,7 +220,9 @@ describe('useEventStream — narrow whitelist', () => {
 
     expect(messages.value.length).toBe(1)
     expect(messages.value[0]?.role).toBe('assistant')
-    expect(messages.value[0]?.content).toBe('Hello World')
+    // T2.4:message_end 后 content 归一化为 AssistantContentBlock[] 形态
+    //(对应 useEventStream.ts message_end case 末尾 normalizeContent + normalizeContentBlocks)
+    expect(messages.value[0]?.content).toEqual([{ type: 'text', text: 'Hello World' }])
     expect(messages.value[0]?.streamStatus).toBe('done')
   })
 })
@@ -239,7 +241,8 @@ describe('useEventStream — SDK event bridge', () => {
     es?.emitMessage({ type: 'message_end', message: { role: 'assistant' } })
 
     expect(messages.value).toHaveLength(1)
-    expect(messages.value[0]?.content).toBe('Hello from SDK')
+    // T2.4:message_end 后 content 归一化为 AssistantContentBlock[] 形态
+    expect(messages.value[0]?.content).toEqual([{ type: 'text', text: 'Hello from SDK' }])
     expect(messages.value[0]?.streamStatus).toBe('done')
   })
 
