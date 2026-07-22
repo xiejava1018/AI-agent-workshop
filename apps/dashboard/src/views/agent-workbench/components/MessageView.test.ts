@@ -30,6 +30,43 @@ describe('MessageView', () => {
     expect(wrapper.find('.wb-message--assistant').exists()).toBe(true)
   })
 
+  // ── G5:assistant role 新增 block 路由测试 ────────────────────────────────
+  it('G5: assistant with AssistantContentBlock[] content - 渲染 BlockView', () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        message: baseMsg({
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'first' },
+            { type: 'thinking', thinking: 'reasoning' },
+            { type: 'toolCall', toolCallId: 'abc', toolName: 'bash', input: { command: 'ls' } },
+            { type: 'image', source: { type: 'url', url: 'https://example.com/x.png' } },
+          ],
+        })
+      }
+    })
+    expect(wrapper.find('.wb-message__blocks').exists()).toBe(true)
+    expect(wrapper.html()).toContain('first')
+    expect(wrapper.html()).toContain('reasoning')
+    expect(wrapper.html()).toContain('[bash]')
+  })
+
+  it('G5: assistant with string content (streaming) - 仍走 markdown 渲染', () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        message: baseMsg({
+          role: 'assistant',
+          content: 'plain streaming text',
+          streamStatus: 'streaming',
+        })
+      }
+    })
+    expect(wrapper.find('.wb-message__blocks').exists()).toBe(true)
+    expect(wrapper.html()).toContain('plain streaming text')
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+
   it('renders tool message in monospace style', () => {
     const wrapper = mount(MessageView, {
       props: { message: baseMsg({ role: 'tool', content: '[bash] echo hi' }) }

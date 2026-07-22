@@ -210,11 +210,9 @@
 
         <!-- G5:assistant role 用 BlockView 树形分发(text/thinking/toolCall/image)。
              contentAsString 仍保留给 MessageActionBar / streaming-tag 内部使用。 -->
-        <BlockView
-          v-if="isAssistant && messageBlocks.length > 0"
-          :blocks="messageBlocks"
-          class="wb-message__blocks"
-        />
+        <div v-if="isAssistant && messageBlocks.length > 0" class="wb-message__blocks">
+          <BlockView :blocks="messageBlocks" />
+        </div>
 
         <!-- 流式 / 错误 / 取消 状态标记 -->
         <div
