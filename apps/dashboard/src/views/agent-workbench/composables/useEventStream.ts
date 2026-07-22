@@ -190,9 +190,18 @@ export function normalizeAgentWorkbenchEvent(
   }
 
   if (type === 'message_update') {
+    // 2026-07-22 wire 修复:SDK message_update event 带 raw.message(完整 AgentMessage,
+    // content 是 AssistantContentBlock[])。之前只透传 assistantMessageEvent.delta
+    // (string),丢失结构化 content,导致 BlockView/ProcessDetails 拿不到 block 数组。
+    // 现在:优先透传 raw.message.content(array);若 message 缺失,fallback 到 delta string
+    // (向后兼容老 provider)。
+    const rawMsg = raw.message as { content?: unknown } | undefined
     const inner = raw.assistantMessageEvent as { type?: unknown; delta?: unknown } | undefined
+    if (rawMsg && Array.isArray(rawMsg.content)) {
+      return { type: 'message_delta', content: rawMsg.content, contentIsArray: true }
+    }
     if (inner && inner.type === 'text_delta' && typeof inner.delta === 'string') {
-      return { type: 'message_delta', content: inner.delta }
+      return { type: 'message_delta', content: inner.delta, contentIsArray: false }
     }
     return null
   }
@@ -463,23 +472,33 @@ export function useEventStream(
         return
       }
       case 'message_delta': {
-        const delta = typeof raw.content === 'string' ? raw.content : ''
+        // 2026-07-22 wire 修复:若归一化层透传了 contentIsArray=true(SDK message_update
+        // 带完整 message.content array),直接用 array 替换 last.content,不再 string 累积。
+        // 这样 streaming 期间 content 始终是 AssistantContentBlock[],BlockView + 折叠都能工作。
+        // 向后兼容:contentIsArray=false 时走老路径(string concat / fallback wrap)。
+        const contentIsArray = raw.contentIsArray === true
         const last = messages.value[messages.value.length - 1]
-        if (last && last.role === 'assistant') {
-          // T2.5:content 是 `string | AssistantContentBlock[]`。message_delta 阶段
-          // streaming 累积,last.content 从 message_start 过来是初始 string '',
-          // 后续 message_delta 都是 string concat。若 server 提前推 message_end
-          // 之后又补 delta(off-lifecycle 异常),此时 last.content 已是数组,
-          // 我们直接把数组用 delta 续写不合理 —— 退化覆盖为单 text block,
-          // 保障下游 '.content' 字段形态单一可读。
+        if (contentIsArray && last && last.role === 'assistant') {
+          // array 形态:用 normalizeContentBlocks 重命名 SDK→mirror,直接替换
+          const blocks = normalizeContentBlocks(
+            normalizeContent(raw.content as unknown)
+          )
+          messages.value = [
+            ...messages.value.slice(0, -1),
+            { ...last, content: blocks }
+          ]
+        } else if (!contentIsArray && last && last.role === 'assistant') {
+          // 老 string delta 路径(向后兼容)
+          const delta = typeof raw.content === 'string' ? raw.content : ''
           const nextContent: AgentMessage['content'] =
             typeof last.content === 'string' ? last.content + delta : [{ type: 'text', text: delta }]
           messages.value = [
             ...messages.value.slice(0, -1),
             { ...last, content: nextContent }
           ]
-        } else {
-          // 兜底:没占位直接 push
+        } else if (!contentIsArray) {
+          // 兜底:没占位直接 push(仅 string 路径)
+          const delta = typeof raw.content === 'string' ? raw.content : ''
           messages.value = [
             ...messages.value,
             {
