@@ -52,7 +52,7 @@ import {
   type AgentMessageUsage,
   type StreamStatus
 } from '../types'
-import type { AssistantContentBlock } from '../types/assistant-blocks'
+import type { AssistantContentBlock, ToolCallContent } from '../types/assistant-blocks'
 
 /** 内部窄事件:useEventStream 透传的所有事件 type */
 export interface StreamEvent {
@@ -89,6 +89,57 @@ export function normalizeContent(raw: unknown): AssistantContentBlock[] {
   // single block object — wrap
   if (typeof raw === 'object') return [raw as AssistantContentBlock]
   return []
+}
+
+/**
+ * normalizeContentBlocks — 把 SDK wire 形态的 AssistantContentBlock[] 重命名 / 形状转换为 mirror 形态。
+ *
+ * 转换规则:
+ *   toolCall: SDK `{id, name, arguments}` → mirror `{toolCallId, toolName, input}`(若已 mirror 则保持)
+ *   image: SDK 扁平 `{data, mimeType}` → mirror 嵌套 `{source:{type:'base64', media_type, data}}`;
+ *         嵌套 source 形态不变(URL / base64 都透传)
+ *   text / thinking: 透传
+ *
+ * 结构上 idempotent。输入数组本身不修改;输出新数组(必要时分元素拷贝)。
+ * 对应 OpenSpec spec.md "SSE 入口归一化" Requirement 的两个新 scenario:
+ *   toolCall wire 字段重命名、image 形状转换。
+ *
+ * 参考 apps/web/lib/normalize.ts:normalizeToolCallBlock 的 rename 层,
+ *     apps/web/components/MessageView.tsx:imageSource 的双形态识别。
+ */
+export function normalizeContentBlocks(blocks: AssistantContentBlock[]): AssistantContentBlock[] {
+  return blocks.map((block) => {
+    if (block.type === 'toolCall') {
+      const result = { ...block } as ToolCallContent
+      if (result.toolCallId === undefined && (block as { id?: string }).id !== undefined) {
+        result.toolCallId = (block as { id?: string }).id as string
+      }
+      if (result.toolName === undefined && (block as { name?: string }).name !== undefined) {
+        result.toolName = (block as { name?: string }).name as string
+      }
+      if (result.input === undefined && (block as { arguments?: Record<string, unknown> }).arguments !== undefined) {
+        result.input = (block as { arguments?: Record<string, unknown> }).arguments as Record<string, unknown>
+      }
+      return result
+    }
+    if (block.type === 'image') {
+      // SDK flat shape: {type:'image', data, mimeType}
+      if ('data' in block && 'mimeType' in block && !('source' in block)) {
+        const flat = block as { data: string; mimeType: string }
+        return {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: flat.mimeType,
+            data: flat.data,
+          },
+        }
+      }
+      // already mirror nested shape: pass through
+      return block
+    }
+    return block
+  })
 }
 
 /**
