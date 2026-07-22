@@ -23,11 +23,14 @@ interface Props {
   blocks: readonly AssistantContentBlock[]
   /** toolResult 按 toolCallId 聚合的 Map,透传给 ToolCallBlock */
   pairedResults?: ReadonlyMap<string, unknown>
+  /** ToolCallBlock 默认展开(在 ProcessDetailsGroup 内时) */
+  toolCallDefaultOpen?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   blocks: () => [] as readonly AssistantContentBlock[],
-  pairedResults: () => new Map<string, unknown>()
+  pairedResults: () => new Map<string, unknown>(),
+  toolCallDefaultOpen: false
 })
 
 /**
@@ -58,6 +61,7 @@ function blockKey(block: AssistantContentBlock, index: number): string | number 
         v-else-if="block.type === 'toolCall'"
         :block="block"
         :paired-results="props.pairedResults"
+        :default-open="props.toolCallDefaultOpen"
       />
       <ImageBlock
         v-else-if="block.type === 'image'"

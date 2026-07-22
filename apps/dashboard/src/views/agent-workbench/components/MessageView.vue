@@ -240,7 +240,7 @@
             :message-count="1"
             :tool-call-count="processToolCallCount"
           >
-            <BlockView :blocks="processBlocks" :paired-results="props.pairedResults" />
+            <BlockView :blocks="processBlocks" :paired-results="props.pairedResults" tool-call-default-open />
           </ProcessDetailsGroup>
           <!-- 最终回复:text + image blocks,独立渲染 -->
           <div v-if="answerBlocks.length > 0" class="wb-message__blocks">

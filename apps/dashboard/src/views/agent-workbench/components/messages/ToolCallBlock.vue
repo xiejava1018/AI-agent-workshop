@@ -36,10 +36,13 @@ interface Props {
    * 缺失对应 toolCallId → 显示 spinner(命令仍在执行)。
    */
   pairedResults?: ReadonlyMap<string, PairedToolResultLike> | ReadonlyMap<string, unknown>
+  /** 在 ProcessDetailsGroup 内部时默认展开,显示完整 input + result */
+  defaultOpen?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   pairedResults: undefined,
+  defaultOpen: false,
 })
 
 const copyState = ref<'idle' | 'copied' | 'failed'>('idle')
@@ -52,12 +55,22 @@ function getPairedResult(): PairedToolResultLike | undefined {
   return r as PairedToolResultLike | undefined
 }
 
+/**
+ * 从 toolCall input 提取人类可读预览(对齐 apps/web getToolPreview)。
+ * 优先常见字段:command / path / file_path / pattern / query;否则取第一个值。
+ */
 function previewInput(): string {
-  try {
-    return JSON.stringify(props.block.input).slice(0, 60)
-  } catch {
-    return ''
-  }
+  const input = props.block.input
+  if (!input || typeof input !== 'object') return ''
+  const keys = Object.keys(input)
+  if (keys.length === 0) return ''
+  if ('command' in input) return String((input as { command: unknown }).command).slice(0, 120)
+  if ('path' in input) return String((input as { path: unknown }).path).slice(0, 120)
+  if ('file_path' in input) return String((input as { file_path: unknown }).file_path).slice(0, 120)
+  if ('pattern' in input) return String((input as { pattern: unknown }).pattern).slice(0, 120)
+  if ('query' in input) return String((input as { query: unknown }).query).slice(0, 120)
+  const first = (input as Record<string, unknown>)[keys[0]!]
+  return String(first).slice(0, 120)
 }
 
 function fullPayload(): string {
@@ -118,11 +131,10 @@ const isExecuting = computed<boolean>(() => paired === undefined)
       <span class="wb-toolcall__preview">{{ previewInput() }}</span>
       <span class="wb-toolcall__id">{{ props.block.toolCallId }}</span>
     </template>
-    <details v-else>
+    <details v-else :open="props.defaultOpen">
       <summary class="wb-toolcall__summary">
-        <span class="wb-toolcall__name">[{{ props.block.toolName }}]</span>
+        <span class="wb-toolcall__name">{{ props.block.toolName }}</span>
         <span class="wb-toolcall__preview">{{ previewInput() }}</span>
-        <span class="wb-toolcall__id">{{ props.block.toolCallId }}</span>
         <button
           type="button"
           class="wb-toolcall__copy"
