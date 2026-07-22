@@ -39,16 +39,16 @@ import type {
 import type { AssistantContentBlock } from '../types/assistant-blocks'
 
 /**
- * T2.5:合并两层 AgentMessage.content(merge 收敛于 rebuildIndex)。
+ * mergeAssistantContent — combine two content shapes emitted under the same stableId.
  *
- * 形态分支:
- *   - string + string                   → string concat
- *   - array  + array                    → 浅拷贝数组 spread concat(no-mutation)
- *   - string + array                    → 返回 array(后者是 done 阶段完整列表,overwrite)
- *   - array  + string                   → 返回 array(后者是 message_delta 滞后到达,
- *                                              已是 done 形态的 cumulative 视图优先)
+ * 4 cases:
+ *   array + array → spread-concat (new array)
+ *   string + string → string concat (strings are immutable; fine)
+ *   array + string → [...a, {type:'text', text:b}] (string promoted to text block)
+ *   string + array → [{type:'text', text:a}, ...b] (string promoted to text block)
  *
- * no-mutation:输入引用一律不修改,产出新字符串或新数组。
+ * No-mutation invariant: never returns an input array by reference; always allocates
+ * a fresh array. Strings are immutable in JS so the string+string case is also safe.
  */
 function mergeAssistantContent(
   a: AgentMessage['content'],
@@ -56,8 +56,13 @@ function mergeAssistantContent(
 ): AgentMessage['content'] {
   if (typeof a === 'string' && typeof b === 'string') return a + b
   if (Array.isArray(a) && Array.isArray(b)) return [...a, ...b]
-  if (Array.isArray(a) && typeof b === 'string') return a
-  if (typeof a === 'string' && Array.isArray(b)) return b
+  if (Array.isArray(a) && typeof b === 'string') {
+    // promote string to a trailing text block, then concatenate
+    return [...a, { type: 'text', text: b }]
+  }
+  if (typeof a === 'string' && Array.isArray(b)) {
+    return [{ type: 'text', text: a }, ...b]
+  }
   // unreachable 但保留上游契约:fallback 用 b,作为单一类型 token
   return b
 }
