@@ -201,8 +201,16 @@ export function normalizeAgentWorkbenchEvent(
     // chrome v1:message_end 上有时也会带最终 usage(provider 计费修改)。
     // 注意:SDK 在 message_start 一次性给完成 usage 时 message_end 没有;
     // 反过来,某些 provider 在 message_end 上结算,这里我们也要透传。
-    const rawMsg = raw.message as { usage?: unknown } | undefined
-    return rawMsg?.usage ? { type: 'message_end', usage: rawMsg.usage } : { type: 'message_end' }
+    //
+    // T2.4:服务端在 message_end 把完整 `message.content: AssistantContentBlock[]`
+    // 一次性推送(dash 设计 R2-bis 已确认)。归一化器在 handleEvent.message_end
+    // case 跑;这里只透传 raw shape,不做形态判断(保持与 SDK 约定对齐)。
+    const rawMsg = raw.message as { usage?: unknown; content?: unknown } | undefined
+    return {
+      type: 'message_end',
+      ...(rawMsg?.usage ? { usage: rawMsg.usage } : {}),
+      ...(rawMsg && 'content' in rawMsg ? { content: rawMsg.content } : {})
+    }
   }
 
   if (type === 'prompt_error') {
@@ -484,10 +492,27 @@ export function useEventStream(
           // chrome v1:某些 provider 在 message_end 上结算最终 usage,
           // 这里覆盖(空值不写)。
           const usage = raw.usage as AgentMessage['usage'] | undefined
+          // T2.4:把 server 在 message_end 推送的最终结构化 content
+          // 跑 normalizeContent + normalizeContentBlocks,产出 mirror
+          // 契约的 AssistantContentBlock[]。若 server 没带 content
+          // (旧 provider 兼容),把累积的 string 形态也归一化为单 text block,
+          // 保证 assistant role done 形态统一为数组(下游 BlockView 单一形状消费)。
+          //
+          // 类型 note:AgentMessage.content 当前为 `string`(T2.5 延后到 G3
+          // 与下游组件一起扩展为 `string | AssistantContentBlock[]`)。运行时
+          // 我们把数组形态塞入 content 字段,这里用 `as unknown as string`
+          // 做防御性窄化,避免类型编译阻断 emit 路径。T2.5 落地后此断言即可去除。
+          const rawContent = 'content' in raw ? raw.content : undefined
+          const normalizedBlocks =
+            rawContent === undefined
+              ? normalizeContent(last.content)
+              : normalizeContent(rawContent)
+          const finalContent = normalizeContentBlocks(normalizedBlocks)
           messages.value = [
             ...messages.value.slice(0, -1),
             {
               ...last,
+              content: finalContent as unknown as string,
               streamStatus: 'done' as StreamStatus,
               ...(usage ? { usage } : {})
             }

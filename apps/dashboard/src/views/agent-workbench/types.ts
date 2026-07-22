@@ -16,6 +16,11 @@
  *        (chrome v1 头部 + token footer 需要)
  *      + QueueItem(steer/followUp 队列)
  *      + SlashCommandInfo / ToolEntry / ThinkingLevel 枚举(slash palette + 状态条用)
+ *
+ * v1.7: + AgentMessage.content 形态文档 — T2.4 把 server 在 message_end 推送的
+ *        `AssistantContentBlock[]` 经 normalizeContent + normalizeContentBlocks
+ *        归一化为 mirror 契约;但当前类型签名仍保留 `string`(T2.5 延后到 G3
+ *        与下游组件一起扩展为 `string | AssistantContentBlock[]`)。
  */
 
 import type { AgentSession } from '@/api/agent'
@@ -88,6 +93,19 @@ export interface AgentMessageUsage {
 export interface AgentMessage {
   id: string
   role: AgentRole
+  /**
+   * 消息内容形态:
+   *   - 'user' / 'tool' / 'system' role:始终 `string`(markdown-it 渲染路径)。
+   *   - 'assistant' role streaming 阶段:`string`(SSE text_delta 累积)。
+   *   - 'assistant' role done 阶段:`AssistantContentBlock[]`(mirror 契约,
+   *     由 useEventStream message_end case 经 normalizeContent + normalizeContentBlocks 产出)。
+   *
+   * 当前类型签名暂保留为 `string`,理由:T2.4 仅完成 emit 点归一化,
+   * 下游 MessageView / ChatMinimap / ChatWindow 等组件仍按 `string` 消费
+   * (G3/G4/G5 任务再切到 BlockView)。T2.5 类型扩展为
+   * `string | AssistantContentBlock[]` 已确认与下游组件 break list,
+   * 等 G3 切下游时一并扩展,避免一次性改动过大。
+   */
   content: string
   toolCalls?: ToolCall[]
   branchId?: string
