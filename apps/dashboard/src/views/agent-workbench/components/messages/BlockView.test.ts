@@ -5,29 +5,38 @@
  *   - 空 blocks → 空 fragment
  *   - 顺序保持
  *
- * 子组件当前是 T3.5 stub fixture;T4.x 会替换为真实实现,本测试只覆盖 BlockView 的
- * 分发逻辑(v-for + 类型 switch + 稳定 key),不验证子组件行为。
+ * 用 findComponent 抓真实子组件,验证 BlockView 分发正确传 props,
+ * 不验证子组件的内部 UI(子组件各自的测试在 G4 子单元测试中)。
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import BlockView from './BlockView.vue'
+import TextBlock from './TextBlock.vue'
+import ThinkingBlock from './ThinkingBlock.vue'
+import ToolCallBlock from './ToolCallBlock.vue'
+import ImageBlock from './ImageBlock.vue'
 import type { AssistantContentBlock } from '../../types/assistant-blocks'
 
 const factory = (blocks: readonly AssistantContentBlock[]) =>
   mount(BlockView, { props: { blocks } })
 
 describe('BlockView', () => {
-  it('渲染 TextBlock 数组 — 顺序与文本内容正确', () => {
+  it('渲染 TextBlock 数组 — 两个 TextBlock 接对 block props', () => {
     const blocks: AssistantContentBlock[] = [
       { type: 'text', text: 'a' },
       { type: 'text', text: 'b' },
     ]
     const wrapper = factory(blocks)
-    expect(wrapper.text()).toBe('ab')
-    expect(wrapper.findAll('[data-testid="wb-block-text"]').length).toBe(2)
+    const textChildren = wrapper.findAllComponents(TextBlock)
+    expect(textChildren.length).toBe(2)
+    expect(textChildren[0]?.props('block')).toEqual({ type: 'text', text: 'a' })
+    expect(textChildren[1]?.props('block')).toEqual({ type: 'text', text: 'b' })
+    expect(wrapper.findAllComponents(ThinkingBlock).length).toBe(0)
+    expect(wrapper.findAllComponents(ToolCallBlock).length).toBe(0)
+    expect(wrapper.findAllComponents(ImageBlock).length).toBe(0)
   })
 
-  it('混合 block 类型 — 4 种按数组顺序渲染', () => {
+  it('混合 block 类型 — 4 种子组件都被分发,且 props 正确', () => {
     const blocks: AssistantContentBlock[] = [
       { type: 'text', text: 'first' },
       { type: 'thinking', thinking: 'reason' },
@@ -35,33 +44,39 @@ describe('BlockView', () => {
       { type: 'image', source: { type: 'url', url: 'https://example.com/x.png' } },
     ]
     const wrapper = factory(blocks)
-    const text = wrapper.text()
-    // 顺序断言: first 在 reason 之前,reason 在 bash 之前
-    expect(text.indexOf('first')).toBeGreaterThanOrEqual(0)
-    expect(text.indexOf('reason')).toBeGreaterThan(text.indexOf('first'))
-    expect(text.indexOf('bash')).toBeGreaterThan(text.indexOf('reason'))
-    expect(text.indexOf('image')).toBeGreaterThan(text.indexOf('bash'))
-    // 4 个不同类型的子组件都渲染
-    expect(wrapper.find('[data-testid="wb-block-text"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="wb-block-thinking"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="wb-block-toolcall"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="wb-block-image"]').exists()).toBe(true)
+    expect(wrapper.findAllComponents(TextBlock).length).toBe(1)
+    expect(wrapper.findAllComponents(ThinkingBlock).length).toBe(1)
+    expect(wrapper.findAllComponents(ToolCallBlock).length).toBe(1)
+    expect(wrapper.findAllComponents(ImageBlock).length).toBe(1)
+    expect(wrapper.findComponent(TextBlock).props('block'))
+      .toEqual({ type: 'text', text: 'first' })
+    expect(wrapper.findComponent(ThinkingBlock).props('block'))
+      .toEqual({ type: 'thinking', thinking: 'reason' })
+    expect(wrapper.findComponent(ToolCallBlock).props('block'))
+      .toEqual({ type: 'toolCall', toolCallId: 'abc', toolName: 'bash', input: { command: 'ls' } })
+    expect(wrapper.findComponent(ImageBlock).props('block'))
+      .toEqual({ type: 'image', source: { type: 'url', url: 'https://example.com/x.png' } })
   })
 
-  it('空 blocks → 空 fragment,无 DOM 子元素', () => {
+  it('空 blocks → 无子组件', () => {
     const wrapper = factory([])
-    // BlockView 根是 <template>(v-if 编译占位)。空场景下无任何子组件被渲染,
-    // 断言:没有任何 [data-testid="wb-block-*"] 元素出现(占位 comment 不算)。
-    expect(wrapper.findAll('[data-testid^="wb-block-"]').length).toBe(0)
+    expect(wrapper.findAllComponents(TextBlock).length).toBe(0)
+    expect(wrapper.findAllComponents(ThinkingBlock).length).toBe(0)
+    expect(wrapper.findAllComponents(ToolCallBlock).length).toBe(0)
+    expect(wrapper.findAllComponents(ImageBlock).length).toBe(0)
   })
 
-  it('顺序保持 — 重渲染后 DOM 顺序与 blocks 数组一致', () => {
+  it('顺序保持 — 3 个 text 按数组顺序分发', () => {
     const blocks: AssistantContentBlock[] = [
       { type: 'text', text: 'A' },
       { type: 'text', text: 'B' },
       { type: 'text', text: 'C' },
     ]
     const wrapper = factory(blocks)
-    expect(wrapper.text()).toBe('ABC')
+    const texts = wrapper.findAllComponents(TextBlock)
+    expect(texts.length).toBe(3)
+    expect((texts[0]?.props('block') as { text: string }).text).toBe('A')
+    expect((texts[1]?.props('block') as { text: string }).text).toBe('B')
+    expect((texts[2]?.props('block') as { text: string }).text).toBe('C')
   })
 })
