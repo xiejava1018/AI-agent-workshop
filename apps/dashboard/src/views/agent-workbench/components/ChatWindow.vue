@@ -23,6 +23,8 @@
   import MessageView from './MessageView.vue'
   import { useAgentSession } from '../composables/useAgentSession'
   import type { AgentMessage, Branch, QueueItem } from '../types'
+  import { processGroups, type RenderItem } from '../composables/processGroups'
+  import ProcessDetailsGroup from './ProcessDetailsGroup.vue'
 
   interface Props {
     sessionId: string
@@ -177,6 +179,12 @@
   const readonlyMessages = computed<readonly AgentMessage[]>(() => messages.value)
 
   /**
+   * 把连续 assistant 序列折叠成 RenderItem 序列(参考 apps/web 的 ProcessDetailsGroup 行为)。
+   * 模板用 v-for 渲染;group 类型用 ProcessDetailsGroup 包裹,message 类型用 MessageView 平铺。
+   */
+  const renderItems = computed<readonly RenderItem[]>(() => processGroups(readonlyMessages.value))
+
+  /**
    * 计算每条 message 的 entryId / prevAssistantEntryId:
    *   - entryId:直接读 msg.entryId(T1 useEventStream 已保留)
    *   - prevAssistantEntryId:从当前 message 向前找最近的 assistant entryId
@@ -200,25 +208,48 @@
 
 <template>
   <div class="wb-chat-window">
-    <!-- 消息列表 -->
+    <!-- 消息列表(RenderItem 路由:group 折叠 / message 平铺) -->
     <el-scrollbar ref="messagesScrollRef" class="wb-messages">
-      <MessageView
-        v-for="msg in readonlyMessages"
-        :key="msg.id"
-        :message="msg"
-        :branches="branchesByMessage.get(msg.id) ?? []"
-        :model-names="modelNames"
-        :entry-id="messageContext.get(msg.id)?.entryId"
-        :prev-assistant-entry-id="messageContext.get(msg.id)?.prevAssistantEntryId"
-        :is-streaming="isStreaming"
-        @branch-switch="onBranchSwitch"
-        @tool-expand="onToolExpand"
-        @retry="onRetry"
-        @copy="onCopy"
-        @edit="onEdit"
-        @fork="onFork"
-        @navigate="onNavigate"
-      />
+      <template v-for="item in renderItems" :key="item.type === 'group' ? `g-${item.messages[0]?.id ?? 'unknown'}` : `m-${item.message.id}`">
+        <ProcessDetailsGroup
+          v-if="item.type === 'group'"
+          :messages="item.messages"
+        >
+          <MessageView
+            v-for="msg in item.messages"
+            :key="msg.id"
+            :message="msg"
+            :branches="branchesByMessage.get(msg.id) ?? []"
+            :model-names="modelNames"
+            :entry-id="messageContext.get(msg.id)?.entryId"
+            :prev-assistant-entry-id="messageContext.get(msg.id)?.prevAssistantEntryId"
+            :is-streaming="isStreaming"
+            @branch-switch="onBranchSwitch"
+            @tool-expand="onToolExpand"
+            @retry="onRetry"
+            @copy="onCopy"
+            @edit="onEdit"
+            @fork="onFork"
+            @navigate="onNavigate"
+          />
+          </ProcessDetailsGroup>
+        <MessageView
+          v-else
+          :message="item.message"
+          :branches="branchesByMessage.get(item.message.id) ?? []"
+          :model-names="modelNames"
+          :entry-id="messageContext.get(item.message.id)?.entryId"
+          :prev-assistant-entry-id="messageContext.get(item.message.id)?.prevAssistantEntryId"
+          :is-streaming="isStreaming"
+          @branch-switch="onBranchSwitch"
+          @tool-expand="onToolExpand"
+          @retry="onRetry"
+          @copy="onCopy"
+          @edit="onEdit"
+          @fork="onFork"
+          @navigate="onNavigate"
+        />
+      </template>
 
       <!-- 空状态 -->
       <div v-if="readonlyMessages.length === 0" class="wb-empty">

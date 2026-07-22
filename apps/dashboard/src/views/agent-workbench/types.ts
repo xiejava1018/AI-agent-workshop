@@ -137,6 +137,8 @@ export interface AgentMessage {
   modelProvider?: string
   /** SDK 在 message_start 携带的模型 id */
   modelId?: string
+  /** Process-details:由 ChatWindow.processGroups 设置,标记本 assistant 正在被折叠组包裹 */
+  inProcessDetails?: boolean
 }
 
 export interface Branch {
