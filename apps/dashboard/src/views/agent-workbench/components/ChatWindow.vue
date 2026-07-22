@@ -141,7 +141,10 @@
     let lastUser: AgentMessage | undefined
     for (let i = idx - 1; i >= 0; i--) {
       const m = list[i]
-      if (m && m.role === 'user' && m.content) {
+      // T2.5:role==='user' 时 content 契约为 string(始终),虽然类型上是
+      // `string | AssistantContentBlock[]`,这里由 role 已 narrow 到 string;
+      // 留 false 分支防御 non-string content (例如历史数据异常))
+      if (m && m.role === 'user' && typeof m.content === 'string' && m.content) {
         lastUser = m
         break
       }
@@ -154,7 +157,8 @@
       })
       return
     }
-    void sendMessage(lastUser.content)
+    // lastUser.content 已由 role + typeof 守卫收敛为 string
+    void sendMessage(lastUser.content as string)
   }
 
   defineExpose({

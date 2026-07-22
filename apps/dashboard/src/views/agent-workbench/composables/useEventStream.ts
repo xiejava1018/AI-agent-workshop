@@ -466,9 +466,17 @@ export function useEventStream(
         const delta = typeof raw.content === 'string' ? raw.content : ''
         const last = messages.value[messages.value.length - 1]
         if (last && last.role === 'assistant') {
+          // T2.5:content 是 `string | AssistantContentBlock[]`。message_delta 阶段
+          // streaming 累积,last.content 从 message_start 过来是初始 string '',
+          // 后续 message_delta 都是 string concat。若 server 提前推 message_end
+          // 之后又补 delta(off-lifecycle 异常),此时 last.content 已是数组,
+          // 我们直接把数组用 delta 续写不合理 —— 退化覆盖为单 text block,
+          // 保障下游 '.content' 字段形态单一可读。
+          const nextContent: AgentMessage['content'] =
+            typeof last.content === 'string' ? last.content + delta : [{ type: 'text', text: delta }]
           messages.value = [
             ...messages.value.slice(0, -1),
-            { ...last, content: last.content + delta }
+            { ...last, content: nextContent }
           ]
         } else {
           // 兜底:没占位直接 push
@@ -498,10 +506,8 @@ export function useEventStream(
           // (旧 provider 兼容),把累积的 string 形态也归一化为单 text block,
           // 保证 assistant role done 形态统一为数组(下游 BlockView 单一形状消费)。
           //
-          // 类型 note:AgentMessage.content 当前为 `string`(T2.5 延后到 G3
-          // 与下游组件一起扩展为 `string | AssistantContentBlock[]`)。运行时
-          // 我们把数组形态塞入 content 字段,这里用 `as unknown as string`
-          // 做防御性窄化,避免类型编译阻断 emit 路径。T2.5 落地后此断言即可去除。
+          // T2.5:AgentMessage.content 已扩展为 `string | AssistantContentBlock[]`,
+          // 数组形态直接落入 content 字段,无需 `as unknown as string` 断言。
           const rawContent = 'content' in raw ? raw.content : undefined
           const normalizedBlocks =
             rawContent === undefined
@@ -512,7 +518,7 @@ export function useEventStream(
             ...messages.value.slice(0, -1),
             {
               ...last,
-              content: finalContent as unknown as string,
+              content: finalContent,
               streamStatus: 'done' as StreamStatus,
               ...(usage ? { usage } : {})
             }

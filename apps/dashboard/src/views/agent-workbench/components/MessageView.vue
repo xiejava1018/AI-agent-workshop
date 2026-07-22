@@ -14,6 +14,7 @@
   import MarkdownBody from './MarkdownBody.vue'
   import MessageActionBar from './MessageActionBar.vue'
   import type { AgentMessage, Branch } from '../types'
+  import type { AssistantContentBlock } from '../types/assistant-blocks'
 
   interface Props {
     message: AgentMessage
@@ -53,6 +54,35 @@
   const isAssistant = computed(() => props.message.role === 'assistant')
   const isUser = computed(() => props.message.role === 'user')
 
+  /**
+   * T2.5:把 message.content 窄化为下游消费所需的 string 形态。
+   * dashboard v1.8 之前 content 始终 string;之后下放 AssistantContentBlock[]
+   * 给 assistant role done 阶段。本任务不改渲染路径(留 G3 切 BlockView),
+   * 仅做形态对齐:数组形态 flatten 成 text(只提取 text / thinking block 的字符串,
+   * toolCall / image 等非文本块在 minimap-style preview 中忽略)。
+   * 这保证 :content="message.content" 在 MarkdownBody / MessageActionBar 上
+   * 静态分析为 string,渲染不出错;实际数组形态的 done 消息文本也能展示。
+   *
+   * 语义说明:这是过渡形态,toolCall / image 在 BlockView 化之前不会渲染,
+   *          主动接受这一可见性损失以换取 T2.5 类型扩展的最小化改动面。
+   * no-mutation:不修改原 content,产出新字符串。
+   */
+  const contentAsString = computed((): string => {
+    const c = props.message.content
+    if (typeof c === 'string') return c
+    if (Array.isArray(c)) {
+      return c
+        .map((b) => {
+          const block = b as AssistantContentBlock
+          if (block.type === 'text') return block.text
+          if (block.type === 'thinking') return block.thinking
+          return ''
+        })
+        .join('')
+    }
+    return ''
+  })
+
   /** 助手消息头部模型名:provider + ':' + modelId → modelNames → fallback 'assistant' */
   const assistantLabel = computed((): string => {
     const m = props.message
@@ -70,7 +100,14 @@
     return 'assistant'
   })
 
-  /** 智能时间戳:今天 HH:MM / 本年 M月D日 / 跨年 YYYY年M月D日 */
+  /** 智能时间戳 + 完整 ISO(用于 attribute) */
+  const createdAtAttr = computed((): string => {
+    const t = props.message.createdAt
+    if (!t) return ''
+    const d = new Date(t)
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString()
+  })
+
   function formatTime(iso: string): string {
     if (!iso) return ''
     const d = new Date(iso)
@@ -146,31 +183,16 @@
     :class="`wb-message--${message.role}`"
     :data-message-id="message.id"
   >
-    <!-- User / Assistant: MarkdownBody 渲染 + 头部 chrome + token footer + action bar -->
+    <!-- User / Assistant: MarkdownBody 渲染 + chrome(模型名/复制/时间)+ token footer -->
     <template v-if="message.role === 'user' || message.role === 'assistant'">
       <div class="wb-message__bubble">
-        <!-- 头部 chrome:角色标签 + 时间戳
-             user 角色用 el-tag(可视化强),assistant 改用纯文本模型名(与 React 参考一致,
-             头部更轻盈、model name 与 time 同行)。fallback 'assistant' 仍走纯文本。 -->
-        <header class="wb-message__header">
-          <el-tag
-            v-if="isUser"
-            class="wb-message__role-tag"
-            type="info"
-            plain
-            size="small"
-          >USER</el-tag>
-          <span
-            v-else-if="isAssistant"
-            class="wb-message__model-name"
-          >{{ assistantLabel }}</span>
-          <time
-            class="wb-message__time"
-            :datetime="message.createdAt"
-          >{{ formatTime(message.createdAt) }}</time>
-        </header>
+        <!-- assistant:模型名(左上,渲染文本之上) -->
+        <span
+          v-if="isAssistant"
+          class="wb-message__model-name"
+        >{{ assistantLabel }}</span>
 
-        <MarkdownBody :content="message.content" />
+        <MarkdownBody :content="contentAsString" />
 
         <!-- 流式 / 错误 / 取消 状态标记 -->
         <div
@@ -199,17 +221,46 @@
           </slot>
         </div>
 
-        <!-- token footer(仅完成且有 usage 的 assistant) -->
-        <footer v-if="showUsageFooter" class="wb-message__usage">
-          {{ formatToken(message.usage?.input) }} in ·
-          {{ formatToken(message.usage?.output) }} out ·
-          {{ formatToken(message.usage?.cacheRead) }} cache
+        <!-- assistant:chrome 嵌入气泡内底部 flow(不再 absolute),由 bubble 父级 flex-end 推到右下 -->
+        <footer
+          v-if="isAssistant"
+          class="wb-message__chrome wb-message__chrome--assistant"
+        >
+          <MessageActionBar
+            class="wb-message__chrome-action"
+            :role="message.role === 'user' ? 'user' : 'assistant'"
+            :content="contentAsString"
+            :message-id="message.id"
+            :is-streaming="isStreaming"
+            :entry-id="entryId"
+            :prev-assistant-entry-id="prevAssistantEntryId"
+            @copy="onCopy"
+            @edit="onEdit"
+            @fork="onFork"
+            @navigate="onNavigate"
+            @retry="onRetry"
+          />
+          <span
+            v-if="showUsageFooter"
+            class="wb-message__usage"
+          >{{ formatToken(message.usage?.input) }} in · {{ formatToken(message.usage?.output) }} out · {{ formatToken(message.usage?.cacheRead) }} cache</span>
+          <time
+            v-if="createdAtAttr"
+            class="wb-message__time"
+            :datetime="createdAtAttr"
+          >{{ formatTime(message.createdAt) }}</time>
         </footer>
+      </div>
 
-        <!-- 操作按钮(hover 显示) -->
+      <!-- user:chrome 在气泡外另起一行(复制 / 编辑 / 时间 同行右对齐) -->
+      <footer
+        v-if="isUser"
+        class="wb-message__chrome wb-message__chrome--user"
+      >
         <MessageActionBar
+          class="wb-message__chrome-action"
           :role="message.role === 'user' ? 'user' : 'assistant'"
-          :content="message.content"
+          :content="contentAsString"
           :message-id="message.id"
           :is-streaming="isStreaming"
           :entry-id="entryId"
@@ -220,13 +271,18 @@
           @navigate="onNavigate"
           @retry="onRetry"
         />
-      </div>
+        <time
+          v-if="createdAtAttr"
+          class="wb-message__time"
+          :datetime="createdAtAttr"
+        >{{ formatTime(message.createdAt) }}</time>
+      </footer>
     </template>
 
     <!-- Tool: monospace 样式 -->
     <template v-else-if="message.role === 'tool'">
       <div class="wb-message__bubble">
-        <pre class="wb-message__tool-content">{{ message.content }}</pre>
+        <pre class="wb-message__tool-content">{{ contentAsString }}</pre>
         <button type="button" class="wb-stream-error__retry" @click="onToolExpand(message.id)">
           展开
         </button>
@@ -236,45 +292,90 @@
     <!-- System / 其它 role: 简单文本展示 -->
     <template v-else>
       <div class="wb-message__bubble">
-        <MarkdownBody :content="message.content" />
+        <MarkdownBody :content="contentAsString" />
       </div>
     </template>
   </div>
 </template>
 
 <style scoped>
+  /* 顶层 .wb-message 作为对齐 wrapper:user 时整条右靠,assistant 左靠 */
+  .wb-message {
+    display: block;
+  }
+  .wb-message--user {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end; /* bubble 与 chrome 都贴右 */
+  }
+  .wb-message--assistant {
+    display: block; /* assistant 默认流式,左对齐 */
+  }
+
+  /* bubble 提供定位上下文(被 tool / system / 其它 role 复用) */
   .wb-message__bubble {
     position: relative;
   }
 
-  .wb-message__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 4px;
-    min-height: 22px;
-  }
-  .wb-message__role-tag {
-    font-size: 11px;
-    line-height: 18px;
-  }
+  /* assistant 模型名(文本之上) */
   .wb-message__model-name {
-    font-size: 12px;
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11px;
     color: var(--wb-text-secondary);
     font-weight: 500;
   }
-  .wb-message__time {
-    font-size: 11px;
-    color: var(--wb-text-dim);
-    font-variant-numeric: tabular-nums;
+
+  /* assistant bubble:vertical flex 让 footer( chrome )被推到 bubble 末行(视觉右下)。
+     流式做法,不依赖 absolute。 */
+  .wb-message--assistant .wb-message__bubble {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .wb-message__usage {
+  /* assistant chrome:贴近 bubble 底部、横向右对齐 —— 与 user chrome 完全二致 */
+  .wb-message__chrome--assistant {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
     margin-top: 6px;
     font-size: 11px;
     color: var(--wb-text-dim);
+    opacity: 0.85;
+    transition: opacity 120ms ease-out;
+  }
+  .wb-message:hover .wb-message__chrome--assistant,
+  .wb-message:focus-within .wb-message__chrome--assistant {
+    opacity: 1;
+  }
+
+  .wb-message__chrome--assistant .wb-message__usage {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* user:chrome 在气泡正下方换行一栏(因为外层 --user 是 column flex align-items:flex-end,
+     所以 chrome 自己在流式宽度内右对齐)。 */
+  .wb-message__chrome--user {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--wb-text-dim);
+    opacity: 0.85;
+    transition: opacity 120ms ease-out;
+  }
+
+  .wb-message__chrome .wb-message__time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wb-message__chrome-action {
+    min-width: 1px;
   }
 
   .wb-message__streaming-tag {

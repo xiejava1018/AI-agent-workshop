@@ -21,9 +21,15 @@
  *        `AssistantContentBlock[]` 经 normalizeContent + normalizeContentBlocks
  *        归一化为 mirror 契约;但当前类型签名仍保留 `string`(T2.5 延后到 G3
  *        与下游组件一起扩展为 `string | AssistantContentBlock[]`)。
+ *
+ * v1.8: T2.5 类型扩展落地 — AgentMessage.content 改为 `string | AssistantContentBlock[]`。
+ *        下游 7 个 site(ChatMinimap / ChatWindow / MessageView / useAgentSession)
+ *        通过 Array.isArray(content) 窄化同步修。下游组件不在本任务里切到
+ *        BlockView(T5.x),仅做类型对齐,渲染逻辑保持 string 路径不变。
  */
 
 import type { AgentSession } from '@/api/agent'
+import type { AssistantContentBlock } from './types/assistant-blocks'
 
 // ============================================================================
 // 会话
@@ -100,13 +106,16 @@ export interface AgentMessage {
    *   - 'assistant' role done 阶段:`AssistantContentBlock[]`(mirror 契约,
    *     由 useEventStream message_end case 经 normalizeContent + normalizeContentBlocks 产出)。
    *
-   * 当前类型签名暂保留为 `string`,理由:T2.4 仅完成 emit 点归一化,
-   * 下游 MessageView / ChatMinimap / ChatWindow 等组件仍按 `string` 消费
-   * (G3/G4/G5 任务再切到 BlockView)。T2.5 类型扩展为
-   * `string | AssistantContentBlock[]` 已确认与下游组件 break list,
-   * 等 G3 切下游时一并扩展,避免一次性改动过大。
+   * T2.5:类型扩展为 `string | AssistantContentBlock[]`,以纳入 done 阶段的
+   *        形态。下游消费站点位于:
+   *          - ChatMinimap.vue:visibleMessages message.content.trim() / messagePreview
+   *          - ChatWindow.vue:onRetry sendMessage(lastUser.content)
+   *          - MessageView.vue:MarkdownBody / MessageActionBar :content="message.content"
+   *              (user / tool / system 路径不变,assistant 路径仍按 string 渲染,留 G3 切 BlockView)
+   *          - useAgentSession.ts:rebuildIndex 同 stableId 合并 content
+   *        合并点形态由 SSE emit 决定(流式 string、done 数组);两侧均需窄化。
    */
-  content: string
+  content: string | AssistantContentBlock[]
   toolCalls?: ToolCall[]
   branchId?: string
   parentMessageId?: string

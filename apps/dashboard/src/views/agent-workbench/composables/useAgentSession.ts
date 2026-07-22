@@ -36,6 +36,31 @@ import type {
   ToolEntry,
   ToolPreset
 } from '../types'
+import type { AssistantContentBlock } from '../types/assistant-blocks'
+
+/**
+ * T2.5:合并两层 AgentMessage.content(merge 收敛于 rebuildIndex)。
+ *
+ * 形态分支:
+ *   - string + string                   → string concat
+ *   - array  + array                    → 浅拷贝数组 spread concat(no-mutation)
+ *   - string + array                    → 返回 array(后者是 done 阶段完整列表,overwrite)
+ *   - array  + string                   → 返回 array(后者是 message_delta 滞后到达,
+ *                                              已是 done 形态的 cumulative 视图优先)
+ *
+ * no-mutation:输入引用一律不修改,产出新字符串或新数组。
+ */
+function mergeAssistantContent(
+  a: AgentMessage['content'],
+  b: AgentMessage['content']
+): AgentMessage['content'] {
+  if (typeof a === 'string' && typeof b === 'string') return a + b
+  if (Array.isArray(a) && Array.isArray(b)) return [...a, ...b]
+  if (Array.isArray(a) && typeof b === 'string') return a
+  if (typeof a === 'string' && Array.isArray(b)) return b
+  // unreachable 但保留上游契约:fallback 用 b,作为单一类型 token
+  return b
+}
 
 export interface UseAgentSessionReturn {
   // —— 基础 SSE 流状态(既有)——
@@ -140,7 +165,19 @@ export function useAgentSession(
       // 同 id 后续覆盖前序(append content)
       const existing = next.get(stableId)
       if (existing) {
-        next.set(stableId, { ...existing, content: existing.content + msg.content })
+        // T2.5:content 是 `string | AssistantContentBlock[]`(assistant done 阶段为数组
+        // 由 SSE message_end 归一化产出)。SSE emit 阶段:message_delta 推 string,
+        // message_end 一次性推 final 数组。所以 merge 路径最常见是 'string + string',
+        // 极少数是 'string + array'(message_end 收尾)。两侧形态的合并策略:
+        //   - 双方都是 string            → 字符串 concat(原行为)
+        //   - 双方都是 AssistantContentBlock[] → spread concat(保留入参块序列)
+        //   - 仅 existing 是 array,msg 是 string → 保留 existing(后续 message_end
+        //                                          一次性推送已带完整块,无需再 append)
+        //   - 仅 existing 是 string,msg 是 array → 切换为数组形态(overwrite),
+        //                                          因为 msg 数组已是完成态的完整列表
+        // no-mutation:始终产出新对象、新数组,不修改 existing / msg 引用。
+        const mergedContent = mergeAssistantContent(existing.content, msg.content)
+        next.set(stableId, { ...existing, content: mergedContent })
       } else {
         next.set(stableId, msg)
       }
