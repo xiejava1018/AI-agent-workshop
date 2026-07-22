@@ -1,20 +1,17 @@
 <script setup lang="ts">
 /**
- * ProcessDetailsGroup —— 多步 agent 中间步骤的可折叠容器(镜像 apps/web)。
+ * ProcessDetailsGroup —— 处理详情折叠容器(镜像 apps/web ProcessDetailsGroup)。
  *
- * 接收 `messages` 计算计数(N messages + M tool calls),通过 `<slot>` 渲染 children
- * (由 ChatWindow 注入多 MessageView 实例)。容器自身**不**渲染 message 内容。
+ * 接收 messageCount + toolCallCount 数字,显示 "Process details · N messages · M tool calls"。
+ * 默认折叠;点击展开/收起。内容通过默认 <slot /> 由父级(MessageView)注入。
  *
- * 默认折叠;点击 header 展开/收起 body。
- *
- * 对应 OpenSpec spec.md "ProcessDetailsGroup 组件契约" Requirement。
+ * 注意:本组件只做计数 + 折叠,不关心 slot 内容的渲染(由 BlockView 负责)。
  */
-import { computed, ref } from 'vue'
-import type { AgentMessage } from '../types'
-import { isEmptyThinkingBlock } from '../composables/processGroups'
+import { ref } from 'vue'
 
 interface Props {
-  messages: readonly AgentMessage[]
+  messageCount: number
+  toolCallCount: number
   defaultOpen?: boolean
 }
 
@@ -23,27 +20,6 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const open = ref<boolean>(props.defaultOpen)
-
-const messageCount = computed<number>(() => props.messages.length)
-
-const toolCallCount = computed<number>(() => {
-  let n = 0
-  for (const msg of props.messages) {
-    if (msg.role !== 'assistant') continue
-    const c = msg.content
-    if (Array.isArray(c)) {
-      for (const block of c) {
-        if (block.type === 'toolCall') n++
-      }
-    } else if (msg.toolCalls && msg.toolCalls.length > 0) {
-      // 兼容老 spec:toolCalls 字段(snapshot 数组)
-      n += msg.toolCalls.length
-    }
-    if (n === Number.MAX_SAFE_INTEGER) break
-    void isEmptyThinkingBlock(msg) // reserved for future filtering
-  }
-  return n
-})
 
 function toggleOpen(): void {
   open.value = !open.value
@@ -78,9 +54,7 @@ function toggleOpen(): void {
       <span class="wb-process-details__count">{{ messageCount }} {{ messageCount === 1 ? 'message' : 'messages' }}</span>
       <template v-if="toolCallCount > 0">
         <span class="wb-process-details__sep">·</span>
-        <span class="wb-process-details__count">
-          {{ toolCallCount }} {{ toolCallCount === 1 ? 'tool call' : 'tool calls' }}
-        </span>
+        <span class="wb-process-details__count">{{ toolCallCount }} {{ toolCallCount === 1 ? 'tool call' : 'tool calls' }}</span>
       </template>
     </button>
     <div v-if="open" class="wb-process-details__body">
@@ -91,7 +65,7 @@ function toggleOpen(): void {
 
 <style scoped>
 .wb-process-details {
-  margin: 4px 0;
+  margin: 4px 0 8px;
 }
 .wb-process-details__header {
   display: inline-flex;

@@ -21,10 +21,13 @@ import ImageBlock from './ImageBlock.vue'
 
 interface Props {
   blocks: readonly AssistantContentBlock[]
+  /** toolResult 按 toolCallId 聚合的 Map,透传给 ToolCallBlock */
+  pairedResults?: ReadonlyMap<string, unknown>
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  blocks: () => [] as readonly AssistantContentBlock[]
+  blocks: () => [] as readonly AssistantContentBlock[],
+  pairedResults: () => new Map<string, unknown>()
 })
 
 /**
@@ -54,6 +57,7 @@ function blockKey(block: AssistantContentBlock, index: number): string | number 
       <ToolCallBlock
         v-else-if="block.type === 'toolCall'"
         :block="block"
+        :paired-results="props.pairedResults"
       />
       <ImageBlock
         v-else-if="block.type === 'image'"

@@ -14,6 +14,8 @@
   import MarkdownBody from './MarkdownBody.vue'
   import MessageActionBar from './MessageActionBar.vue'
   import BlockView from './messages/BlockView.vue'
+  import ProcessDetailsGroup from './ProcessDetailsGroup.vue'
+  import { splitFinalAssistantBlocks, countToolCallBlocks } from '../composables/message-display'
   import type { AgentMessage, Branch } from '../types'
   import type { AssistantContentBlock } from '../types/assistant-blocks'
 
@@ -29,6 +31,8 @@
     prevAssistantEntryId?: string
     /** chrome v1:是否正在流式(用于助手 Retry 按钮的可见性 + footer 渲染判断) */
     isStreaming?: boolean
+    /** Process-details:toolResult 按 toolCallId 聚合的 Map,传给 ToolCallBlock 显示 result */
+    pairedResults?: ReadonlyMap<string, unknown>
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -37,7 +41,8 @@
     modelNames: () => ({}),
     entryId: undefined,
     prevAssistantEntryId: undefined,
-    isStreaming: false
+    isStreaming: false,
+    pairedResults: () => new Map<string, unknown>()
   })
 
   const emit = defineEmits<{
@@ -98,6 +103,24 @@
     if (typeof c === 'string') return [{ type: 'text', text: c }]
     return []
   })
+
+  /**
+   * 把 assistant message 的 content blocks 拆成 processBlocks(thinking/toolCall → 折叠)
+   * 与 answerBlocks(最终 text/image → 独立)。port 自 apps/web splitFinalAssistantBlocks。
+   *
+   * 流式期间(streaming)不拆 — 直接全显示(用户看到实时累积)。
+   */
+  const splitBlocks = computed(() => {
+    if (props.isStreaming) {
+      return { processBlocks: [] as AssistantContentBlock[], answerBlocks: [...messageBlocks.value] }
+    }
+    return splitFinalAssistantBlocks(messageBlocks.value)
+  })
+
+  const processBlocks = computed(() => splitBlocks.value.processBlocks)
+  const answerBlocks = computed(() => splitBlocks.value.answerBlocks)
+  const processToolCallCount = computed(() => countToolCallBlocks(processBlocks.value))
+  const hasProcessDetails = computed(() => processBlocks.value.length > 0)
 
   /** 助手消息头部模型名:provider + ':' + modelId → modelNames → fallback 'assistant' */
   const assistantLabel = computed((): string => {
@@ -208,11 +231,22 @@
           class="wb-message__model-name"
         >{{ assistantLabel }}</span>
 
-        <!-- G5:assistant role 用 BlockView 树形分发(text/thinking/toolCall/image)。
-             contentAsString 仍保留给 MessageActionBar / streaming-tag 内部使用。 -->
-        <div v-if="isAssistant && messageBlocks.length > 0" class="wb-message__blocks">
-          <BlockView :blocks="messageBlocks" />
-        </div>
+        <!-- assistant 内容:按 splitFinalAssistantBlocks 拆成 processBlocks(折叠) + answerBlocks(独立)。
+             流式期间不拆,全显示。 -->
+        <template v-if="isAssistant">
+          <!-- Process details 折叠:thinking + toolCall blocks -->
+          <ProcessDetailsGroup
+            v-if="hasProcessDetails"
+            :message-count="1"
+            :tool-call-count="processToolCallCount"
+          >
+            <BlockView :blocks="processBlocks" :paired-results="props.pairedResults" />
+          </ProcessDetailsGroup>
+          <!-- 最终回复:text + image blocks,独立渲染 -->
+          <div v-if="answerBlocks.length > 0" class="wb-message__blocks">
+            <BlockView :blocks="answerBlocks" />
+          </div>
+        </template>
 
         <!-- user role 走 MarkdownBody(contentAsString) 路径渲染 -->
         <MarkdownBody v-if="isUser" :content="contentAsString" />

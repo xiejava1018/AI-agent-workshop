@@ -31,7 +31,10 @@ describe('MessageView', () => {
   })
 
   // ── G5:assistant role 新增 block 路由测试 ────────────────────────────────
-  it('G5: assistant with AssistantContentBlock[] content - 渲染 BlockView', () => {
+  it('G5: assistant [text, thinking, toolCall, image] → process 折叠 + answer 独立', () => {
+    // splitFinalAssistantBlocks: toolCall 是最后一个非 answer block(index 2)
+    //   processBlocks = [text'first', thinking, toolCall] → 进 ProcessDetailsGroup(默认折叠)
+    //   answerBlocks = [image] → 独立渲染
     const wrapper = mount(MessageView, {
       props: {
         message: baseMsg({
@@ -45,24 +48,63 @@ describe('MessageView', () => {
         })
       }
     })
+    // Process details 折叠 header 出现,计数 1 message 1 tool call
+    expect(wrapper.find('.wb-process-details__label').text()).toBe('Process details')
+    expect(wrapper.text()).toContain('1 message')
+    expect(wrapper.text()).toContain('1 tool call')
+    // 默认折叠,process 内容不可见(first/reasoning/bash 在折叠里)
+    expect(wrapper.find('.wb-process-details__body').exists()).toBe(false)
+    // answer(image)独立渲染
     expect(wrapper.find('.wb-message__blocks').exists()).toBe(true)
-    expect(wrapper.html()).toContain('first')
-    expect(wrapper.html()).toContain('reasoning')
-    expect(wrapper.html()).toContain('[bash]')
   })
 
-  it('G5: assistant with string content (streaming) - 仍走 markdown 渲染', () => {
+  it('G5: assistant [toolCall, text] → toolCall 进 process, text 是 answer', () => {
+    // 典型场景:tool call + 最终回复
+    const wrapper = mount(MessageView, {
+      props: {
+        message: baseMsg({
+          role: 'assistant',
+          content: [
+            { type: 'toolCall', toolCallId: 't1', toolName: 'bash', input: { command: 'ls' } },
+            { type: 'text', text: '当前目录有 1 个文件' },
+          ],
+        })
+      }
+    })
+    expect(wrapper.find('.wb-process-details__label').text()).toBe('Process details')
+    expect(wrapper.text()).toContain('1 tool call')
+    // answer text 独立可见
+    expect(wrapper.text()).toContain('当前目录有 1 个文件')
+  })
+
+  it('G5: assistant 纯 text(无 toolCall)→ 无 Process details,直接渲染', () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        message: baseMsg({
+          role: 'assistant',
+          content: [{ type: 'text', text: 'hello' }],
+        })
+      }
+    })
+    expect(wrapper.find('.wb-process-details').exists()).toBe(false)
+    expect(wrapper.text()).toContain('hello')
+  })
+
+  it('G5: assistant string content (streaming) - 仍走 block 渲染,无 process 拆分', () => {
     const wrapper = mount(MessageView, {
       props: {
         message: baseMsg({
           role: 'assistant',
           content: 'plain streaming text',
           streamStatus: 'streaming',
-        })
+        }),
+        isStreaming: true,
       }
     })
     expect(wrapper.find('.wb-message__blocks').exists()).toBe(true)
     expect(wrapper.html()).toContain('plain streaming text')
+    // streaming 期间不拆 process
+    expect(wrapper.find('.wb-process-details').exists()).toBe(false)
   })
 
   // ───────────────────────────────────────────────────────────────────────────

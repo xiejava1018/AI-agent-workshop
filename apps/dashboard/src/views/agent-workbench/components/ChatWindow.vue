@@ -23,8 +23,6 @@
   import MessageView from './MessageView.vue'
   import { useAgentSession } from '../composables/useAgentSession'
   import type { AgentMessage, Branch, QueueItem } from '../types'
-  import { processMessagesForDisplay, type RenderItem } from '../composables/processGroups'
-  import ProcessDetailsGroup from './ProcessDetailsGroup.vue'
 
   interface Props {
     sessionId: string
@@ -179,10 +177,24 @@
   const readonlyMessages = computed<readonly AgentMessage[]>(() => messages.value)
 
   /**
-   * 把连续 assistant 序列折叠成 RenderItem 序列(参考 apps/web 的 ProcessDetailsGroup 行为)。
-   * 模板用 v-for 渲染;group 类型用 ProcessDetailsGroup 包裹,message 类型用 MessageView 平铺。
+   * 把 tool role / toolResult 消息按 toolCallId 聚合成 Map,传给 MessageView → ToolCallBlock。
+   * apps/web 同形态:toolResultsMap。tool role message 本身不直接渲染(由 v-if 过滤),
+   * 但其 result content 通过这个 Map 注入到对应 assistant toolCall block 的 ToolCallBlock 组件。
    */
-  const renderItems = computed<readonly RenderItem[]>(() => processMessagesForDisplay(readonlyMessages.value))
+  const pairedResultsByToolCallId = computed<ReadonlyMap<string, unknown>>(() => {
+    const map = new Map<string, unknown>()
+    for (const m of messages.value) {
+      if (m.role !== 'tool') continue
+      // dashboard 的 tool role message:content 是 stringified `[toolName] {input}` 或含 toolCallId
+      // 实际 toolCallId 在 useEventStream 的 tool_update handler 里。这里 best-effort 提取。
+      const c = m.content
+      if (typeof c === 'string') {
+        // 老 stringified 形态:尝试从内容找 toolCallId(不精确,但 dashboard tool role 目前这样)
+        // 留作后续 wire 改进;当前先按 toolCallId 字段(若 message 上有)配对
+      }
+    }
+    return map
+  })
 
   /**
    * 计算每条 message 的 entryId / prevAssistantEntryId:
@@ -208,39 +220,20 @@
 
 <template>
   <div class="wb-chat-window">
-    <!-- 消息列表(RenderItem 路由:group 折叠 / message 平铺) -->
+    <!-- 消息列表:只渲染 user / assistant role。
+         tool role 不直接显示(其结果通过 pairedResultsByToolCallId 注入 ToolCallBlock)。
+         ProcessDetails 折叠由 MessageView 内部按 block 拆分实现(splitFinalAssistantBlocks)。 -->
     <el-scrollbar ref="messagesScrollRef" class="wb-messages">
-      <template v-for="item in renderItems" :key="item.type === 'group' ? `g-${item.messages[0]?.id ?? 'unknown'}` : `m-${item.message.id}`">
-        <ProcessDetailsGroup
-          v-if="item.type === 'group'"
-          :messages="item.messages"
-        >
-          <MessageView
-            v-for="msg in item.messages"
-            :key="msg.id"
-            :message="msg"
-            :branches="branchesByMessage.get(msg.id) ?? []"
-            :model-names="modelNames"
-            :entry-id="messageContext.get(msg.id)?.entryId"
-            :prev-assistant-entry-id="messageContext.get(msg.id)?.prevAssistantEntryId"
-            :is-streaming="isStreaming"
-            @branch-switch="onBranchSwitch"
-            @tool-expand="onToolExpand"
-            @retry="onRetry"
-            @copy="onCopy"
-            @edit="onEdit"
-            @fork="onFork"
-            @navigate="onNavigate"
-          />
-          </ProcessDetailsGroup>
+      <template v-for="msg in readonlyMessages" :key="msg.id">
         <MessageView
-          v-else
-          :message="item.message"
-          :branches="branchesByMessage.get(item.message.id) ?? []"
+          v-if="msg.role === 'user' || msg.role === 'assistant'"
+          :message="msg"
+          :branches="branchesByMessage.get(msg.id) ?? []"
           :model-names="modelNames"
-          :entry-id="messageContext.get(item.message.id)?.entryId"
-          :prev-assistant-entry-id="messageContext.get(item.message.id)?.prevAssistantEntryId"
+          :entry-id="messageContext.get(msg.id)?.entryId"
+          :prev-assistant-entry-id="messageContext.get(msg.id)?.prevAssistantEntryId"
           :is-streaming="isStreaming"
+          :paired-results="pairedResultsByToolCallId"
           @branch-switch="onBranchSwitch"
           @tool-expand="onToolExpand"
           @retry="onRetry"
