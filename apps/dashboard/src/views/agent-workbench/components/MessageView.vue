@@ -214,6 +214,9 @@
           <BlockView :blocks="messageBlocks" />
         </div>
 
+        <!-- user role 走 MarkdownBody(contentAsString) 路径渲染 -->
+        <MarkdownBody v-if="isUser" :content="contentAsString" />
+
         <!-- 流式 / 错误 / 取消 状态标记 -->
         <div
           v-if="message.role === 'assistant' && message.streamStatus === 'streaming'"
