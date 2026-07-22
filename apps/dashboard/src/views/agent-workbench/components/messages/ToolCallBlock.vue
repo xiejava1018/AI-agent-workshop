@@ -38,11 +38,14 @@ interface Props {
   pairedResults?: ReadonlyMap<string, PairedToolResultLike> | ReadonlyMap<string, unknown>
   /** 在 ProcessDetailsGroup 内部时默认展开,显示完整 input + result */
   defaultOpen?: boolean
+  /** 消息是否已完成(done)。done 后即使没 pairedResult 也不显示 spinner。 */
+  done?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   pairedResults: undefined,
   defaultOpen: false,
+  done: false,
 })
 
 const copyState = ref<'idle' | 'copied' | 'failed'>('idle')
@@ -120,7 +123,9 @@ const copyLabel = computed(() => {
   if (copyState.value === 'failed') return '失败'
   return '复制'
 })
-const isExecuting = computed<boolean>(() => paired === undefined)
+/** 只在消息未完成(streaming)且没有 pairedResult 时才显示 spinner。
+ *  消息 done 后即使 result 配对不上也不转圈(可能 result 没推过来,但不是在执行)。 */
+const isExecuting = computed<boolean>(() => !props.done && paired === undefined)
 </script>
 
 <template>

@@ -25,12 +25,15 @@ interface Props {
   pairedResults?: ReadonlyMap<string, unknown>
   /** ToolCallBlock 默认展开(在 ProcessDetailsGroup 内时) */
   toolCallDefaultOpen?: boolean
+  /** 消息是否已完成(done) */
+  done?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   blocks: () => [] as readonly AssistantContentBlock[],
   pairedResults: () => new Map<string, unknown>(),
-  toolCallDefaultOpen: false
+  toolCallDefaultOpen: false,
+  done: false
 })
 
 /**
@@ -62,6 +65,7 @@ function blockKey(block: AssistantContentBlock, index: number): string | number 
         :block="block"
         :paired-results="props.pairedResults"
         :default-open="props.toolCallDefaultOpen"
+        :done="props.done"
       />
       <ImageBlock
         v-else-if="block.type === 'image'"
