@@ -62,15 +62,19 @@ export interface StreamEvent {
 
 /**
  * normalizeContent — 把 SSE event 的 content 字段归一化为 AssistantContentBlock[]。
- * 4 种输入形态:
- *   null / undefined → []
- *   string → [{type:'text', text:string}]
- *   单对象(block 但不在数组里) → [block]
- *   array → 过滤 nullish 元素后的浅数组(不 deep-clone block)
  *
- * 归一化在结构上 idempotent:重复调用不会嵌套已经归一化的数组,且 block 对象保持 identity。
- * 数组不会被原地修改;只有输入含 null / undefined 元素时才有防御性过滤语义。
+ * 接受的输入形态:
+ *   - null / undefined → []
+ *   - string → [{type:'text', text:string}]
+ *   - 单个 block 对象 → [block]
+ *   - block 数组 → 过滤掉 null/undefined 元素的浅拷贝数组;block 元素引用保持
+ *   - 其他 primitive (number / boolean / bigint / symbol) → []
+ *
+ * 结构上 idempotent: 同一输入跑两次产出结构相等。
+ * 不原地修改、不深拷贝 block;只在外层数组与 string→text 形态里分配新对象。
+ *
  * 调用方(T2.4)在所有 emit AgentMessage 的点位跑这个函数。
+ * 元素层正确性由 caller 契约保证 —— 函数只过滤 nullish,不深度校验 block shape。
  *
  * 对应 OpenSpec spec.md "SSE 入口归一化" Requirement 的 scenario (a)–(d)。
  */
@@ -79,7 +83,7 @@ export function normalizeContent(raw: unknown): AssistantContentBlock[] {
   if (typeof raw === 'string') return [{ type: 'text', text: raw }]
   if (Array.isArray(raw)) {
     // T2.3 introduce normalizeContentBlocks for SDK→mirror rename; for now
-    // T2.2 returns identity (defensive copy if some element is null/undefined).
+    // T2.2 always allocates a fresh outer array via filter; block elements retain identity; nullish entries are dropped.
     return raw.filter((b): b is AssistantContentBlock => b !== null && b !== undefined)
   }
   // single block object — wrap
