@@ -18,11 +18,15 @@ import type { ToolCallContent } from '../../types/assistant-blocks'
  * Paired tool-result payload — minimal shape used by ToolCallBlock for paired-result
  * lookup。Full ToolResultMessage type lives elsewhere in types.ts; we keep this
  * duck-typed here so the component doesn't need cross-import friction.
+ * Note:[key: string]: unknown index signature 允许调用方传入 ReadonlyMap<string, unknown>
+ * 即便工具类型只声明了部分字段。
  */
 interface PairedToolResultLike {
   toolCallId: string
   content?: unknown
   isError?: boolean
+  // 接受任意额外字段,允许测试用 ReadonlyMap<string, unknown> 传入
+  [key: string]: unknown
 }
 
 interface Props {
@@ -31,7 +35,7 @@ interface Props {
    * 由父级 MessageView 构造并传入:`Map<toolCallId, ToolResultMessage>`。
    * 缺失对应 toolCallId → 显示 spinner(命令仍在执行)。
    */
-  pairedResults?: ReadonlyMap<string, PairedToolResultLike>
+  pairedResults?: ReadonlyMap<string, PairedToolResultLike> | ReadonlyMap<string, unknown>
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -42,8 +46,10 @@ const copyState = ref<'idle' | 'copied' | 'failed'>('idle')
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
 function getPairedResult(): PairedToolResultLike | undefined {
-  if (props.pairedResults) return props.pairedResults.get(props.block.toolCallId)
-  return undefined
+  if (!props.pairedResults) return undefined
+  const r = props.pairedResults.get(props.block.toolCallId)
+  // Map value 是 unknown(测试用 ReadonlyMap<string, unknown>), narrow 到 PairedToolResultLike
+  return r as PairedToolResultLike | undefined
 }
 
 function previewInput(): string {

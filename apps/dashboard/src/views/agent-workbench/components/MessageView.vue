@@ -13,6 +13,7 @@
   import { computed } from 'vue'
   import MarkdownBody from './MarkdownBody.vue'
   import MessageActionBar from './MessageActionBar.vue'
+  import BlockView from './messages/BlockView.vue'
   import type { AgentMessage, Branch } from '../types'
   import type { AssistantContentBlock } from '../types/assistant-blocks'
 
@@ -81,6 +82,21 @@
         .join('')
     }
     return ''
+  })
+
+  /**
+   * G5:把 assistant role message.content 收窄为 AssistantContentBlock[] 形态喂给 BlockView。
+   * - string 形态(流式阶段)→ wrap 为 [{type:'text', text:string}] 单元素
+   * - array 形态(done 阶段)→ 原样
+   * - 其他(undefined / 异常)→ 空数组
+   *
+   * 这是 T2.5/T2.5b 推迟的 transition 收尾:BlockView 接助手消息的真正渲染路径。
+   */
+  const messageBlocks = computed((): readonly AssistantContentBlock[] => {
+    const c = props.message.content
+    if (Array.isArray(c)) return c
+    if (typeof c === 'string') return [{ type: 'text', text: c }]
+    return []
   })
 
   /** 助手消息头部模型名:provider + ':' + modelId → modelNames → fallback 'assistant' */
@@ -192,7 +208,13 @@
           class="wb-message__model-name"
         >{{ assistantLabel }}</span>
 
-        <MarkdownBody :content="contentAsString" />
+        <!-- G5:assistant role 用 BlockView 树形分发(text/thinking/toolCall/image)。
+             contentAsString 仍保留给 MessageActionBar / streaming-tag 内部使用。 -->
+        <BlockView
+          v-if="isAssistant && messageBlocks.length > 0"
+          :blocks="messageBlocks"
+          class="wb-message__blocks"
+        />
 
         <!-- 流式 / 错误 / 取消 状态标记 -->
         <div

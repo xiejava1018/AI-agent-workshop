@@ -19,9 +19,9 @@ const block: ToolCallContent = {
   input: { command: 'echo hello' },
 }
 
-const factory = (pairedResults?: Map<string, unknown>) => {
-  const props: Record<string, unknown> = { block }
-  if (pairedResults) props['pairedResults'] = pairedResults
+const factory = (pairedResults?: ReadonlyMap<string, unknown>) => {
+  const props: { block: ToolCallContent; pairedResults?: ReadonlyMap<string, unknown> } = { block }
+  if (pairedResults) props.pairedResults = pairedResults
   return mount(ToolCallBlock, { props })
 }
 
