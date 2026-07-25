@@ -23,6 +23,8 @@ Dashboard 当前在 `ChatWindow.vue` 里用 `v-for messages` 顺序平铺 `<Mess
 
 ## Decisions
 
+> **Implementation Note (added after Task 4):** 原 design 描述的 '≥ 3 assistant 连续序列' 是预设计阶段的初步算法。实际 React apps/web/components/ChatWindow.tsx 实现是 **turn-grouping**(回合聚合):从每个 user message 开始,找该 user 的 finalAssistant(最后一个有 final-answer 的 assistant),中间的 assistant 消息 + finalAssistant 的 processBlocks(thinking/toolCall)一起包进 ProcessDetailsGroup,finalAssistant 的 answerBlocks 独立渲染。本次实现跟随 React 的回合聚合语义(优于初版设计)。详情参见 tasks.md §6。
+
 ### Decision 1: 算法层放在 ChatWindow.vue 而非独立 composable
 
 **选择**:在 `ChatWindow.vue` 的 `<script setup>` 内新增 `processGroups` computed,把 `AgentMessage[]` 折叠成 `(type: 'flat' | 'group', messages[])[]` 的序列;模板用 `v-for` 路由 type。

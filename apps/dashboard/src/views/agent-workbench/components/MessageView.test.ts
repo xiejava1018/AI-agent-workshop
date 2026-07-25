@@ -43,8 +43,8 @@ describe('MessageView', () => {
             { type: 'text', text: 'first' },
             { type: 'thinking', thinking: 'reasoning' },
             { type: 'toolCall', toolCallId: 'abc', toolName: 'bash', input: { command: 'ls' } },
-            { type: 'image', source: { type: 'url', url: 'https://example.com/x.png' } },
-          ],
+            { type: 'image', source: { type: 'url', url: 'https://example.com/x.png' } }
+          ]
         })
       }
     })
@@ -66,8 +66,8 @@ describe('MessageView', () => {
           role: 'assistant',
           content: [
             { type: 'toolCall', toolCallId: 't1', toolName: 'bash', input: { command: 'ls' } },
-            { type: 'text', text: '当前目录有 1 个文件' },
-          ],
+            { type: 'text', text: '当前目录有 1 个文件' }
+          ]
         })
       }
     })
@@ -82,7 +82,7 @@ describe('MessageView', () => {
       props: {
         message: baseMsg({
           role: 'assistant',
-          content: [{ type: 'text', text: 'hello' }],
+          content: [{ type: 'text', text: 'hello' }]
         })
       }
     })
@@ -96,9 +96,9 @@ describe('MessageView', () => {
         message: baseMsg({
           role: 'assistant',
           content: 'plain streaming text',
-          streamStatus: 'streaming',
+          streamStatus: 'streaming'
         }),
-        isStreaming: true,
+        isStreaming: true
       }
     })
     expect(wrapper.find('.wb-message__blocks').exists()).toBe(true)
@@ -204,7 +204,7 @@ function isoPrevYear(monthIdx: number, day = 19): string {
 }
 
 describe('MessageView — header chrome (chrome v1 A 组)', () => {
-  it('user 消息头部显示 USER 标签 + 时间戳', () => {
+  it('user 消息 chrome 包含时间戳(不在头部)(chrome v1 B2 已指 user 标签)', () => {
     const wrapper = mount(MessageView, {
       props: {
         message: baseMsg({
@@ -215,9 +215,11 @@ describe('MessageView — header chrome (chrome v1 A 组)', () => {
         })
       }
     })
-    // USER 标签(el-tag plain)渲染 USER 文本
-    expect(wrapper.html()).toContain('USER')
-    // 时间戳渲染 09:05(2 位 hour:2 位 minute)
+    // chrome v1 B2后,user 消息不再使用 el-tag('USER' 文本) —— 头部
+    // 仅在 chrome footer(MarkdownBody 外侧)渲染时间戳。验证:
+    //   1. 不再出现 'USER' 字样
+    //   2. 时间戳仍渲染(footer 路径)
+    expect(wrapper.html()).not.toContain('USER')
     expect(wrapper.find('.wb-message__time').exists()).toBe(true)
     expect(wrapper.find('.wb-message__time').text()).toBe(`09:05`)
   })
@@ -295,9 +297,7 @@ describe('MessageView — smart timestamp formatTime (chrome v1 A 组)', () => {
     })
     const d = new Date()
     const prevYear = d.getFullYear() - 1
-    expect(wrapper.find('.wb-message__time').text()).toBe(
-      `${prevYear}年12月19日`
-    )
+    expect(wrapper.find('.wb-message__time').text()).toBe(`${prevYear}年12月19日`)
   })
 })
 
@@ -480,31 +480,45 @@ describe('MessageView — T5 UI feedback fixes', () => {
     expect(wrapper.find('.wb-message__header .wb-message__role-tag').exists()).toBe(false)
   })
 
-  it('user 消息头部仍使用 el-tag(WB-MESSAGE__ROLE-TAG 存在)', () => {
+  it('user 消息不再使用 el-tag 角色标签(chrome v1 B2 后已剥)', () => {
     const wrapper = mount(MessageView, {
       props: { message: baseMsg({ role: 'user', content: 'hi' }) }
     })
-    // user 仍走 el-tag(用 .wb-message__role-tag 标识)
-    expect(wrapper.find('.wb-message__role-tag').exists()).toBe(true)
+    // chrome v1 B2 走 '纯气泡 + footer 时间戳' 路径,不再有 el-tag
+    expect(wrapper.find('.wb-message__role-tag').exists()).toBe(false)
+    // assistant 专属的 model-name 仍不应出现在 user 路径
     expect(wrapper.find('.wb-message__model-name').exists()).toBe(false)
   })
 
-  it('assistant 模型名 fallback 为 "assistant" 时也走纯文本路径', () => {
-    const wrapper = mount(MessageView, {
+  it('assistant 模型名 fallback 顺序: modelNames map → modelId → "assistant"', () => {
+    // 两者都没有(连 modelId 都没)时 fallback 到 'assistant'
+    const w1 = mount(MessageView, {
+      props: {
+        message: baseMsg({ role: 'assistant', content: 'reply' }),
+        modelNames: {}
+      }
+    })
+    expect(w1.find('.wb-message__model-name').text()).toBe('assistant')
+    // 只有 modelId(modelNames map 查不到)时显示 modelId 本身(对齐 React fallback)
+    const w2 = mount(MessageView, {
+      props: {
+        message: baseMsg({ role: 'assistant', content: 'reply', modelId: 'MiniMax-M3' }),
+        modelNames: {}
+      }
+    })
+    expect(w2.find('.wb-message__model-name').text()).toBe('MiniMax-M3')
+    // modelNames map 里有 displayName 时优先 displayName
+    const w3 = mount(MessageView, {
       props: {
         message: baseMsg({
           role: 'assistant',
           content: 'reply',
-          modelProvider: 'unknown',
-          modelId: 'unknown'
+          modelProvider: 'minimax',
+          modelId: 'MiniMax-M3'
         }),
-        modelNames: {}
+        modelNames: { 'minimax:MiniMax-M3': 'MiniMax M3 (official)' }
       }
     })
-    const modelNameEl = wrapper.find('.wb-message__model-name')
-    expect(modelNameEl.exists()).toBe(true)
-    expect(modelNameEl.text()).toBe('assistant')
-    // 同样不应再有 el-tag 角色标签
-    expect(wrapper.find('.wb-message__header .wb-message__role-tag').exists()).toBe(false)
+    expect(w3.find('.wb-message__model-name').text()).toBe('MiniMax M3 (official)')
   })
 })

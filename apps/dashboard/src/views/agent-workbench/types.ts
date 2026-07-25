@@ -41,7 +41,7 @@ export type { AgentSession }
 // 消息 / 工具调用 / 分支
 // ============================================================================
 
-export type AgentRole = 'user' | 'assistant' | 'system' | 'tool'
+export type AgentRole = 'user' | 'assistant' | 'system' | 'tool' | 'toolResult'
 
 export type ToolCallStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -137,6 +137,13 @@ export interface AgentMessage {
   modelProvider?: string
   /** SDK 在 message_start 携带的模型 id */
   modelId?: string
+  /** toolResult role message 配对的 toolCall.id —— 供 ToolCallBlock 按 toolCallId
+   *  查找 result block。SDK source 中 role:'toolResult' 的 message 才有该字段。 */
+  toolCallId?: string
+  /** toolResult role 的错误标识(SDK source 中 isError 字段 mirror)。 */
+  toolIsError?: boolean
+  /** toolResult role 的人类可读名(SDK source 中 toolName 字段 mirror)。 */
+  toolName?: string
   /** Process-details:由 ChatWindow.processGroups 设置,标记本 assistant 正在被折叠组包裹 */
   inProcessDetails?: boolean
 }
