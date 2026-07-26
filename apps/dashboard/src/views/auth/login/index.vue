@@ -143,14 +143,19 @@
       dictStore.loadAll().catch((e: unknown) => console.warn('[Login] 加载字典失败:', e))
 
       const redirect = route.query.redirect as string | undefined
-      router.push(redirect || '/dashboard').then(() => {
-        console.log('[Login] 跳转成功')
-      }).catch((err) => {
-        console.error('[Login] 跳转失败:', err)
-      })
+      router
+        .push(redirect || '/dashboard')
+        .then(() => {
+          console.log('[Login] 跳转成功')
+        })
+        .catch((err) => {
+          console.error('[Login] 跳转失败:', err)
+        })
     } catch (error) {
-      const message = error instanceof Error ? error.message : ''
-      ElMessage.error(message || '登录失败，请稍后重试')
+      const raw = error instanceof Error ? error.message : ''
+      // 后端 401 时返 {error:'invalid credentials'},统一翻译为中文
+      const msg = raw === 'invalid credentials' ? '账号或密码错误' : raw || '登录失败，请稍后重试'
+      ElMessage.error(msg)
     } finally {
       loading.value = false
     }

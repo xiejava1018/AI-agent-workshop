@@ -26,7 +26,11 @@ export function refreshToken() {
  * POST /api/auth/change-password
  */
 export function changePassword(oldPassword: string, newPassword: string) {
-  return request.post({ url: '/api/auth/change-password', data: { oldPassword, newPassword }, showErrorMessage: false })
+  return request.post({
+    url: '/api/auth/change-password',
+    data: { oldPassword, newPassword },
+    showErrorMessage: false
+  })
 }
 
 /**
@@ -45,10 +49,13 @@ export function fetchGetUserInfo() {
  * POST /api/auth/user-login
  */
 export async function fetchLogin(params: Api.Auth.LoginParams): Promise<Api.Auth.LoginResponse> {
+  // 登录请求不要走 auto-refresh 401 流程 (refresh 一定失败,且会让 Promise 永远 pending → loading 一直转圈)。
+  // 把 401 直接 reject 给 caller,让 caller catch 弹 ElMessage.error 显示 "invalid credentials"。
   const res = await request.post<any>({
     url: '/api/auth/user-login',
     data: params,
-    showErrorMessage: false
+    showErrorMessage: false,
+    skipAuthHandler: true
   })
   return res as Api.Auth.LoginResponse
 }
