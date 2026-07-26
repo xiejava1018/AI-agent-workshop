@@ -10,7 +10,8 @@ import {
   readSessionHeader,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { getSessionMeta } from "@/lib/session-meta";
+import { getSessionMeta, recordSessionMeta } from "@/lib/session-meta";
+import { prisma } from "@/lib/prisma";
 import { setPinned, clearPinned, isPinned } from "@/lib/session-prefs";
 import { assertCanReadSessionScoped, assertCanReadSessionBody } from "@/lib/team-auth";
 import { getUserHighestRole } from "@/lib/user-role";
@@ -132,7 +133,31 @@ async function assertCanReadSession(
   const userId = req.headers.get("x-user-id");
   if (!userId) return NextResponse.json({ error: "auth required" }, { status: 401 });
   const userRole = await getUserHighestRole(userId);
-  const meta = getSessionMeta(sessionId);
+  let meta = getSessionMeta(sessionId);
+  // M7: fall back to prisma.session when the jsonl-backed in-memory meta map
+  // is empty (common after dev server restart, when the runtime cwd/dataDir
+  // differs from the original session). Without this fallback, the owner of a
+  // session can see it in the list (which reads DB) but clicking it gets 403
+  // forbidden because getSessionMeta returns undefined and auth denies by default.
+  if (!meta) {
+    try {
+      const row = await prisma.session.findUnique({
+        where: { id: sessionId },
+        select: { id: true, userId: true, teamId: true, projectId: true, createdAt: true },
+      });
+      if (row) {
+        meta = {
+          userId: row.userId,
+          projectId: row.projectId,
+          teamId: row.teamId,
+          createdAt: row.createdAt.getTime(),
+        };
+        recordSessionMeta(row.id, meta.userId, meta.projectId, meta.teamId);
+      }
+    } catch {
+      // DB unavailable; meta stays undefined and auth will deny (safe).
+    }
+  }
 
   if (options.body) {
     const decision = await assertCanReadSessionBody(userId, userRole, meta, sessionId);

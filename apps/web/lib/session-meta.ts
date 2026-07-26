@@ -121,6 +121,32 @@ export async function rebuildFromJsonl(map: Map<string, SessionMetaRow>): Promis
       map.set(sessionId, { userId, projectId, teamId, createdAt: Date.now() });
     }
   }
+
+  // M7 fix: DB fallback for sessions that exist in prisma.session but have no
+  // jsonl on disk (common in dev/restart scenarios where the runtime file
+  // path differs or was wiped, but the DB row remains). Without this fallback,
+  // `getSessionMeta()` returns undefined for such sessions, causing every
+  // `assertCanReadSession*` check to deny (forbidden) — even for the owner.
+  // The jsonl-less session cannot be opened (404 from resolveSessionPath), but
+  // at least the auth decision becomes consistent with the list endpoint.
+  try {
+    const { prisma } = await import("./prisma");
+    const dbRows = await prisma.session.findMany({
+      select: { id: true, userId: true, teamId: true, projectId: true, createdAt: true },
+    });
+    for (const row of dbRows) {
+      if (!map.has(row.id)) {
+        map.set(row.id, {
+          userId: row.userId,
+          projectId: row.projectId,
+          teamId: row.teamId,
+          createdAt: row.createdAt.getTime(),
+        });
+      }
+    }
+  } catch {
+    // DB unavailable; meta map is whatever jsonl produced.
+  }
 }
 
 export function recordSessionMeta(

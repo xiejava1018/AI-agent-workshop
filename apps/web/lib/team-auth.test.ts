@@ -269,6 +269,36 @@ describe("assertCanReadSessionScoped", () => {
     expect(result.allowed).toBe(false);
   });
 
+  it("M7 fallback: undefined meta but session exists in DB → owner is ALLOWED", async () => {
+    // Simulates the dev/restart scenario where the jsonl-backed in-memory
+    // meta map lost the row but prisma.session still has it. Without the
+    // DB fallback in ensureSessionMetaFromDb, the owner of the session
+    // gets a 403 forbidden even on their own session.
+    const dbSessionId = `${TEST_PREFIX}sess-db-fallback-${Math.random().toString(36).slice(2, 8)}`;
+    await prisma.session.create({
+      data: {
+        id: dbSessionId,
+        userId: ids.ownerA,
+        teamId: ids.teamA,
+        projectId: ids.projectA,
+        title: "M7 fallback test",
+        jsonlPath: "",
+      },
+    });
+    try {
+      const result = await assertCanReadSessionScoped(
+        ids.ownerA,
+        "OWNER",
+        undefined, // meta is gone (e.g. dev server restart lost the cache)
+        dbSessionId
+      );
+      expect(result.allowed).toBe(true);
+      expect(result.reason).toBe("owner");
+    } finally {
+      await prisma.session.deleteMany({ where: { id: dbSessionId } });
+    }
+  });
+
   it("is allowed when explicitly shared via SessionShare", async () => {
     const meta = {
       userId: ids.ownerA,
