@@ -39,8 +39,8 @@ export interface UseSessionListResult {
   pinnedSessions: Ref<AgentSession[]>
   /** 未置顶会话(按 updatedAt desc) */
   unpinnedSessions: Ref<AgentSession[]>
-  /** 拉取完整列表(showLoading 控制是否显示 loading 占位) */
-  load: (showLoading?: boolean) => Promise<void>
+  /** 拉取完整列表(showLoading 控制是否显示 loading 占位,返回是否成功) */
+  load: (showLoading?: boolean) => Promise<boolean>
   /** 新建会话(创建后自动刷新列表,返回新会话 id) */
   create: (userId?: string) => Promise<string | null>
   /** 重命名会话(乐观更新,失败回滚) */
@@ -141,7 +141,7 @@ export function useSessionList(): UseSessionListResult {
     }
   }
 
-  async function load(showLoading = false) {
+  async function load(showLoading = false): Promise<boolean> {
     if (showLoading) loading.value = true
     try {
       const resp = await listSessions({ page: 1, page_size: 100 })
@@ -183,8 +183,10 @@ export function useSessionList(): UseSessionListResult {
       // Bug 3 修复:乐观项变更后写回 localStorage(供下次刷新)
       persistOptimisticMeta()
       error.value = null
+      return true
     } catch (e: unknown) {
       error.value = formatError(e, '加载会话列表失败')
+      return false
     } finally {
       if (showLoading) loading.value = false
     }
