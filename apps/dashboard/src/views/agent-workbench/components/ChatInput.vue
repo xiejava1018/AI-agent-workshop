@@ -18,8 +18,7 @@
    *   Enter = send(已有);Shift+Enter = steer;Cmd/Ctrl+Enter = followUp。
    */
   import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-  import { ElButton, ElInput, ElIcon } from 'element-plus'
-  import { Promotion, CircleClose } from '@element-plus/icons-vue'
+  import { ElInput } from 'element-plus'
   import { useAgentSession } from '../composables/useAgentSession'
   import { getToolNamesForPreset } from '@/api/agent'
   import type { SlashCommandPaletteItem, ToolPreset } from '../types'
@@ -27,6 +26,8 @@
   import ModelSelector from './ModelSelector.vue'
   import ThinkingLevelSelector from './ThinkingLevelSelector.vue'
   import ToolPresetSelector from './ToolPresetSelector.vue'
+  import CompactButton from './CompactButton.vue'
+  import SoundToggleButton from './SoundToggleButton.vue'
   import SlashPalette from './SlashPalette.vue'
 
   interface Props {
@@ -34,17 +35,44 @@
     placeholder?: string
     sessionId: string
     isStreaming?: boolean
+    /**
+     * 上下文压缩状态:对齐 apps/web 的 onCompact / onAbortCompaction /
+     * isCompacting / compactError。提供三个状态以同步 ChatWindow 中的压缩流程,
+     * 业务逻辑由父级 ChatWindow 调用后端。
+     */
+    isCompacting?: boolean
+    compactError?: string | null
+    /**
+     * 完成提示音开关:对齐 apps/web useAudio()。
+     * 持久化在 localStorage('pi-sound-enabled')。父级可选传,未传则隐藏按钮。
+     */
+    soundEnabled?: boolean
+    /**
+     * 是否启用 compact 功能。若 false(默认),底部不显示 CompactButton。
+     * 这是一个“能力开关”,区分“有别的会话/接口能调 compact”与“现在不能调 compact”。
+     */
+    compactEnabled?: boolean
   }
 
   const props = withDefaults(defineProps<Props>(), {
     disabled: false,
     placeholder: '输入消息，支持 /<skill> 或 @MCP 调用...',
-    isStreaming: false
+    isStreaming: false,
+    isCompacting: false,
+    compactError: null,
+    soundEnabled: true,
+    compactEnabled: false
   })
 
   const emit = defineEmits<{
     send: [text: string, attachments: File[]]
     abort: []
+    /** 点击 Compact 按钮(未在压缩) —— 父级调 handleCompact */
+    compact: []
+    /** 点击运行中 Compact 按钮 —— 父级调 handleAbortCompaction */
+    'abort-compact': []
+    /** 点击 Sound 按钮 —— 父级维护 soundEnabled 状态(或委托给本组件 useAudio) */
+    'update:soundEnabled': [enabled: boolean]
   }>()
 
   // —— chrome v1:状态条 + queue 条所需 useAgentSession 状态 ——
@@ -99,6 +127,8 @@
 
   // —— Refs ——
   const inputText = ref('')
+  // el-input 实例引用,用于 fill()/focus() 等命令式操作(如「编辑」按钮把消息灌回输入框)
+  const inputRef = ref<InstanceType<typeof ElInput> | null>(null)
   const attachments = ref<File[]>([])
   const isDragOver = ref(false)
   const historyCursor = ref<number>(-1) // -1 = 不在历史模式
@@ -436,6 +466,35 @@
     window.removeEventListener('dragleave', onDragLeave)
     window.removeEventListener('drop', onDrop)
   })
+
+  /**
+   * 命令式填充输入框(对齐 apps/web ChatInput.insertIfEmpty):
+   * 当输入框为空时,把 text 灌进去并聚焦,光标定位到末尾。
+   * 用于 MessageView「编辑」按钮 —— 把被编辑的消息内容回填到输入框,用户改完再重发。
+   * 输入框已有内容时不覆盖(避免误吞用户正在打的内容),仅聚焦。
+   */
+  function fill(text: string): void {
+    if (!text) return
+    if (!inputText.value.trim()) {
+      inputText.value = text
+      slashPaletteClosed.value = true
+    }
+    // 聚焦并把光标移到末尾(el-input 暴露 focus + textarea 原生 setSelectionRange)
+    requestAnimationFrame(() => {
+      const el = inputRef.value
+      const ta = el?.textarea ?? el?.$el?.querySelector('textarea')
+      if (ta && typeof (ta as HTMLTextAreaElement).focus === 'function') {
+        const node = ta as HTMLTextAreaElement
+        node.focus()
+        const len = node.value.length
+        node.setSelectionRange(len, len)
+      }
+    })
+  }
+
+  defineExpose({
+    fill
+  })
 </script>
 
 <template>
@@ -464,73 +523,139 @@
       </span>
     </div>
 
-    <!-- 状态条(model / thinking / tool preset)—— chrome v1 B 组 -->
+    <!-- 主输入区:带边框 + 圆角的 composer,包住 textarea + 发送/停止按钮
+         (对齐 apps/web ChatInput 的 borderRadius:14 / 微阴影 容器) -->
+    <div
+      class="wb-chat-input__composer"
+      :class="{ 'is-streaming': isStreaming }"
+    >
+      <el-input
+        ref="inputRef"
+        v-model="inputText"
+        type="textarea"
+        :rows="1"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        class="wb-chat-input__textarea"
+        @keydown="onKeydown"
+        @compositionstart="onCompositionStart"
+        @compositionend="onCompositionEnd"
+      />
+
+      <!-- T5:slash palette(以 "/" 开头且长度 > 1 时打开) -->
+      <SlashPalette
+        v-if="isSlashPaletteOpen"
+        :query="inputText"
+        :items="slashVisibleItems"
+        :active-index="slashActiveIndex"
+        @select="onSlashSelect"
+        @update:active-index="(i: number) => (slashActiveIndex = i)"
+        @close="closeSlashPalette"
+      />
+
+      <!-- @mention 提示(v1 占位) -->
+      <div v-if="showMentionHint" class="wb-chat-input__mention-hint"> @ mention(即将推出) </div>
+
+      <!-- 发送 / 停止按钮:贴 composer 右下角 -->
+      <div class="wb-chat-input__send">
+        <template v-if="isStreaming">
+          <button
+            type="button"
+            class="wb-chat-input__send-btn wb-chat-input__send-btn--stop"
+            title="停止生成"
+            aria-label="停止生成"
+            @click="handleAbort"
+          >
+            <svg
+              class="wb-chat-input__send-icon"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="3" y="3" width="8" height="8" rx="1" />
+            </svg>
+            停止
+          </button>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            class="wb-chat-input__send-btn wb-chat-input__send-btn--send"
+            :class="{ 'is-disabled': disabled || (!inputText.trim() && attachments.length === 0) }"
+            :disabled="disabled || (!inputText.trim() && attachments.length === 0)"
+            title="发送 (Enter)"
+            aria-label="发送消息"
+            @click="handleSend"
+          >
+            <svg
+              class="wb-chat-input__send-icon"
+              viewBox="0 0 14 14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="2" y1="7" x2="11" y2="7" />
+              <polyline points="7.5 3 12 7 7.5 11" />
+            </svg>
+            发送
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <!-- 底部操作栏:对齐 apps/web —— LEFT model | center spacer | RIGHT thinking + tools preset
+         (位于输入框下方,而不是上方) -->
     <footer
-      class="wb-chat-input__statusbar"
+      class="wb-chat-input__toolbar"
       :class="{ 'is-disabled': isStreaming }"
       data-testid="wb-chat-input-statusbar"
     >
-      <ModelSelector
-        :model="currentModel"
-        :model-list="modelList"
-        :model-names="modelNames"
-        :is-auto="isAutoModelSelection"
-        @update:model="(p, m) => setModel(p, m)"
-      />
-      <ThinkingLevelSelector
-        :level="thinkingLevel"
-        :available-levels="availableThinkingLevelsForCurrentModel"
-        @update:level="handleThinkingLevelChange"
-      />
-      <ToolPresetSelector :preset="toolPreset" @update:preset="handlePresetChange" />
+      <div class="wb-chat-input__toolbar-left">
+        <ModelSelector
+          :model="currentModel"
+          :model-list="modelList"
+          :model-names="modelNames"
+          :is-auto="isAutoModelSelection"
+          @update:model="(p, m) => setModel(p, m)"
+        />
+      </div>
+      <div class="wb-chat-input__toolbar-right">
+        <!-- tools preset 在 streaming 时被 apps/web 的 `!isStreaming && onCompact` 隐蔽 。”
+         * 在 dashboard 我们保留三个 always-visible 的主要选择器(thinking / tools),仅在
+         * streaming 时用 disabled 状态让点击不发声,避免 UI 跳动。 -->
+        <ThinkingLevelSelector
+          :level="thinkingLevel"
+          :available-levels="availableThinkingLevelsForCurrentModel"
+          :disabled-by-streaming="isStreaming"
+          @update:level="handleThinkingLevelChange"
+        />
+        <ToolPresetSelector
+          :preset="toolPreset"
+          :disabled-by-streaming="isStreaming"
+          @update:preset="handlePresetChange"
+        />
+        <!-- Compact 按钮:仅在父级开关为 true 时显示。
+         * apps/web 里 onCompact 为 undefined 就隐藏(试用账号/未登录状态)。 -->
+        <CompactButton
+          v-if="compactEnabled"
+          :is-compacting="isCompacting"
+          :compact-error="compactError"
+          :disabled-by-streaming="isStreaming"
+          @compact="emit('compact')"
+          @abort-compact="emit('abort-compact')"
+        />
+        <!-- Sound 按钮:soundEnabled 作为 v-model,本地 persist 到 localStorage -->
+        <SoundToggleButton
+          :sound-enabled="soundEnabled"
+          @update:sound-enabled="(v: boolean) => emit('update:soundEnabled', v)"
+        />
+      </div>
     </footer>
-
-    <!-- 输入框 -->
-    <el-input
-      v-model="inputText"
-      type="textarea"
-      :rows="3"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      class="wb-chat-input__textarea"
-      @keydown="onKeydown"
-      @compositionstart="onCompositionStart"
-      @compositionend="onCompositionEnd"
-    />
-
-    <!-- T5:slash palette(以 "/" 开头且长度 > 1 时打开) -->
-    <SlashPalette
-      v-if="isSlashPaletteOpen"
-      :query="inputText"
-      :items="slashVisibleItems"
-      :active-index="slashActiveIndex"
-      @select="onSlashSelect"
-      @update:active-index="(i: number) => (slashActiveIndex = i)"
-      @close="closeSlashPalette"
-    />
-
-    <!-- @mention 提示(v1 占位) -->
-    <div v-if="showMentionHint" class="wb-chat-input__mention-hint"> @ mention(即将推出) </div>
-
-    <!-- 操作 -->
-    <div class="wb-chat-input__actions">
-      <template v-if="isStreaming">
-        <el-button type="danger" plain @click="handleAbort">
-          <el-icon class="el-icon--left"><CircleClose /></el-icon>
-          停止
-        </el-button>
-      </template>
-      <template v-else>
-        <el-button
-          type="primary"
-          :disabled="disabled || (!inputText.trim() && attachments.length === 0)"
-          @click="handleSend"
-        >
-          <el-icon class="el-icon--left"><Promotion /></el-icon>
-          发送 (Enter)
-        </el-button>
-      </template>
-    </div>
 
     <!-- 拖拽覆盖层 -->
     <div v-if="isDragOver" class="wb-chat-input__drag-overlay"> 松开鼠标上传文件 </div>
@@ -545,7 +670,7 @@
   .wb-chat-input--drag {
     outline: 2px dashed var(--wb-accent);
     outline-offset: -4px;
-    border-radius: 8px;
+    border-radius: 14px;
   }
 
   .wb-chat-input__drag-overlay {
@@ -559,20 +684,153 @@
     font-weight: 600;
     font-size: 14px;
     pointer-events: none;
-    border-radius: 8px;
+    border-radius: 14px;
+    z-index: 2;
   }
 
-  /* chrome v1 B 组:状态条 —— 横向布局,8px 间距 */
-  .wb-chat-input__statusbar {
+  /*
+   * composer:带边框 + 圆角的容器,包住 textarea + 发送按钮(对齐 apps/web ChatInput)。
+   *   - borderRadius:14、padding:10px、轻微 boxShadow。
+   *   - 流式状态下边框变黄,与 apps/web 的流式边框表现一致。
+   *   - textarea 吃 flex:1,send 按钮贴右下角(align-self:flex-end)。
+   */
+  .wb-chat-input__composer {
+    position: relative;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 8px;
-    padding: 4px 0;
-    font-size: 12px;
+    background: var(--wb-bg, #fff);
+    border: 1px solid
+      color-mix(in srgb, var(--wb-border) 70%, transparent);
+    border-radius: 14px;
+    padding: 10px 10px 10px 14px;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 8px 24px -12px rgba(15, 23, 42, 0.10);
+    transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+  }
+  .wb-chat-input__composer.is-streaming {
+    border-color: rgba(234, 179, 8, 0.4);
+  }
+
+  /* textarea 在 composer 内去掉自身的边框/背景,只保留文字输入能力 */
+  .wb-chat-input__textarea {
+    flex: 1;
+    min-width: 0;
+  }
+  .wb-chat-input__textarea :deep(.el-textarea__inner) {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 2px 0;
+    resize: none;
+    color: var(--wb-text, inherit);
+    font-size: 14px;
+    line-height: 1.6;
+    font-family: inherit;
+    min-height: 24px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .wb-chat-input__textarea :deep(.el-textarea__inner):focus {
+    outline: none;
+  }
+  .wb-chat-input__textarea :deep(.el-textarea__inner)::placeholder {
     color: var(--wb-text-dim);
   }
 
-  .wb-chat-input__statusbar.is-disabled {
+  /* 发送 / 停止按钮:对齐 apps/web 的 Send 按钮
+   *   - flex-shrink:0、align-self:flex-end(贴右下角)
+   *   - 有内容 → accent 背景白字;空内容 → panel 背景 dim 文字(禁用样式) */
+  .wb-chat-input__send {
+    flex-shrink: 0;
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+  }
+  .wb-chat-input__send-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+  }
+  .wb-chat-input__send-btn--send {
+    background: var(--wb-accent, #3b82f6);
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
+  }
+  .wb-chat-input__send-btn--send:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+  .wb-chat-input__send-btn--send.is-disabled,
+  .wb-chat-input__send-btn--send:disabled {
+    background: var(--wb-bg-elevated, #f3f4f6);
+    color: var(--wb-text-dim);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .wb-chat-input__send-btn--stop {
+    background: rgba(234, 179, 8, 0.12);
+    color: rgb(180, 130, 0);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+  }
+  .wb-chat-input__send-btn--stop:hover {
+    background: rgba(234, 179, 8, 0.2);
+  }
+  .wb-chat-input__send-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+
+  /* slash palette 在 composer 内绝对定位到顶部(在 textarea 上方) */
+  .wb-chat-input__mention-hint {
+    position: absolute;
+    top: -22px;
+    left: 14px;
+    font-size: 11px;
+    color: var(--wb-text-dim);
+    background: var(--wb-bg, #fff);
+    padding: 0 6px;
+    border-radius: 3px;
+  }
+
+  /*
+   * 底部操作栏:对齐 apps/web —— LEFT model | center spacer | RIGHT thinking + tools preset。
+   * model 在左侧、其它控件在右侧两端分布,保留顶部的状态指示作用。
+   */
+  .wb-chat-input__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 0 4px;
+    font-size: 12px;
+    color: var(--wb-text-dim);
+    min-height: 32px;
+  }
+  .wb-chat-input__toolbar-left {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .wb-chat-input__toolbar-right {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+  }
+  .wb-chat-input__toolbar.is-disabled {
     pointer-events: none;
     opacity: 0.5;
   }

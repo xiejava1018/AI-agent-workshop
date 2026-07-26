@@ -97,12 +97,25 @@ beforeEach(() => {
   resetRefs()
 })
 
-function makeWrapper(propsOverride: Partial<{ isStreaming: boolean; disabled: boolean }> = {}) {
+function makeWrapper(
+  propsOverride: Partial<{
+    isStreaming: boolean
+    disabled: boolean
+    compactEnabled: boolean
+    isCompacting: boolean
+    compactError: string | null
+    soundEnabled: boolean
+  }> = {}
+) {
   return mount(ChatInput, {
     props: {
       sessionId: 'sess-test',
       isStreaming: false,
       disabled: false,
+      compactEnabled: true,
+      isCompacting: false,
+      compactError: null,
+      soundEnabled: true,
       ...propsOverride
     }
   })
@@ -113,7 +126,7 @@ describe('ChatInput — send', () => {
     const wrapper = makeWrapper()
     const input = wrapper.find('textarea')
     await input.setValue('hello world')
-    await wrapper.find('.el-button--primary').trigger('click')
+    await wrapper.find('.wb-chat-input__send-btn--send').trigger('click')
 
     const emitted = wrapper.emitted('send')
     expect(emitted).toBeTruthy()
@@ -125,7 +138,7 @@ describe('ChatInput — send', () => {
     const wrapper = makeWrapper()
     const input = wrapper.find('textarea')
     await input.setValue('test')
-    await wrapper.find('.el-button--primary').trigger('click')
+    await wrapper.find('.wb-chat-input__send-btn--send').trigger('click')
     // v-model 同步:el-input 内部值已经清空
     await nextTick()
     // 用 setValue 验证:再次拿到 textarea 应该是空字符串
@@ -136,7 +149,7 @@ describe('ChatInput — send', () => {
     const wrapper = makeWrapper()
     const input = wrapper.find('textarea')
     await input.setValue('   ')
-    const btn = wrapper.find('.el-button--primary')
+    const btn = wrapper.find('.wb-chat-input__send-btn--send')
     expect(btn.attributes('disabled')).toBeDefined()
     expect(wrapper.emitted('send')).toBeFalsy()
   })
@@ -145,17 +158,17 @@ describe('ChatInput — send', () => {
 describe('ChatInput — abort', () => {
   it('shows stop button when isStreaming=true', () => {
     const wrapper = makeWrapper({ isStreaming: true })
-    expect(wrapper.find('.el-button--primary').exists()).toBe(false)
-    // 找 danger 类型按钮(停止)
-    const dangerBtn = wrapper.findAll('.el-button').find((b) => b.text().includes('停止'))
-    expect(dangerBtn).toBeDefined()
+    expect(wrapper.find('.wb-chat-input__send-btn--send').exists()).toBe(false)
+    // 找停止按钮
+    const stopBtn = wrapper.find('.wb-chat-input__send-btn--stop')
+    expect(stopBtn.exists()).toBe(true)
   })
 
   it('emits abort when stop button clicked', async () => {
     const wrapper = makeWrapper({ isStreaming: true })
-    const dangerBtn = wrapper.findAll('.el-button').find((b) => b.text().includes('停止'))
-    expect(dangerBtn).toBeDefined()
-    await dangerBtn?.trigger('click')
+    const stopBtn = wrapper.find('.wb-chat-input__send-btn--stop')
+    expect(stopBtn.exists()).toBe(true)
+    await stopBtn.trigger('click')
 
     const emitted = wrapper.emitted('abort')
     expect(emitted).toBeTruthy()
@@ -166,7 +179,7 @@ describe('ChatInput — abort', () => {
     // 即使 input 有内容,也不应该能 send
     const input = wrapper.find('textarea')
     await input.setValue('should not send')
-    expect(wrapper.find('.el-button--primary').exists()).toBe(false)
+    expect(wrapper.find('.wb-chat-input__send-btn--send').exists()).toBe(false)
   })
 })
 
@@ -224,7 +237,7 @@ describe('ChatInput — keyboard shortcuts', () => {
 
     // 先发一条让它入栈
     await input.setValue('first message')
-    await wrapper.find('.el-button--primary').trigger('click')
+    await wrapper.find('.wb-chat-input__send-btn--send').trigger('click')
     await nextTick()
 
     // 直接验证 localStorage 已存
@@ -287,15 +300,26 @@ describe('ModelSelector', () => {
     expect(wrapper.find('.wb-model-selector__label').text()).toBe('MiniMax-M3')
   })
 
-  it('modelList 为空时 label 降级为 no model 且不展开下拉', async () => {
+  it('modelList 为空 + currentModel 为 null 时 label 降级为「选择模型」且下拉按钮 disabled', async () => {
     refs.currentModel.value = null
     const wrapper = makeWrapper()
-    expect(wrapper.find('.wb-model-selector__label').text()).toBe('no model')
-    // 触发按钮应 disabled,点击不展开
+    expect(wrapper.find('.wb-model-selector__label').text()).toBe('选择模型')
+    // 未选、modelList 为空 → 按钮 disabled、点击不展开下拉
     const trigger = wrapper.find('.wb-model-selector__trigger')
     expect(trigger.attributes('disabled')).toBeDefined()
     await trigger.trigger('click')
     expect(wrapper.find('.wb-model-selector__menu').exists()).toBe(false)
+  })
+
+  it('modelList 非空 + currentModel 为 null 时 label 为「选择模型」但按钮可点', async () => {
+    refs.currentModel.value = null
+    refs.modelList.value = [
+      { provider: 'anthropic', modelId: 'claude-opus-4-8', name: 'Opus' }
+    ]
+    const wrapper = makeWrapper()
+    expect(wrapper.find('.wb-model-selector__label').text()).toBe('选择模型')
+    const trigger = wrapper.find('.wb-model-selector__trigger')
+    expect(trigger.attributes('disabled')).toBeUndefined()
   })
 
   it('isAuto=true 时显示 auto', async () => {
@@ -329,22 +353,23 @@ describe('ModelSelector', () => {
 })
 
 describe('ThinkingLevelSelector', () => {
-  it('渲染当前 level', async () => {
+  it('渲染当前 level(大写首字母对齐 apps/web)', async () => {
     refs.thinkingLevel.value = 'medium'
     const wrapper = makeWrapper()
-    expect(wrapper.find('.wb-thinking-selector__label').text()).toBe('medium')
+    // apps/web 视觉为 'Medium'(首字母大写)
+    expect(wrapper.find('.wb-thinking-selector__label').text()).toBe('Medium')
   })
 
-  it('level=auto 时显示 auto', async () => {
+  it('level=auto 时显示 Auto', async () => {
     refs.thinkingLevel.value = 'auto'
     const wrapper = makeWrapper()
-    expect(wrapper.find('.wb-thinking-selector__label').text()).toBe('auto')
+    expect(wrapper.find('.wb-thinking-selector__label').text()).toBe('Auto')
   })
 
   it('默认显示全部 8 个 level', async () => {
     const wrapper = makeWrapper()
     await wrapper.find('.wb-thinking-selector__trigger').trigger('click')
-    expect(wrapper.findAll('.wb-thinking-selector__menu li').length).toBe(8)
+    expect(wrapper.findAll('.wb-thinking-selector__option').length).toBe(8)
   })
 
   it('availableLevels 非空时只显示子集', async () => {
@@ -354,61 +379,68 @@ describe('ThinkingLevelSelector', () => {
     }
     const wrapper = makeWrapper()
     await wrapper.find('.wb-thinking-selector__trigger').trigger('click')
-    const items = wrapper.findAll('.wb-thinking-selector__menu li')
+    const items = wrapper.findAll('.wb-thinking-selector__option')
     expect(items.length).toBe(4)
-    expect(items.map((li) => li.text()).sort()).toEqual(['auto', 'high', 'low', 'medium'])
+    // 只认 label(不含右侧 dim 描述文)
+    const labels = items.map((li) => li.find('.wb-thinking-selector__option-label').text()).sort()
+    expect(labels).toEqual(['Auto', 'High', 'Low', 'Medium'])
   })
 
   it('选中 high 触发 setThinkingLevel("high")', async () => {
     const wrapper = makeWrapper()
     await wrapper.find('.wb-thinking-selector__trigger').trigger('click')
-    // 8 项中找 high
-    const highLi = wrapper
-      .findAll('.wb-thinking-selector__menu li')
-      .find((li) => li.text() === 'high')
-    expect(highLi).toBeDefined()
-    await highLi!.trigger('click')
+    // 只在 label 槽位上匹配
+    const highBtn = wrapper
+      .findAll('.wb-thinking-selector__option')
+      .find((b) => b.find('.wb-thinking-selector__option-label').text() === 'High')
+    expect(highBtn).toBeDefined()
+    await highBtn!.trigger('click')
     expect(setThinkingLevelMock).toHaveBeenCalledWith('high')
   })
 })
 
 describe('ToolPresetSelector', () => {
-  it('渲染当前 preset 名', async () => {
+  it('渲染当前 preset 名(apps/web 风格化 Off/Default/Full)', async () => {
     refs.toolPreset.value = 'default'
     const wrapper = makeWrapper()
-    expect(wrapper.find('.wb-tool-preset-selector__label').text()).toBe('default')
+    // 内部值为 default,但 UI label 为 "Default"——apps/web 风格化
+    expect(wrapper.find('.wb-tool-preset-selector__label').text()).toBe('Default')
   })
 
   it('渲染 3 个选项', async () => {
     const wrapper = makeWrapper()
     await wrapper.find('.wb-tool-preset-selector__trigger').trigger('click')
-    const items = wrapper.findAll('.wb-tool-preset-selector__menu li')
+    const items = wrapper.findAll('.wb-tool-preset-selector__option')
     expect(items.length).toBe(3)
-    expect(items.map((li) => li.text()).sort()).toEqual(['default', 'full', 'none'])
+    // label 顺序:Off / Default / Full(apps/web 使用 off 而不是 none)
+    const labels = items.map((b) => b.find('.wb-tool-preset-selector__option-label').text()).sort()
+    expect(labels).toEqual(['Default', 'Full', 'Off'])
   })
 
   it('当前 preset 高亮 (is-active)', async () => {
     refs.toolPreset.value = 'full'
     const wrapper = makeWrapper()
     await wrapper.find('.wb-tool-preset-selector__trigger').trigger('click')
-    const items = wrapper.findAll('.wb-tool-preset-selector__menu li')
-    const fullItem = items.find((li) => li.text() === 'full')
+    const items = wrapper.findAll('.wb-tool-preset-selector__option')
+    const fullItem = items.find(
+      (b) => b.find('.wb-tool-preset-selector__option-label').text() === 'Full'
+    )
     expect(fullItem?.classes()).toContain('is-active')
-    const noneItem = items.find((li) => li.text() === 'none')
-    expect(noneItem?.classes()).not.toContain('is-active')
+    const offItem = items.find(
+      (b) => b.find('.wb-tool-preset-selector__option-label').text() === 'Off'
+    )
+    expect(offItem?.classes()).not.toContain('is-active')
   })
 
   it('选中 full 时调 setTools + refreshTools', async () => {
     const wrapper = makeWrapper()
     await wrapper.find('.wb-tool-preset-selector__trigger').trigger('click')
-    const fullLi = wrapper
-      .findAll('.wb-tool-preset-selector__menu li')
-      .find((li) => li.text() === 'full')
-    expect(fullLi).toBeDefined()
-    await fullLi!.trigger('click')
-    // setTools 应调一次(参数由 getToolNamesForPreset('full') 给的常量数组)
+    const fullBtn = wrapper
+      .findAll('.wb-tool-preset-selector__option')
+      .find((b) => b.find('.wb-tool-preset-selector__option-label').text() === 'Full')
+    expect(fullBtn).toBeDefined()
+    await fullBtn!.trigger('click')
     await nextTick()
-    // setTools 是 async,我们等待 flush
     await flushPromises()
     expect(setToolsMock).toHaveBeenCalledTimes(1)
     expect(setToolsMock.mock.calls[0]?.[0]).toEqual([
@@ -423,14 +455,14 @@ describe('ToolPresetSelector', () => {
     expect(refreshToolsMock).toHaveBeenCalledTimes(1)
   })
 
-  it('选中 none 时 setTools 收到空数组', async () => {
+  it('选中 Off(none) 时 setTools 收到空数组', async () => {
     const wrapper = makeWrapper()
     await wrapper.find('.wb-tool-preset-selector__trigger').trigger('click')
-    const noneLi = wrapper
-      .findAll('.wb-tool-preset-selector__menu li')
-      .find((li) => li.text() === 'none')
-    expect(noneLi).toBeDefined()
-    await noneLi!.trigger('click')
+    const offBtn = wrapper
+      .findAll('.wb-tool-preset-selector__option')
+      .find((b) => b.find('.wb-tool-preset-selector__option-label').text() === 'Off')
+    expect(offBtn).toBeDefined()
+    await offBtn!.trigger('click')
     await flushPromises()
     expect(setToolsMock.mock.calls[0]?.[0]).toEqual([])
   })
@@ -627,6 +659,123 @@ describe('ChatInput — a11y', () => {
     const region = wrapper.find('[role="region"]')
     expect(region.exists()).toBe(true)
     expect(region.attributes('aria-label')).toBe('Queued messages')
+  })
+})
+
+describe('ChatInput — composer layout (对齐 apps/web)', () => {
+  // 对齐 apps/web ChatInput 的底部行布局:textarea 与发送/停止按钮在同一个带边框圆角 composer 内,
+  // model selector 位于 composer 下方的 toolbar 左侧,thinking/tools preset 在右侧。
+  it('composer 包裹 textarea + 发送按钮(同一圆角容器)', () => {
+    const wrapper = makeWrapper()
+    const composer = wrapper.find('.wb-chat-input__composer')
+    expect(composer.exists()).toBe(true)
+    // textarea 和发送按钮都在 composer 内
+    expect(composer.element.contains(wrapper.find('textarea').element)).toBe(true)
+    expect(composer.element.contains(wrapper.find('.wb-chat-input__send-btn').element)).toBe(true)
+  })
+
+  it('toolbar 在 composer 下方,含 model selector + thinking + tools preset', () => {
+    const wrapper = makeWrapper()
+    const composer = wrapper.find('.wb-chat-input__composer')
+    const toolbar = wrapper.find('.wb-chat-input__toolbar')
+    expect(composer.exists()).toBe(true)
+    expect(toolbar.exists()).toBe(true)
+    // toolbar 在 composer 后面(顺序锁定)
+    const positions = Array.from(
+      wrapper.element.querySelectorAll('.wb-chat-input__composer, .wb-chat-input__toolbar')
+    )
+    expect(positions[0]).toBe(composer.element)
+    expect(positions[1]).toBe(toolbar.element)
+    // toolbar 内含 model selector
+    expect(toolbar.find('.wb-model-selector').exists()).toBe(true)
+  })
+
+  it('streaming 时 composer 边框变黄 + 按钮变为 Stop', () => {
+    const wrapper = makeWrapper({ isStreaming: true })
+    const composer = wrapper.find('.wb-chat-input__composer')
+    expect(composer.classes()).toContain('is-streaming')
+    expect(wrapper.find('.wb-chat-input__send-btn--stop').exists()).toBe(true)
+    expect(wrapper.find('.wb-chat-input__send-btn--send').exists()).toBe(false)
+  })
+
+  it('工具栏 RIGHT 依次为 thinking → tools → compact → sound(对齐 apps/web 顺序)', () => {
+    const wrapper = makeWrapper({ compactEnabled: true })
+    const right = wrapper.find('.wb-chat-input__toolbar-right')
+    expect(right.exists()).toBe(true)
+    // 4 个控件顺序锁定。happy-dom 顺序按源码渲染。
+    const kids = right.element.querySelectorAll(
+      '.wb-thinking-selector, .wb-tool-preset-selector, .wb-compact, .wb-sound-toggle'
+    )
+    expect(kids.length).toBe(4)
+    expect(kids[0]?.classList.contains('wb-thinking-selector')).toBe(true)
+    expect(kids[1]?.classList.contains('wb-tool-preset-selector')).toBe(true)
+    expect(kids[2]?.classList.contains('wb-compact')).toBe(true)
+    expect(kids[3]?.classList.contains('wb-sound-toggle')).toBe(true)
+  })
+
+  it('compactEnabled=false 时隐藏 CompactButton', () => {
+    const wrapper = makeWrapper({ compactEnabled: false })
+    expect(wrapper.find('.wb-compact').exists()).toBe(false)
+    // thinking/tools/sound 仍在
+    expect(wrapper.find('.wb-thinking-selector').exists()).toBe(true)
+    expect(wrapper.find('.wb-tool-preset-selector').exists()).toBe(true)
+    expect(wrapper.find('.wb-sound-toggle').exists()).toBe(true)
+  })
+
+  it('点击 SoundToggle 触发 update:soundEnabled', async () => {
+    const wrapper = makeWrapper({ soundEnabled: true })
+    const btn = wrapper.find('.wb-sound-toggle')
+    expect(btn.exists()).toBe(true)
+    await btn.trigger('click')
+    const emitted = wrapper.emitted('update:soundEnabled')
+    expect(emitted?.[0]?.[0]).toBe(false)
+  })
+
+  it('点击 CompactButton 触发 compact 事件', async () => {
+    const wrapper = makeWrapper({ compactEnabled: true })
+    await wrapper.find('.wb-compact__btn').trigger('click')
+    const emitted = wrapper.emitted('compact')
+    expect(emitted).toBeTruthy()
+    expect(wrapper.emitted('abort-compact')).toBeFalsy()
+  })
+
+  it('根容器限 820px 列宽 + 水平居中(与对话气泡同宽,对齐 apps/web)', () => {
+    // 全局样式 .wb-chat-input 必须具有 max-width: 820px + 水平居中(
+    // 对齐 apps/web ChatInput 的 maxWidth:820 + margin:"0 auto")。
+    // happy-dom 不导入样式表,我们通过读取 CSS 源文件验证契约。
+    // __dirname = src/views/agent-workbench/components → ../styles/workbench.css
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const fs = require('node:fs') as typeof import('node:fs')
+    const path = require('node:path') as typeof import('node:path')
+    const cssPath = path.resolve(__dirname, '../styles/workbench.css')
+    const css = fs.readFileSync(cssPath, 'utf8')
+    const block = css.match(/\.wb-chat-input\s*\{[^}]*\}/m)?.[0] ?? ''
+    expect(block, '未找到 .wb-chat-input CSS 块').toContain('max-width: 820px')
+    expect(block).toMatch(/margin-(?:left|right)\s*:\s*auto/)
+  })
+})
+
+describe('ChatInput — fill (编辑回填)', () => {
+  it('fill() 在输入框为空时把内容灌回并更新 v-model', async () => {
+    const wrapper = makeWrapper()
+    // 初始为空
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+    // 调 defineExpose 的 fill
+    ;(wrapper.vm as unknown as { fill: (t: string) => void }).fill('编辑我')
+    await nextTick()
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('编辑我')
+  })
+
+  it('fill() 在输入框已有内容时不覆盖(避免吞掉用户正在打的内容)', async () => {
+    const wrapper = makeWrapper()
+    const ta = wrapper.find('textarea').element as HTMLTextAreaElement
+    ta.value = '正在打'
+    // 触发 v-model 更新(input 事件)
+    wrapper.find('textarea').trigger('input')
+    await nextTick()
+    ;(wrapper.vm as unknown as { fill: (t: string) => void }).fill('别覆盖我')
+    await nextTick()
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在打')
   })
 })
 
