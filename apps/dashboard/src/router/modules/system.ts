@@ -55,6 +55,18 @@ export const systemRoutes: AppRouteRecord = {
           { title: '删除', authMark: 'delete' }
         ]
       }
+    },
+    {
+      path: 'models',
+      name: 'Models',
+      component: '/system/models',
+      meta: {
+        title: 'menus.system.models',
+        icon: 'ri:cpu-line',
+        keepAlive: true,
+        roles: ['R_SUPER', 'R_ADMIN'],
+        authList: [{ title: '编辑', authMark: 'edit' }]
+      }
     }
   ]
 }
