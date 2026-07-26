@@ -58,6 +58,31 @@ export interface ModelsConfigShape {
   fallbackOrder?: unknown
 }
 
+export interface AvailableModelOption {
+  value: string
+  label: string
+  provider: string
+  modelId: string
+  enabled: boolean
+}
+
+export function getAvailableModelOptions(config: ModelsConfigShape): AvailableModelOption[] {
+  const options: AvailableModelOption[] = []
+  for (const [provider, entry] of Object.entries(config.providers ?? {})) {
+    for (const model of entry.models ?? []) {
+      if (!model.id) continue
+      options.push({
+        value: `${provider}/${model.id}`,
+        label: model.name || model.id,
+        provider,
+        modelId: model.id,
+        enabled: true
+      })
+    }
+  }
+  return options
+}
+
 export interface ModelTestResult {
   ok: boolean
   error?: string

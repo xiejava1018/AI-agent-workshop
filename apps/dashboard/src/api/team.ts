@@ -29,3 +29,18 @@ export function removeMember(teamId: string, memberId: string) {
 export function createInviteLink(teamId: string) {
   return httpClient.post<any>({ url: `/api/admin/teams/${teamId}/invites`, data: {} })
 }
+
+export interface TeamOption {
+  id: string
+  name: string
+  role: 'OWNER' | 'ADMIN' | 'MEMBER'
+}
+
+interface MyTeamsResponse {
+  teams?: TeamOption[]
+}
+
+export async function listMyTeams(): Promise<TeamOption[]> {
+  const response = await request.get<MyTeamsResponse>({ url: '/api/teams/my' })
+  return response.teams ?? []
+}
