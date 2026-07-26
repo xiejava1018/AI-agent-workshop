@@ -431,6 +431,71 @@ describe('MessageView — action buttons (chrome v1 A 组)', () => {
       expect(btn.attributes('aria-label')).toBeTruthy()
     }
   })
+
+  // 回归:操作栏必须留在正文下方的 chrome 底行里(参与文档流),
+  // 不能再用 absolute 浮到气泡右上角 —— 否则会偏离很远且盖住其他信息。
+  // 对齐 apps/web MessageView.tsx 的 bottom row 设计。
+  it('操作栏位于 chrome 底行(非 absolute),assistant 与 user 均如此', () => {
+    // assistant
+    const aWrap = mount(MessageView, {
+      props: { message: baseMsg({ id: 'a-flow', role: 'assistant', content: 'x' }) }
+    })
+    const aActions = aWrap.find('[role="toolbar"]')
+    expect(aActions.exists()).toBe(true)
+    // 父级应该是 chrome 底行,而不是 bubble
+    expect(aActions.element.parentElement?.classList.contains('wb-message__chrome')).toBe(true)
+    expect(getComputedStyle(aActions.element).position).not.toBe('absolute')
+
+    // user
+    const uWrap = mount(MessageView, {
+      props: { message: baseMsg({ id: 'u-flow', role: 'user', content: 'hi' }) }
+    })
+    const uActions = uWrap.find('[role="toolbar"]')
+    expect(uActions.exists()).toBe(true)
+    expect(uActions.element.parentElement?.classList.contains('wb-message__chrome')).toBe(true)
+    expect(getComputedStyle(uActions.element).position).not.toBe('absolute')
+  })
+
+  // 回归:assistant chrome 顺序为 [usage][actionbar][time],与 apps/web 一致 ——
+  // 复制/重试要在 usage 右边,不能在左边。time 在最右。
+  it('assistant chrome 顺序: usage → 复制/重试 → time', () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        message: baseMsg({
+          id: 'a-ord',
+          role: 'assistant',
+          content: 'reply',
+          streamStatus: 'done',
+          usage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 0 }
+        }),
+        isStreaming: false
+      }
+    })
+    const chrome = wrapper.find('.wb-message__chrome--assistant')
+    expect(chrome.exists()).toBe(true)
+    const children = chrome.element.children
+    const tags = Array.from(children).map((c) => (c as HTMLElement).tagName.toLowerCase())
+    // usage(span) → MessageActionBar(渲染为 .wb-message__actions 的 div) → time
+    expect(tags[0]).toBe('span') // usage
+    expect(tags[1]).toBe('div') // actions toolbar
+    expect(tags[2]).toBe('time')
+  })
+
+  // 回归:assistant chrome 与 bubble 是兄弟节点(都在 .wb-message 下),
+  // 这样 chrome 能占满列宽、time 能推到与 user 同一个右边缘。
+  it('assistant chrome 与 bubble 是兄弟节点(chrome 不在 bubble 内)', () => {
+    const wrapper = mount(MessageView, {
+      props: { message: baseMsg({ id: 'a-sib', role: 'assistant', content: 'x' }) }
+    })
+    const bubble = wrapper.find('.wb-message__bubble')
+    const chrome = wrapper.find('.wb-message__chrome--assistant')
+    expect(bubble.exists()).toBe(true)
+    expect(chrome.exists()).toBe(true)
+    // chrome 不应是 bubble 的后代
+    expect(bubble.element.contains(chrome.element)).toBe(false)
+    // 两者应共父(.wb-message)
+    expect(chrome.element.parentElement).toBe(bubble.element.parentElement)
+  })
 })
 
 // =============================================================================

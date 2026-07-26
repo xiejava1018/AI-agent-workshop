@@ -322,39 +322,41 @@
             <!-- 父组件可通过 slot 自定义渲染,默认由父级 BranchNavigator 接管 -->
           </slot>
         </div>
-
-        <!-- assistant:chrome 嵌入气泡内底部 flow(不再 absolute),由 bubble 父级 flex-end 推到右下 -->
-        <footer
-          v-if="isAssistant && showChrome"
-          class="wb-message__chrome wb-message__chrome--assistant"
-        >
-          <MessageActionBar
-            class="wb-message__chrome-action"
-            :role="message.role === 'user' ? 'user' : 'assistant'"
-            :content="contentAsString"
-            :message-id="message.id"
-            :is-streaming="isStreaming"
-            :entry-id="entryId"
-            :prev-assistant-entry-id="prevAssistantEntryId"
-            @copy="onCopy"
-            @edit="onEdit"
-            @fork="onFork"
-            @navigate="onNavigate"
-            @retry="onRetry"
-          />
-          <span v-if="showUsageFooter" class="wb-message__usage"
-            >{{ formatToken(message.usage?.input) }} in ·
-            {{ formatToken(message.usage?.output) }} out ·
-            {{ formatToken(message.usage?.cacheRead) }} cache</span
-          >
-          <time
-            v-if="createdAtAttr && showTimestamp"
-            class="wb-message__time"
-            :datetime="createdAtAttr"
-            >{{ formatTime(message.createdAt) }}</time
-          >
-        </footer>
       </div>
+
+      <!-- assistant:chrome 在气泡外、占满列宽的一行(对齐 apps/web):
+           [usage][actionbar] 在左中,time 用 margin-left:auto 推到最右。
+           这样 time 与下面 user 消息的 time 共享同一个右边缘(列宽右沿)。 -->
+      <footer
+        v-if="isAssistant && showChrome"
+        class="wb-message__chrome wb-message__chrome--assistant"
+      >
+        <span v-if="showUsageFooter" class="wb-message__usage"
+          >{{ formatToken(message.usage?.input) }} in ·
+          {{ formatToken(message.usage?.output) }} out ·
+          {{ formatToken(message.usage?.cacheRead) }} cache</span
+        >
+        <MessageActionBar
+          class="wb-message__chrome-action"
+          :role="message.role === 'user' ? 'user' : 'assistant'"
+          :content="contentAsString"
+          :message-id="message.id"
+          :is-streaming="isStreaming"
+          :entry-id="entryId"
+          :prev-assistant-entry-id="prevAssistantEntryId"
+          @copy="onCopy"
+          @edit="onEdit"
+          @fork="onFork"
+          @navigate="onNavigate"
+          @retry="onRetry"
+        />
+        <time
+          v-if="createdAtAttr && showTimestamp"
+          class="wb-message__time"
+          :datetime="createdAtAttr"
+          >{{ formatTime(message.createdAt) }}</time
+        >
+      </footer>
 
       <!-- user:chrome 在气泡外另起一行(复制 / 编辑 / 时间 同行右对齐) -->
       <footer v-if="isUser && showChrome" class="wb-message__chrome wb-message__chrome--user">
@@ -428,20 +430,21 @@
     font-weight: 500;
   }
 
-  /* assistant bubble:vertical flex 让 footer( chrome )被推到 bubble 末行(视觉右下)。
-     流式做法,不依赖 absolute。 */
+  /* assistant bubble:vertical flex 让内容块(model name / blocks / streaming tag)竖向堆叠。
+     chrome footer 已移出 bubble(在气泡外占满列宽的一行),所以这里不再需要它参与布局。 */
   .wb-message--assistant .wb-message__bubble {
     display: flex;
     flex-direction: column;
     align-items: stretch;
   }
 
-  /* assistant chrome:贴近 bubble 底部、横向右对齐 —— 与 user chrome 完全二致 */
+  /* assistant chrome:占满列宽的一行(在气泡外),对齐 apps/web:
+     默认 flex-start, [usage][actionbar] 在左侧,time 用 margin-left:auto 推到最右。
+     这样 time 与 user 消息 time 共享同一个右边缘。 */
   .wb-message__chrome--assistant {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: flex-end;
     gap: 8px;
     margin-top: 6px;
     font-size: 11px;
@@ -458,10 +461,10 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* user:chrome 在气泡正下方换行一栏(因为外层 --user 是 column flex align-items:flex-end,
-     所以 chrome 自己在流式宽度内右对齐)。 */
+  /* user:chrome 在气泡正下方换行一栏(外层 --user 是 column flex align-items:flex-end,
+     chrome 贴右)。占满列宽与 assistant 对齐,内部 justify-content:flex-end。 */
   .wb-message__chrome--user {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
@@ -470,6 +473,12 @@
     color: var(--wb-text-dim);
     opacity: 0.85;
     transition: opacity 120ms ease-out;
+  }
+  /* user 行用 justify-content:flex-end 把 [actionbar][time] 一起贴右,不靠 margin-left:auto
+     (否则 time 会被单独推到最右,actionbar 被甩到左边出现空隙)。这里重置全局 .wb-message__time
+     的 margin-left:auto。 */
+  .wb-message__chrome--user .wb-message__time {
+    margin-left: 0;
   }
 
   .wb-message__chrome .wb-message__time {
