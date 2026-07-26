@@ -120,6 +120,72 @@ describe('SessionSidebar.vue 源契约(对 apps/web)', () => {
   it('使用 useRunningSessions 提供 running map', () => {
     expect(src).toMatch(/useRunningSessions/)
   })
+
+  it('根容器是 wb-sidebar-pane 且是滚动容器', () => {
+    expect(src).toMatch(/class="wb-sidebar-pane"/)
+    expect(src).toMatch(/\.wb-sidebar-pane\s*\{[^}]*overflow-y:\s*auto/m)
+  })
+})
+
+describe('SessionItemRow.vue 源契约', () => {
+  const rowSrc = readSource(ROW)
+
+  it('pin 按钮 no longer 带 v-if="!isPinned" — pinned 行 hover 时也能看到', () => {
+    expect(rowSrc).not.toMatch(/v-if="!isPinned"/)
+    expect(rowSrc).toMatch(/aria-label="(取消|置)置顶"/)
+  })
+})
+
+describe('Bug #2 修复契约:1 条竖线', () => {
+  const css = readSource(
+    path.resolve(__dirname, '../styles/workbench.css')
+  )
+  // 抽出 .wb-session-item.active { ... } 块(去除 CSS 注释干扰)
+  function extractBlock(src: string, selector: string): string | null {
+    const lines = src.split('\n')
+    let depth = 0
+    let body = ''
+    let inRule = false
+    let braceDepthAtStart = -1
+    for (const ln of lines) {
+      const idx = ln.indexOf(selector)
+      if (!inRule && idx >= 0) {
+        inRule = true
+        braceDepthAtStart = depth
+      }
+      if (inRule) {
+        for (const ch of ln) {
+          if (ch === '{') {
+            depth++
+            if (braceDepthAtStart < 0) braceDepthAtStart = depth - 1
+          } else if (ch === '}') {
+            depth--
+          }
+        }
+        body += ln + '\n'
+        if (inRule && depth <= braceDepthAtStart) return body
+      }
+    }
+    return null
+  }
+
+  it('workbench.css 中 .wb-session-item.active 不再有 border-left', () => {
+    const block = extractBlock(css, '.wb-session-item.active')
+    // 如果 .wb-session-item.active 块不存在,更好 — 说明 old code 被全面清除
+    if (block) {
+      expect(block).not.toMatch(/border-left:\s*\d/)
+    } else {
+      expect(css).not.toMatch(/\.wb-session-item\.active\s*\{[^}]*border-left:/)
+    }
+  })
+
+  it('outer .wb-session-item 的 padding=0/border-bottom=0(从 inner row 接管 active 样式)', () => {
+    const m = css.match(/^\.wb-session-item\s*\{([^}]+)\}/m)
+    expect(m, '缺失 .wb-session-item 规则').toBeTruthy()
+    const body = m![1] as string
+    expect(body).toMatch(/padding:\s*0/)
+    expect(body).toMatch(/border-bottom:\s*0/)
+  })
 })
 
 describe('AppShell.vue 与 SessionSidebar 的集成', () => {
