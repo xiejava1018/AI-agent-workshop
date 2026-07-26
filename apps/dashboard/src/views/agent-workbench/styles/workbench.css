@@ -129,24 +129,24 @@
   overflow: hidden;
 }
 
-/* ============ 会话项 ============ */
+/* ============ 会话项 ============
+ *
+ * 注意:会话项的 active indicator(2px left-border)与 hover 高亮现在
+ * 由 SessionItemRow.vue 內部 row 控制。原因:这些 visual 本质上是
+ * per-row(54px 2 区)内容,不应与 .wb-session-item 包装层的状态污染。
+ * .wb-session-item.active 遗留的外层边框会与内嵌 row 的同色边框叠加,
+ * 在 active 行上看见两条同色竖线。
+ * 这里保留 .wb-session-item.unavailable 透明度(适用于会话不允许开启)。
+ */
 
 .wb-session-item {
-  padding: var(--wb-pad-sm) var(--wb-pad-md);
-  border-bottom: 1px solid var(--wb-border);
+  padding: 0;
+  border-bottom: 0;
   cursor: pointer;
   transition: background-color var(--wb-transition-fast) var(--wb-ease-out);
 }
 .wb-session-item:hover {
-  background: var(--wb-bg-hover);
-}
-.wb-session-item.active {
-  background: var(--wb-bg-active);
-  border-left: 2px solid var(--wb-accent);
-}
-.wb-session-item.pinned .wb-session-title::before {
-  content: '★ ';
-  color: var(--wb-warning);
+  background: transparent;
 }
 .wb-session-item.unavailable {
   opacity: 0.5;

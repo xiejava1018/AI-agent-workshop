@@ -200,7 +200,7 @@ function isActive(s: AgentSession): boolean {
 </script>
 
 <template>
-  <div class="wb-session-list">
+  <div class="wb-sidebar-pane">
     <!-- Header -->
     <div class="wb-sidebar-header">
       <div class="wb-sidebar-header-row">
@@ -406,6 +406,20 @@ function isActive(s: AgentSession): boolean {
 </template>
 
 <style scoped>
+  /**
+   * 根容器 = 路由外层 <aside class="wb-session-list"> 的滚动子。
+   * 负责 header 不滚动 + sections 自动滚动。这里设 flex column + overflow-y:auto。
+   */
+  .wb-sidebar-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--wb-bg-sidebar);
+  }
+
   .wb-sidebar-header {
     flex-shrink: 0;
     padding: var(--wb-pad-sm) var(--wb-pad-md);

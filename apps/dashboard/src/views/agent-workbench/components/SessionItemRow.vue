@@ -264,14 +264,13 @@ function onRowClick() {
         </svg>
       </button>
 
-      <!-- hover 动作组(pin / rename / delete) -->
+      <!-- hover 动作组(pin / unpin / rename / delete) -->
       <div class="wb-session-actions-hover">
         <button
-          v-if="!isPinned"
           type="button"
           class="wb-action-btn"
-          title="置顶"
-          aria-label="置顶"
+          :title="isPinned ? '取消置顶' : '置顶'"
+          :aria-label="isPinned ? '取消置顶' : '置顶'"
           @click.stop="emit('toggle-pin')"
         >
           <svg
