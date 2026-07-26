@@ -41,17 +41,23 @@
   /** Intl.Collator 实例化开销不小,提升到 setup 顶层复用 */
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-  /** 当前显示名(优先级见顶部注释) */
+  /**
+   * 当前显示名(优先级见顶部注释)。
+   * 友好降级:区分“当前 model 还没值”(会话刚开/后端未推 → “选择模型”)
+   * 与“modelList 本身就是空”(后端无模型 → “暂无可用模型”)两种状态,
+   * 都用中性提示文案;选中具体模型后再显示人类可读 name 或 provider:modelId。
+   */
   const displayName = computed<string>(() => {
     if (props.isAuto) return 'auto'
-    if (!props.model) return 'no model'
+    if (props.modelList.length === 0) return '选择模型'
+    if (!props.model) return '选择模型'
     const key = `${props.model.provider}:${props.model.modelId}`
     if (props.modelNames[key]) return props.modelNames[key]
     const fromList = props.modelList.find(
       (m) => m.provider === props.model?.provider && m.modelId === props.model?.modelId
     )
     if (fromList?.name) return fromList.name
-    return key || 'no model'
+    return key
   })
 
   /** 排序后的下拉项(Intl.Collator numeric + base sensitivity,collator 复用 setup 实例) */
@@ -107,7 +113,12 @@
       :disabled="sortedItems.length === 0"
       @click="toggle"
     >
-      <span class="wb-model-selector__label">{{ displayName }}</span>
+      <span
+        class="wb-model-selector__label"
+        :class="{ 'is-placeholder': displayName === '选择模型' }"
+      >
+        {{ displayName }}
+      </span>
       <el-icon v-if="sortedItems.length > 0" class="wb-model-selector__caret"><CaretBottom /></el-icon>
     </button>
     <ul v-if="open" class="wb-model-selector__menu" role="listbox" aria-label="选择模型">
@@ -156,6 +167,13 @@
   .wb-model-selector__caret {
     font-size: 10px;
     line-height: 1;
+  }
+
+  /* “选择模型” 是未选择状态的占位文案,稍微弱化+斜体,作为 hint 而不是错误态。 */
+  .wb-model-selector__label.is-placeholder {
+    font-weight: 400;
+    font-style: italic;
+    color: var(--wb-text-dim, #909399);
   }
 
   .wb-model-selector__menu {

@@ -40,6 +40,25 @@
     branchesByMessage: () => new Map()
   })
 
+  /**
+   * edit 事件:用户点击某条 user 消息的「编辑」按钮时触发,
+   * 参数为 (entryId, content)。ChatInput 由父级 AppShell 通过 slot 注入,
+   * ChatWindow 拿不到其实例,故把请求 emit 给 AppShell,由它调
+   * chatInputRef.fill(content) 把内容回填到输入框(对齐 apps/web 的
+   * onEditContent -> insertIfEmpty)。
+   *
+   * auto-rename 事件:第一条 user 消息出现时触发,
+   * 参数为 (sessionId, suggestedTitle)。父级 AppShell 接住后调
+   * renameSession 把后端 title 写为 suggestedTitle,
+   * 并同步到 tab.title 让 Tab 显示更友好。
+   * 设计原因:ChatWindow 离最近发出过 user 的 sessionId 最近,
+   * 负责检测逻辑;后端 / tab 标题更新都集中在 AppShell。
+   */
+  const emit = defineEmits<{
+    edit: [entryId: string | undefined, content: string]
+    'auto-rename': [sessionId: string, suggestedTitle: string]
+  }>()
+
   const userId = localStorage.getItem('user_id') || ''
 
   const {
@@ -60,6 +79,41 @@
     ...queuedMessages.value.followUp,
     ...queuedMessages.value.steer
   ])
+
+  // ===========================================================================
+  // tab title auto-rename:检测会话中第一条 user 消息,
+  // 把它抽成 suggestedTitle emit 给父级 AppShell,后者调 renameSession 同步。
+  //
+  // 为什么 not  onMessage 完整传:
+  //   - 当 ChatWindow load 一个已有会话(后端历史)时,messages 里已有许多 user。
+  //     第一个 user 是最反面的命名提示(可能是“老题目”),与“刚开这个会话”的意图不符。
+  //     我们只在会话中 user 数 0 → 1 的转移点命名,避免老会话被覆盖。
+  //   - history 中 messages 先加载,再是 sent message;Vue 响应式 watch 会取最新值。
+  //   - 会话切换 key 重建时组件 unmount,messages 重置,autoRenameFired 跟着重置(按组件实例范围)。
+  // ===========================================================================
+  let autoRenameFired = false
+  function suggestTitleFromMessage(content: string): string {
+    // 收口:多行压缩为单行 trim;截断 24 字(中文 1字 =1 字符)。apps/web 50字但
+    // dashboard tab 较窄,24 字更安全。
+    const single = content.replace(/\s+/g, ' ').trim()
+    if (!single) return '新会话'
+    return single.length > 24 ? single.slice(0, 24) + '…' : single
+  }
+  watch(
+    () => messages.value,
+    (list) => {
+      if (autoRenameFired) return
+      const userMsgs = list.filter((m) => m.role === 'user')
+      if (userMsgs.length === 0) return
+      autoRenameFired = true
+      const first = userMsgs[0]
+      const content = typeof first.content === 'string' ? first.content : ''
+      if (!content.trim()) return
+      const suggested = suggestTitleFromMessage(content)
+      emit('auto-rename', props.sessionId, suggested)
+    },
+    { immediate: true }
+  )
 
   // 用户主动滚动的意图记录(对齐 apps/web hooks/useAgentSession.ts
   // `userScrollIntentUntilRef`)。用户在最近 800ms 内有过滚轮 / 键盘 / 触摸
@@ -197,8 +251,10 @@
   }
 
   function onEdit(entryId: string | undefined, content: string): void {
-    // 阶段 1 仅透传;后续 Track 接入:把 content 灌回输入框 + 触发重发。
-    console.log('[ChatWindow] edit TODO', { entryId, content })
+    // 把被编辑的用户消息内容回填到输入框(对齐 apps/web onEditContent -> insertIfEmpty)。
+    // ChatInput 由父级 AppShell 通过 slot 注入,本组件拿不到其实例,
+    // 所以把请求 emit 给 AppShell,由它调 chatInputRef.fill(content)。
+    emit('edit', entryId, content)
   }
 
   function onFork(entryId: string): void {

@@ -325,6 +325,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--wb-pad-sm);
+  /* 与上方 .wb-messages > * 保持同列宽(820):聊天输入区与对话气泡
+   * 左右同宽且居中,避免帖子变宽后输入框底部看起被“两边拉伸”
+   * (对齐 apps/web ChatInput 的 maxWidth:820 + margin:"0 auto")。 */
+  max-width: 820px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
 }
 
 .wb-input-actions {
@@ -355,6 +363,12 @@
   cursor: pointer;
   font-size: 12px;
   white-space: nowrap;
+  /* 限定 max 200px + shrink=1 允许 tab 在 tabbar 拥挤时被压缩,label 内 ellipsis 收敛。
+   * min-width 由子元素 .wb-tab-label(以及关闭按钮的 min-content 需求)决定;
+   * 调 min-width: 0 是为了让 flex 子项能修氏缩到超出内容尺寸。 */
+  max-width: 200px;
+  flex-shrink: 1;
+  min-width: 0;
   transition: background-color var(--wb-transition-fast) var(--wb-ease-out);
 }
 .wb-tab:hover {
