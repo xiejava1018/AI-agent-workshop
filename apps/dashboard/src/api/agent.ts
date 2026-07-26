@@ -88,6 +88,26 @@ export interface AgentSession {
   available?: boolean
   /** M3 follow-up (issue #4): 从 session-prefs 拉取的 pin 状态 */
   pinned?: boolean
+
+  // ============================================================================
+  // P2: apps/web SessionInfo 同步的其他字段(后端 /api/sessions 实际都返)
+  // ----------------------------------------------------------------------------
+  // dashboard 之前未用但后端已在返回;加上后 SessionSidebar 可以实现 fork tree、
+  // 消息计数、worktree branch 显示(对齐 apps/web)。
+  // ============================================================================
+
+  /** 会话消息条数。后端从 session entry 数计算 */
+  messageCount?: number
+  /** 第一条 user 消息内容(apps/web 用作 title 兑底) */
+  firstMessage?: string
+  /** fork 树中的父会话 id(子会话 = 从某会话的某点 fork 出去的分支) */
+  parentSessionId?: string
+  /** 会话 cwd(用于侧栏底部 File Explorer) */
+  cwd?: string
+  /** git 主仓根路径(多 worktree 场景下所有 worktree 共享) */
+  projectRoot?: string
+  /** 当前会话所在 worktree 的 git 分支名 */
+  worktreeBranch?: string
 }
 
 export interface SendMessageParams {
