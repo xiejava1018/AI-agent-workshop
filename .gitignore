@@ -69,3 +69,6 @@ test-results/
 apps/web/inspect*.mjs
 apps/web/shot*.mjs
 apps/web/probe*.mjs
+
+# pi agent worktrees (local)
+.claude/worktrees/
