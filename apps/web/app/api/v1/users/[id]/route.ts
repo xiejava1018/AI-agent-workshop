@@ -174,7 +174,13 @@ export async function DELETE(
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target) return notFound();
 
-  await prisma.user.delete({ where: { id } });
+  // Hard delete. TeamMember.userId has ON DELETE RESTRICT, so remove the
+  // memberships first inside a transaction (UserRole / UserSkillBinding
+  // cascade automatically via FK). Mirrors /api/admin/users/[id] DELETE.
+  await prisma.$transaction([
+    prisma.teamMember.deleteMany({ where: { userId: id } }),
+    prisma.user.delete({ where: { id } }),
+  ]);
   void auditLog({
     userId: callerId,
     action: "user.delete",
