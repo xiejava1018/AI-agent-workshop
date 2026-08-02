@@ -113,18 +113,23 @@ declare namespace Api {
 
     /** 用户列表项（系统管理接口返回结构） */
     interface UserListItem {
-      id: number
+      // 后端 User.id 是 cuid 字符串,即使前端模板是 id 应为 string/number。
+      id: string
       username?: string
-      name: string
+      name?: string
       account?: string
       phone?: string
       email?: string | null
+      full_name?: string | null
       gender?: number | null
       status?: number
+      // 1 启用 / 2 禁用;后端状态返回 disabled boolean。前端表格可以并行使用 status 或 disabled。
+      disabled?: boolean
       avatar?: string | null
-      role_id?: number | null
+      role_id?: number | null | string
       role_name?: string | null
       role_desc?: string | null
+      roleCodes?: string[]
       created_at?: number | string
       updated_at?: number | string
       [key: string]: any
@@ -148,10 +153,16 @@ declare namespace Api {
 
     /** 角色列表项（与系统管理接口对齐） */
     interface RoleListItem {
-      id: number
+      // 后端 SysRole.id 是 cuid 字符串,即使前端模板是 id 应为 string/number。
+      id: string
+      // 角色编码;后端 SysRole.code @unique。
+      code?: string
       name: string
       desc?: string
+      // 1 启用 / 2 禁用(前端 UI 表格约定)。后端 GET 返回 enabled boolean。
       status?: number
+      enabled?: boolean
+      sort?: number
       created_at?: number | string
       updated_at?: number | string
       users?: any[]
