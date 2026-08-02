@@ -13,17 +13,36 @@ const UNAUTHORIZED_DEBOUNCE_TIME = 3000
 let isUnauthorizedErrorShown = false
 let unauthorizedTimer: NodeJS.Timeout | null = null
 
-/** Token刷新状态 */
+/**
+ * Token 刷新状态
+ *
+ * 本项目使用 HttpOnly Cookie 认证(pw_at / pw_rt),前端拿不到也不存储 access token。
+ * 刷新成功时后端通过 Set-Cookie 更新 pw_at,浏览器自动携带,因此队列回调
+ * 只需触发"重放原请求",无需传递 token。
+ *
+ * 队列回调约定:
+ *   - 收到 ''(空串)  → 刷新成功,浏览器已带新 cookie,重放请求
+ *   - 收到 null      → 刷新失败,应 reject 并触发登出
+ */
 let isRefreshing = false
-let refreshSubscribers: Array<(token: string) => void> = []
+let refreshSubscribers: Array<(token: string | null) => void> = []
 
-function subscribeTokenRefresh(callback: (token: string) => void) {
+function subscribeTokenRefresh(callback: (token: string | null) => void) {
   refreshSubscribers.push(callback)
 }
 
-function onTokenRefreshed(token: string) {
-  refreshSubscribers.forEach((cb) => cb(token))
+/** 通知队列:刷新成功(cookie 模式无 token,传空串触发重放)。 */
+function notifyRefreshSuccess() {
+  const subs = refreshSubscribers
   refreshSubscribers = []
+  subs.forEach((cb) => cb(''))
+}
+
+/** 通知队列:刷新失败,全部 reject(随后由 handleUnauthorizedError 触发登出)。 */
+function notifyRefreshFailed() {
+  const subs = refreshSubscribers
+  refreshSubscribers = []
+  subs.forEach((cb) => cb(null))
 }
 
 /** 扩展 AxiosRequestConfig */
@@ -107,33 +126,47 @@ axiosInstance.interceptors.response.use(
     const status = error.response?.status
     const skipAuth = originalRequest?.skipAuthHandler === true
 
-    // 401 自动刷新 token 重放
+    // 401 自动刷新 cookie 并重放
+    // (HttpOnly cookie 模式:刷新成功 → 后端 Set-Cookie 更新 pw_at,
+    //  浏览器自动携带,重放原请求即可;刷新失败 → 清队列并登出跳登录)
     if (status === ApiStatus.unauthorized && !skipAuth && !originalRequest._retry) {
-      if (!isRefreshing) {
-        isRefreshing = true
-        try {
-          const { refreshToken } = await import('@/api/auth')
-          const res = await refreshToken()
-          const newToken = (res as any)?.data?.access_token
-          if (newToken) {
-            localStorage.setItem('access_token', newToken)
-            onTokenRefreshed(newToken)
-          }
-        } catch {
-          // refresh 失败，交给后续 handleUnauthorizedError 处理
-        } finally {
-          isRefreshing = false
-        }
+      // 已在刷新中 → 排队等待结果(resolve=重放, reject=登出)
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          subscribeTokenRefresh((token) => {
+            if (token === null) {
+              reject(createHttpError('登录状态已失效，请重新登录', ApiStatus.unauthorized))
+              return
+            }
+            originalRequest._retry = true
+            resolve(axiosInstance(originalRequest))
+          })
+        })
       }
 
-      // 排队等待 token 刷新完成
-      return new Promise((resolve) => {
-        subscribeTokenRefresh((token) => {
-          originalRequest._retry = true
-          ;(originalRequest.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`
-          resolve(axiosInstance(originalRequest))
-        })
-      })
+      // 发起刷新
+      isRefreshing = true
+      let refreshOk = false
+      try {
+        const { refreshToken } = await import('@/api/auth')
+        await refreshToken()
+        refreshOk = true
+      } catch {
+        refreshOk = false
+      } finally {
+        isRefreshing = false
+      }
+
+      if (refreshOk) {
+        // cookie 已更新,通知队列重放,并重放当前请求(浏览器带新 cookie)
+        notifyRefreshSuccess()
+        originalRequest._retry = true
+        return axiosInstance(originalRequest)
+      }
+
+      // refresh 失败:通知队列取消,并触发登出跳转
+      notifyRefreshFailed()
+      handleUnauthorizedError() // 内部 throw,永不返回
     }
 
     if (status === ApiStatus.unauthorized && !skipAuth) handleUnauthorizedError()
