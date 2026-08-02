@@ -75,3 +75,7 @@ apps/web/probe*.mjs
 
 # understand tool cache (local)
 .ua/
+
+# Skill runtime materialized storage (change: skill-runtime-completeness)
+# SKILLS_ROOT default ./skills is runtime data, never commit
+.skills/

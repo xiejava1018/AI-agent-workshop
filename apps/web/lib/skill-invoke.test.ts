@@ -210,6 +210,8 @@ describe("buildSkillInjection", () => {
         skillPackageId: "skill-global",
         userId: "user-123",
         sessionId: "session-789",
+        triggerKind: "explicit",
+        outcome: "success",
       },
     });
   });

@@ -12,6 +12,7 @@ import os from "os";
 import path from "path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { prisma } from "./prisma";
+import { materializeSkill } from "./skill-materialize";
 
 // -----------------------------------------------------------------------------
 // Types (公共 API 出口)
@@ -84,6 +85,8 @@ export interface SeedFromBuiltinResult {
   updated: number;
   skipped: number;
   total: number;
+  /** P1: 新建的 global SkillPackage 数（让 builtin 直接可绑）。 */
+  packagesCreated: number;
 }
 
 // -----------------------------------------------------------------------------
@@ -480,7 +483,12 @@ function* walkSkills(root: string): Generator<ParsedSkill> {
   }
 }
 
-/** 内部用:seed-from-builtin 的 upsert by sourceFilePath。slug 已存在则跳过不重写 (slug 是治理标识)。 */
+/**
+ * 内部用:seed-from-builtin 的 upsert。
+ * P1 (skill-runtime-completeness): 优先按 slug 查（slug 是稳定治理标识），
+ * 把 sourceFilePath 修正为 SKILLS_ROOT 规范路径（而非 builtin 绝对路径），
+ * 修复 design.md §2.3 断点 B（curated 指向开发机绝对路径，部署即失效）。
+ */
 async function upsertBySourceFilePath(parsed: {
   slug: string;
   name: string;
@@ -488,17 +496,32 @@ async function upsertBySourceFilePath(parsed: {
   sourceFilePath: string;
   sourceBuiltinPath: string;
 }): Promise<"created" | "updated"> {
-  const existing = await prisma.skillCuratedEntry.findFirst({
-    where: { sourceFilePath: parsed.sourceFilePath },
+  // 优先按 slug：旧 entry（sourceFilePath 可能是开发机绝对路径）会被 update 成规范路径
+  const bySlug = await prisma.skillCuratedEntry.findUnique({
+    where: { slug: parsed.slug },
     select: { id: true },
   });
-  if (existing) {
+  if (bySlug) {
     await prisma.skillCuratedEntry.update({
-      where: { id: existing.id },
+      where: { id: bySlug.id },
       data: {
         name: parsed.name,
         description: parsed.description,
+        sourceFilePath: parsed.sourceFilePath,
+        sourceBuiltinPath: parsed.sourceBuiltinPath,
       },
+    });
+    return "updated";
+  }
+  // slug 不存在，再按 sourceFilePath 查（防同文件不同 slug）
+  const byPath = await prisma.skillCuratedEntry.findFirst({
+    where: { sourceFilePath: parsed.sourceFilePath },
+    select: { id: true },
+  });
+  if (byPath) {
+    await prisma.skillCuratedEntry.update({
+      where: { id: byPath.id },
+      data: { name: parsed.name, description: parsed.description },
     });
     return "updated";
   }
@@ -525,24 +548,97 @@ async function upsertBySourceFilePath(parsed: {
   return "created";
 }
 
-/** 扫 3 个 builtin 目录,按 sourceFilePath 幂等 upsert。 */
+/**
+ * P1: upsert global SkillPackage，让 builtin skill seed 后直接可被数字员工绑定
+ * （无需用户手动 install）。按 (scope=global, slug) 查重；存在则修正 filePath
+ * （可能从旧的开发机路径更新为 SKILLS_ROOT 规范路径）。
+ */
+async function upsertGlobalSkillPackage(opts: {
+  slug: string;
+  name: string;
+  description: string;
+  filePath: string;
+}): Promise<"created" | "updated"> {
+  const existing = await prisma.skillPackage.findFirst({
+    where: { scope: "global", slug: opts.slug },
+    select: { id: true, filePath: true },
+  });
+  if (existing) {
+    if (existing.filePath !== opts.filePath) {
+      await prisma.skillPackage.update({
+        where: { id: existing.id },
+        data: { filePath: opts.filePath, name: opts.name, description: opts.description },
+      });
+    }
+    return "updated";
+  }
+  try {
+    await prisma.skillPackage.create({
+      data: {
+        slug: opts.slug,
+        name: opts.name,
+        description: opts.description,
+        scope: "global",
+        teamId: null,
+        userId: null,
+        source: "builtin",
+        filePath: opts.filePath,
+        enabled: true,
+      },
+    });
+    return "created";
+  } catch {
+    // 并发插入导致 unique 冲突 → 视为已存在
+    return "updated";
+  }
+}
+
+/**
+ * 扫 3 个 builtin 目录，对每个 SKILL.md：materialize 到 SKILLS_ROOT 规范路径 →
+ * upsert CuratedEntry（sourceFilePath 存规范路径）→ upsert global SkillPackage
+ * （让 builtin 直接可绑）。修复 design.md §2.3 断点 B。
+ */
 export async function seedFromBuiltin(): Promise<SeedFromBuiltinResult> {
   let created = 0;
   let updated = 0;
   let skipped = 0;
   let total = 0;
+  let packagesCreated = 0;
 
   for (const root of builtinRoots()) {
     for (const parsed of walkSkills(root)) {
       total++;
       try {
-        const action = await upsertBySourceFilePath(parsed);
+        // P1: materialize 到 SKILLS_ROOT 规范路径（可移植、运行时可读）
+        const materialized = await materializeSkill({
+          source: { kind: "builtin", path: parsed.sourceFilePath },
+          scope: "global",
+          slug: parsed.slug,
+        });
+
+        // upsert CuratedEntry，sourceFilePath 存规范路径（非 builtin 绝对路径）
+        const action = await upsertBySourceFilePath({
+          slug: parsed.slug,
+          name: parsed.name,
+          description: parsed.description,
+          sourceFilePath: materialized.filePath,
+          sourceBuiltinPath: parsed.sourceBuiltinPath,
+        });
         if (action === "created") created++;
         else updated++;
+
+        // upsert global SkillPackage（让 builtin 直接可绑）
+        const pkgAction = await upsertGlobalSkillPackage({
+          slug: parsed.slug,
+          name: parsed.name,
+          description: parsed.description,
+          filePath: materialized.filePath,
+        });
+        if (pkgAction === "created") packagesCreated++;
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[curated-skills] seed-from-builtin upsert failed for ${parsed.slug}:`,
+          `[curated-skills] seed-from-builtin failed for ${parsed.slug}:`,
           err,
         );
         skipped++;
@@ -550,7 +646,7 @@ export async function seedFromBuiltin(): Promise<SeedFromBuiltinResult> {
     }
   }
 
-  return { created, updated, skipped, total };
+  return { created, updated, skipped, total, packagesCreated };
 }
 
 /** 取分类聚合(带计数),仅统计 enabled=true。 */

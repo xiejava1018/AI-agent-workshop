@@ -11,7 +11,8 @@ import {
 import { createHash, randomUUID } from "crypto";
 import { cacheSessionPath } from "./session-reader";
 import { decrementUserSessionCap } from "./session-cap";
-import { resolveAgentMcpServers, resolveAgentSkills } from "./scope-resolve";
+import { resolveAgentMcpServers, resolveAgentSkillPackages } from "./scope-resolve";
+import { syncSkillToSessionCwd } from "./skill-materialize";
 import { prisma } from "./prisma";
 import { decryptSecret } from "./secret-crypto";
 import type { SlashCommandInfo, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -72,6 +73,10 @@ const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"
 // ============================================================================
 // Scope hashing
 //
+// P0 (skill-runtime-completeness): 灰度开关。默认开启；设为 "false" 可回退到
+// 「不把 skill 文件 sync 到 cwd」的旧行为（断点 C 未修复前），用于紧急止血。
+const SKILL_SYNC_ENABLED = process.env.SKILL_SYNC_ENABLED !== "false";
+
 // A "scope" identifies the set of skills + MCP servers an agent is bound to.
 // Two sessions with the same scope share the same services cache; sessions
 // with different scopes must NOT share a cache entry (otherwise agent-bound
@@ -1409,8 +1414,8 @@ export async function startRpcSession(
     let resolvedScope: AgentScopeInput = { skills: [], mcpServers: [] };
     if (agentScope) {
       try {
-        const [skills, mcp] = await Promise.all([
-          resolveAgentSkills({
+        const [skillPkgs, mcp] = await Promise.all([
+          resolveAgentSkillPackages({
             agentId: agentScope.agentId,
             userId: agentScope.userId,
             teamId: agentScope.teamId,
@@ -1423,7 +1428,36 @@ export async function startRpcSession(
             ...(agentScope.scope ? { scope: agentScope.scope } : {}),
           }),
         ]);
-        resolvedScope = { skills: skills.skills, mcpServers: mcp.mcpServers };
+
+        // P0 (skill-runtime-completeness): 把绑定的 skill 文件铺到 cwd，
+        // 修复 design.md §2.3 断点 C。必须在 getOrCreateServices 之前完成，
+        // 否则 createAgentSessionServices 扫描 <cwd>/.pi/skills 时文件还不存在。
+        let syncedSlugs = skillPkgs.map((p) => p.slug);
+        if (SKILL_SYNC_ENABLED && skillPkgs.length > 0) {
+          try {
+            const { synced, failed } = await syncSkillToSessionCwd({
+              cwd,
+              skills: skillPkgs.map((p) => ({ slug: p.slug, filePath: p.filePath })),
+            });
+            if (failed.length > 0) {
+              // eslint-disable-next-line no-console -- intentional
+              console.warn(
+                `[rpc-manager] syncSkillToSessionCwd partial failure for agentId=${agentScope.agentId}:`,
+                failed,
+              );
+            }
+            syncedSlugs = synced;
+          } catch (syncErr) {
+            // eslint-disable-next-line no-console -- sync 失败不阻断会话
+            console.warn(
+              `[rpc-manager] syncSkillToSessionCwd threw for agentId=${agentScope.agentId} (continuing with no skills synced):`,
+              syncErr,
+            );
+            syncedSlugs = [];
+          }
+        }
+
+        resolvedScope = { skills: syncedSlugs, mcpServers: mcp.mcpServers };
       } catch (err) {
         // eslint-disable-next-line no-console -- intentional: scope failure must
         // surface to logs even in production so operators can diagnose DB outages.

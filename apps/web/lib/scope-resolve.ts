@@ -69,6 +69,50 @@ export async function resolveAgentSkills(input: ResolveInput): Promise<ResolvedS
   return { skills: [...effective.keys()], layersApplied };
 }
 
+/**
+ * resolveAgentSkills 的伴生函数（change: skill-runtime-completeness P0.3.1）。
+ * 在四层收敛得到的 slug 列表基础上，批量查 SkillPackage 取 filePath，
+ * 供 startRpcSession 在会话启动时 sync 到 <cwd>/.pi/skills。
+ *
+ * 同名 slug 跨 scope 冲突时按优先级 user > team > global 取（与
+ * resolveSkillPackageBySlug 一致）。filePath 为空的包（未 materialize）被
+ * 过滤，调用方不会收到无法 sync 的项。
+ */
+export interface ResolvedSkillPackage {
+  slug: string;
+  filePath: string;
+  name: string;
+  scope: string;
+}
+
+export async function resolveAgentSkillPackages(
+  input: ResolveInput,
+): Promise<ResolvedSkillPackage[]> {
+  const { skills: slugs } = await resolveAgentSkills(input);
+  if (slugs.length === 0) return [];
+
+  const pkgs = await prisma.skillPackage.findMany({
+    where: { slug: { in: slugs }, enabled: true },
+    select: { slug: true, filePath: true, name: true, scope: true },
+  });
+
+  // scope 优先级：user > team > global；同名取优先级最高者
+  const prio: Record<string, number> = { user: 0, team: 1, global: 2 };
+  pkgs.sort((a, b) => (prio[a.scope] ?? 9) - (prio[b.scope] ?? 9));
+
+  const bySlug = new Map<string, ResolvedSkillPackage>();
+  for (const p of pkgs) {
+    if (bySlug.has(p.slug)) continue; // 已被更高优先级占用
+    if (!p.filePath) continue; // 未 materialize，跳过
+    bySlug.set(p.slug, { slug: p.slug, filePath: p.filePath, name: p.name, scope: p.scope });
+  }
+
+  // 保持 resolveAgentSkills 返回的 slug 顺序
+  return slugs
+    .map((s) => bySlug.get(s))
+    .filter((p): p is ResolvedSkillPackage => !!p);
+}
+
 export interface ResolvedMcp {
   mcpServers: Array<{ id: string; name: string; transport: string }>;
   deniedGlobalCredential: string[]; // IDs of global MCPs rejected due to credential

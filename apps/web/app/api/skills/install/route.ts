@@ -24,13 +24,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { resolve, relative, sep } from "path";
 import { runNpx } from "@/lib/npx";
 import { prisma } from "@/lib/prisma";
 import { getUserHighestRole } from "@/lib/user-role";
-
-// Skills root — filePath values are validated against this at install time
-const SKILLS_ROOT = resolve(process.env.SKILLS_ROOT ?? "./.skills");
+import { materializeSkill, MaterializeError, type SkillSource } from "@/lib/skill-materialize";
 
 export const dynamic = "force-dynamic";
 
@@ -60,14 +57,39 @@ function isSkillScope(v: unknown): v is SkillScope {
 }
 
 /**
- * Validate that a filePath resolves to a location within SKILLS_ROOT.
- * Rejects empty paths and any path that escapes the skills directory (path traversal).
+ * Resolve the skill source from the request body.
+ * - New shape: body.source = { kind: "builtin"|"curated"|"uploaded"|"content"|..., ... }
+ * - Legacy shape: body.filePath (string) → treated as an already-on-disk uploaded file
+ * Returns null when neither is present.
  */
-function isValidSkillFilePath(filePath: string): boolean {
-  if (!filePath || typeof filePath !== "string") return false;
-  const candidate = resolve(filePath);
-  const rel = relative(SKILLS_ROOT, candidate);
-  return !(rel.startsWith(`..${sep}`) || rel.includes(".."));
+function resolveSkillSource(body: Record<string, unknown>, legacyFilePath: string): SkillSource | null {
+  const src = body.source;
+  if (src && typeof src === "object" && "kind" in (src as object)) {
+    return src as SkillSource;
+  }
+  if (legacyFilePath) {
+    return { kind: "uploaded", filePath: legacyFilePath };
+  }
+  return null;
+}
+
+/**
+ * Map a MaterializeError to the right HTTP response. Non-MaterializeError
+ * exceptions are treated as internal errors.
+ */
+function materializeErrorToResponse(e: unknown): NextResponse {
+  if (e instanceof MaterializeError) {
+    const code = e.code;
+    if (code === "CURATED_NOT_FOUND") {
+      return NextResponse.json({ error: e.message }, { status: 404 });
+    }
+    if (code === "NOT_IMPLEMENTED") {
+      return NextResponse.json({ error: e.message }, { status: 501 });
+    }
+    // FRONTMATTER_MISSING_NAME / SOURCE_UNREADABLE / CURATED_NO_PATH → 422
+    return NextResponse.json({ error: e.message }, { status: 422 });
+  }
+  return NextResponse.json({ error: String(e) }, { status: 500 });
 }
 
 /** Check if caller is OWNER or ADMIN of a specific team. */
@@ -113,8 +135,7 @@ async function handleScopedInstall(
   const callerId = req.headers.get("x-user-id");
   if (!callerId) return unauthorizedResponse();
 
-  const { slug: rawSlug, name: rawName, description, scope: rawScope, teamId, userId, source, filePath: rawFilePath } =
-    body;
+  const { slug: rawSlug, name: rawName, description, scope: rawScope, teamId, userId, filePath: rawFilePath } = body;
 
   if (typeof rawSlug !== "string" || rawSlug.trim().length === 0) {
     return badRequestResponse("slug required");
@@ -130,14 +151,6 @@ async function handleScopedInstall(
     return badRequestResponse('scope must be "global" | "team" | "user"');
   }
   const scope = rawScope;
-
-  // Validate filePath if provided — must stay within SKILLS_ROOT
-  const filePath = typeof rawFilePath === "string" && rawFilePath.trim() !== ""
-    ? rawFilePath.trim()
-    : "";
-  if (filePath && !isValidSkillFilePath(filePath)) {
-    return badRequestResponse("filePath must be inside the skills root directory");
-  }
 
   // Resolve tenant + RBAC per scope.
   let resolvedTeamId: string | null = null;
@@ -181,20 +194,42 @@ async function handleScopedInstall(
     );
   }
 
+  // P0 (skill-runtime-completeness): resolve the skill source and materialize
+  // the SKILL.md into SKILLS_ROOT before inserting the DB row. This guarantees
+  // filePath is non-empty, canonical, and on disk — fixing the "install only
+  // writes DB, never lands a file" gap (design.md §2.3 断点 A).
+  const skillSource = resolveSkillSource(body, typeof rawFilePath === "string" ? rawFilePath.trim() : "");
+  if (!skillSource) {
+    return badRequestResponse("source (object {kind,...}) or filePath (legacy) required");
+  }
+
+  let materialized: { filePath: string; name: string; description: string };
+  try {
+    materialized = await materializeSkill({
+      source: skillSource,
+      scope,
+      slug,
+      teamId: resolvedTeamId,
+      userId: resolvedUserId,
+    });
+  } catch (e) {
+    return materializeErrorToResponse(e);
+  }
+
   try {
     const created = await prisma.skillPackage.create({
       data: {
         slug,
         name,
-        description: typeof description === "string" ? description : "",
+        description: typeof description === "string" && description.trim() ? description : materialized.description,
         scope,
         teamId: resolvedTeamId,
         userId: resolvedUserId,
-        source: typeof source === "string" ? source : "",
-        filePath,
+        source: skillSource.kind,
+        filePath: materialized.filePath,
       },
     });
-    return NextResponse.json({ skill: created }, { status: 201 });
+    return NextResponse.json({ skill: created, materialized: true }, { status: 201 });
   } catch (e) {
     // Unique constraint (scope, slug, teamId, userId) — already installed
     // (covers the concurrent-insert race the pre-check can't).

@@ -44,8 +44,7 @@ const SEEDS: CuratedSeed[] = [
     version: "1.0.0",
     author: "Skill Developer",
     sourceKind: "builtin",
-    sourceFilePath:
-      "/Users/xiejava/.pi/agent/skills/draw-diagram/SKILL.md",
+    sourceFilePath: "",
     sourceBuiltinPath: "~/.pi/agent/skills/draw-diagram",
     featured: true,
     enabled: true,
@@ -62,8 +61,7 @@ const SEEDS: CuratedSeed[] = [
     version: "1.0.0",
     author: "Skill Developer",
     sourceKind: "builtin",
-    sourceFilePath:
-      "/Users/xiejava/.pi/agent/skills/code-viewer/SKILL.md",
+    sourceFilePath: "",
     sourceBuiltinPath: "~/.pi/agent/skills/code-viewer",
     featured: false,
     enabled: true,
@@ -80,8 +78,7 @@ const SEEDS: CuratedSeed[] = [
     version: "1.0.0",
     author: "chenke",
     sourceKind: "generated",
-    sourceFilePath:
-      "/Users/xiejava/.pi/agent/skills/asset_query/SKILL.md",
+    sourceFilePath: "",
     sourceBuiltinPath: "~/.pi/agent/skills/asset_query",
     featured: false,
     enabled: true,
@@ -98,8 +95,7 @@ const SEEDS: CuratedSeed[] = [
     version: "1.0.0",
     author: "soc-team",
     sourceKind: "uploaded",
-    sourceFilePath:
-      "/Users/xiejava/.pi/agent/skills/threat-hunt/SKILL.md",
+    sourceFilePath: "",
     sourceBuiltinPath: "~/.pi/agent/skills/threat-hunt",
     featured: true,
     enabled: true,
@@ -116,8 +112,7 @@ const SEEDS: CuratedSeed[] = [
     version: "0.0.1",
     author: "QA Bot",
     sourceKind: "npm",
-    sourceFilePath:
-      "/Users/xiejava/.pi/agent/skills/test-zip-import/SKILL.md",
+    sourceFilePath: "",
     sourceBuiltinPath: "~/.pi/agent/skills/test-zip-import",
     featured: false,
     enabled: false, // 软删示例

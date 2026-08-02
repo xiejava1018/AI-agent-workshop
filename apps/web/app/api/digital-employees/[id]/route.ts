@@ -67,7 +67,7 @@ async function getAccessibleAgent(
   return admin ? agent : null;
 }
 
-/** Add bindings to a single agent. */
+/** Add bindings to a single agent. P2.1: enrich skillBindings with SkillPackage + CuratedEntry metadata for source traceability. */
 async function addBindings(agent: Awaited<ReturnType<typeof prisma.agent.findUnique>> & Record<string, unknown>) {
   if (!agent || !("id" in agent)) return agent;
   const agentId = agent.id as string;
@@ -75,7 +75,42 @@ async function addBindings(agent: Awaited<ReturnType<typeof prisma.agent.findUni
     prisma.agentSkillBinding.findMany({ where: { agentId } }),
     prisma.agentMcpBinding.findMany({ where: { agentId } }),
   ]);
-  return { ...agent, skillBindings, mcpBindings };
+
+  // P2.1: 批量 join SkillPackage（slug/name/scope/source）+ CuratedEntry（icon/summary/category）
+  const skillPackageIds = skillBindings.map((b) => b.skillPackageId);
+  const packages = skillPackageIds.length > 0
+    ? await prisma.skillPackage.findMany({
+        where: { id: { in: skillPackageIds } },
+        select: { id: true, slug: true, name: true, scope: true, source: true, description: true },
+      })
+    : [];
+  const pkgById = new Map(packages.map((p) => [p.id, p]));
+  const slugs = packages.map((p) => p.slug).filter(Boolean);
+  const curatedEntries = slugs.length > 0
+    ? await prisma.skillCuratedEntry.findMany({
+        where: { slug: { in: slugs }, enabled: true },
+        select: { slug: true, icon: true, summary: true, category: true, featured: true },
+      })
+    : [];
+  const curatedBySlug = new Map(curatedEntries.map((c) => [c.slug, c]));
+
+  const enrichedSkillBindings = skillBindings.map((b) => {
+    const pkg = pkgById.get(b.skillPackageId);
+    const curated = pkg?.slug ? curatedBySlug.get(pkg.slug) ?? null : null;
+    return {
+      ...b,
+      slug: pkg?.slug ?? null,
+      name: pkg?.name ?? null,
+      scope: pkg?.scope ?? null,
+      source: pkg?.source ?? null,
+      description: pkg?.description ?? null,
+      curated: curated
+        ? { icon: curated.icon, summary: curated.summary, category: curated.category, featured: curated.featured }
+        : null,
+    };
+  });
+
+  return { ...agent, skillBindings: enrichedSkillBindings, mcpBindings };
 }
 
 // -----------------------------------------------------------------------------

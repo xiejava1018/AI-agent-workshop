@@ -238,9 +238,17 @@ model SkillInvocation {
   skillPackageId String
   userId         String?
   sessionId      String?
+  // P3 (skill-runtime-completeness): 调用结果反馈闭环
+  triggerKind    String   @default("explicit") // explicit(/skill:) | model(<skill>块) | auto(session-start sync)
+  outcome        String   @default("pending") // pending | success | error | timeout
+  errorMessage   String   @default("")
+  durationMs     Int      @default(0)
+  tokenIn        Int      @default(0)
+  tokenOut       Int      @default(0)
   createdAt      DateTime @default(now())
 
   @@index([skillPackageId])
+  @@index([outcome])
 }
 
 // M3 — McpServer: an MCP server registration scoped to global/team/user.

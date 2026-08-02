@@ -107,13 +107,15 @@ export async function buildSkillInjection(
     skillContent = safeReadSkillFile(skillRecord2.filePath) ?? "";
   }
 
-  // Write SkillInvocation audit log
+  // Write SkillInvocation audit log (P3: triggerKind + outcome 反馈闭环)
   try {
     await prisma.skillInvocation.create({
       data: {
         skillPackageId: (resolvedSkill as { id: string }).id,
         userId: userId ?? null,
         sessionId: sessionId ?? null,
+        triggerKind: "explicit",
+        outcome: "success",
       },
     });
   } catch (err) {
