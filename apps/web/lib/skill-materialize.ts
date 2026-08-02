@@ -31,6 +31,9 @@ import { prisma } from "./prisma";
 /** 规范存储根目录，与 skill-invoke.ts 保持一致（env 覆盖，默认 ./.skills）。 */
 const SKILLS_ROOT = resolve(process.env.SKILLS_ROOT ?? "./.skills");
 
+/** P4.3: 单个 SKILL.md 体积上限（512KB），防止超大/畸形文件占满磁盘或拖慢加载。 */
+const MAX_SKILL_SIZE_BYTES = 512 * 1024;
+
 // ---------------------------------------------------------------------------
 // 错误类型
 // ---------------------------------------------------------------------------
@@ -239,11 +242,27 @@ export async function materializeSkill(
   const { source, scope, slug, teamId = null, userId = null } = opts;
 
   const rawContent = await resolveSourceContent(source);
+
+  // P4.3: 体积上限，防止超大/畸形文件
+  if (Buffer.byteLength(rawContent, "utf-8") > MAX_SKILL_SIZE_BYTES) {
+    throw new MaterializeError(
+      `SKILL.md for slug "${slug}" exceeds size limit (${MAX_SKILL_SIZE_BYTES} bytes)`,
+      "SKILL_TOO_LARGE",
+    );
+  }
+
   const fm = parseSkillFrontmatter(rawContent);
+  // P4.1: name + description 必填（design §6.1 治理规范）
   if (!fm.name) {
     throw new MaterializeError(
       `SKILL.md for slug "${slug}" missing required frontmatter field: name`,
       "FRONTMATTER_MISSING_NAME",
+    );
+  }
+  if (!fm.description || !fm.description.trim()) {
+    throw new MaterializeError(
+      `SKILL.md for slug "${slug}" missing required frontmatter field: description`,
+      "FRONTMATTER_MISSING_DESCRIPTION",
     );
   }
 

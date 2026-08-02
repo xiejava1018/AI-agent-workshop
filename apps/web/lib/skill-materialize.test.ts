@@ -55,7 +55,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-const SKILL_MD = (name: string, description = "") =>
+const SKILL_MD = (name: string, description = "a skill") =>
   `---\nname: ${name}\ndescription: ${description}\n---\n# ${name}\nSkill body.`;
 
 // ---------------------------------------------------------------------------
@@ -191,6 +191,27 @@ describe("materializeSkill", () => {
         slug: "x",
       }),
     ).rejects.toMatchObject({ code: "FRONTMATTER_MISSING_NAME" });
+  });
+
+  it("throws FRONTMATTER_MISSING_DESCRIPTION when description absent (P4.1)", async () => {
+    await expect(
+      materializeSkill({
+        source: { kind: "content", content: "---\nname: NoDesc\n---\nbody" },
+        scope: "global",
+        slug: "x",
+      }),
+    ).rejects.toMatchObject({ code: "FRONTMATTER_MISSING_DESCRIPTION" });
+  });
+
+  it("throws SKILL_TOO_LARGE when content exceeds size limit (P4.3)", async () => {
+    const huge = "---\nname: Big\ndescription: big\n---\n" + "x".repeat(600 * 1024);
+    await expect(
+      materializeSkill({
+        source: { kind: "content", content: huge },
+        scope: "global",
+        slug: "big",
+      }),
+    ).rejects.toMatchObject({ code: "SKILL_TOO_LARGE" });
   });
 
   it("builtin source unreadable → SOURCE_UNREADABLE", async () => {
