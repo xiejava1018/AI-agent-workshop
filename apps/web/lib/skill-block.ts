@@ -280,6 +280,21 @@ export async function resolveSkillBlock(
     args: "",
   });
 
+  // P3: 模型自决调用命中 → 写 SkillInvocation 反馈闭环（审计日志失败不影响解析）
+  try {
+    await prisma.skillInvocation.create({
+      data: {
+        skillPackageId: pkg.id,
+        userId: tenant.userId,
+        sessionId: null,
+        triggerKind: "model",
+        outcome: "success",
+      },
+    });
+  } catch {
+    // non-fatal
+  }
+
   return {
     skillName: block.name,
     slug: pkg.slug,

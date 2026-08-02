@@ -101,7 +101,7 @@
           <el-form :model="form" label-position="top" @submit.prevent="saveAgent">
             <template v-if="activeSection === 'basic'"><div class="section-heading"><h3>基础信息</h3><p>定义数字员工的名称、职责和行为约束。</p></div><el-form-item label="名称" required><el-input v-model="form.name" maxlength="80" show-word-limit placeholder="如：代码审查员" /></el-form-item><el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" maxlength="240" show-word-limit placeholder="一句话说明数字员工的职责" /></el-form-item><el-form-item label="System Prompt"><el-input v-model="form.systemPrompt" type="textarea" :rows="9" placeholder="定义数字员工的行为约束和工作场景" /></el-form-item><el-form-item label="作用域"><el-radio-group v-model="form.scope"><el-radio value="personal">个人</el-radio><el-radio value="team">团队</el-radio></el-radio-group></el-form-item><el-form-item v-if="form.scope === 'team'" label="所属团队" required><el-select v-model="form.teamId" :loading="teamsLoading" :disabled="!canCreateTeamEmployee()" style="width: 100%" placeholder="选择有管理权限的团队"><el-option v-for="team in teams.filter((item) => item.role === 'OWNER' || item.role === 'ADMIN')" :key="team.id" :label="team.name" :value="team.id"><span>{{ team.name }}</span><span class="option-description">{{ team.role === 'OWNER' ? '所有者' : '管理员' }}</span></el-option></el-select><div v-if="teamsLoadError" class="field-hint">{{ teamsLoadError }}</div><div v-else-if="!canCreateTeamEmployee()" class="field-hint">当前没有可管理的团队，无法创建团队数字员工。</div></el-form-item></template>
             <template v-else-if="activeSection === 'model'"><div class="section-heading"><h3>模型配置</h3><p>留空则使用系统默认模型。</p></div><el-form-item label="模型"><el-select v-model="form.model" clearable style="width: 100%" placeholder="使用系统默认模型"><el-option v-for="model in availableModels" :key="model.value" :label="`${model.label}（${model.provider}）`" :value="model.value" /></el-select></el-form-item><el-alert v-if="modelsLoadError" :title="modelsLoadError" type="warning" :closable="false" show-icon /><el-empty v-else-if="!availableModels.length" description="暂无已配置模型，请先完成模型配置" :image-size="80" /></template>
-            <template v-else-if="activeSection === 'skills'"><div class="section-heading"><h3>Skill 配置</h3><p>选择数字员工可以继承和调用的技能能力。</p></div><el-form-item label="可用 Skill"><el-select v-model="form.skillIds" multiple filterable collapse-tags collapse-tags-tooltip style="width: 100%" placeholder="搜索并选择 Skill"><el-option v-for="skill in availableSkills" :key="skill.id" :label="skill.name" :value="skill.id"><span>{{ skill.name }}</span><span class="option-description">{{ skill.description }}</span></el-option></el-select></el-form-item><el-empty v-if="!availableSkills.length" description="暂无可用 Skill" :image-size="80" /></template>
+            <template v-else-if="activeSection === 'skills'"><div class="section-heading"><h3>Skill 配置</h3><p>选择数字员工可以继承和调用的技能能力。</p></div><el-form-item label="可用 Skill"><el-select v-model="form.skillIds" multiple filterable collapse-tags collapse-tags-tooltip style="width: 100%" placeholder="搜索并选择 Skill"><el-option v-for="skill in availableSkills" :key="skill.id" :label="skill.name" :value="skill.id"><span class="skill-opt-name">{{ skill.name }}<el-tag v-if="skill.scope" size="small" :type="scopeTagType(skill.scope)" effect="plain" class="skill-opt-tag">{{ scopeLabel(skill.scope) }}</el-tag><el-tag v-if="skill.source" size="small" type="info" effect="plain" class="skill-opt-tag">{{ sourceLabel(skill.source) }}</el-tag></span><span class="option-description">{{ skill.description }}</span></el-option></el-select></el-form-item><el-empty v-if="!availableSkills.length" description="暂无可用 Skill" :image-size="80" /></template>
             <template v-else><div class="section-heading"><h3>MCP 配置</h3><p>选择数字员工可以使用的 MCP 服务。</p></div><el-form-item label="可用 MCP 服务"><el-select v-model="form.mcpServerIds" multiple filterable collapse-tags collapse-tags-tooltip style="width: 100%" placeholder="搜索并选择 MCP 服务"><el-option v-for="server in availableMcp" :key="server.id" :label="server.name" :value="server.id" /></el-select></el-form-item><el-alert v-if="mcpLoadError" title="MCP 服务暂时不可用，可能需要平台管理员权限。" type="warning" :closable="false" show-icon /><el-empty v-else-if="!availableMcp.length" description="暂无可用 MCP 服务" :image-size="80" /></template>
           </el-form>
         </section>
@@ -248,6 +248,26 @@ function formatDate(value?: string | number) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+// P2.3: skill 来源徽标辅助
+function scopeLabel(scope?: string): string {
+  if (scope === 'global') return '全局'
+  if (scope === 'team') return '团队'
+  if (scope === 'user') return '个人'
+  return scope ?? ''
+}
+function sourceLabel(source?: string): string {
+  if (source === 'builtin') return '内置'
+  if (source === 'uploaded') return '上传'
+  if (source === 'git') return 'Git'
+  if (source === 'npm') return 'NPM'
+  return source ?? ''
+}
+function scopeTagType(scope?: string): 'success' | 'warning' | 'info' {
+  if (scope === 'global') return 'warning'
+  if (scope === 'team') return 'success'
+  return 'info'
 }
 
 function openCreateDialog() {
@@ -408,6 +428,16 @@ async function deleteAgent(agent: DigitalEmployee | Record<string, any>) {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.skill-opt-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.skill-opt-tag {
+  transform: scale(0.85);
 }
 
 .field-hint {

@@ -47,6 +47,7 @@ export interface SkillPackage {
   name: string
   description?: string
   scope?: 'global' | 'team' | 'user'
+  source?: string
   teamId?: string | null
   userId?: string | null
   enabled?: boolean
