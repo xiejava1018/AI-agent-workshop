@@ -310,21 +310,26 @@
 
 .wb-input-area {
   flex: 0 0 auto;
-  padding: var(--wb-pad-md);
+  padding: var(--wb-pad-xs);
   border-top: 1px solid var(--wb-border);
   background: var(--wb-bg-elevated);
   min-height: var(--wb-input-min-height);
 }
 
+/* 聊天输入区:全局共享样式(同时被 ChatInput.vue 的根 .wb-chat-input 应用,
+ * 以及工作台父级可能挂的 .wb-input-area 兼容 class 命中)。
+ * 多次迭代后,外层 padding 减到 --wb-pad-xs (4px) + 去掉强制 min-height,
+ * 让高度完全由内容决定;配合 ChatInput.vue 里 .wb-chat-input__composer /
+ * .wb-chat-input__toolbar 的同步收紧,整个灰色带在典型单行输入下可以
+ * 压到 ~60~70px 高度(从最初 ~140px),节省约一半垂直空间。 */
 .wb-chat-input {
   flex: 0 0 auto;
-  padding: var(--wb-pad-md);
+  padding: var(--wb-pad-xs);
   border-top: 1px solid var(--wb-border);
   background: var(--wb-bg-elevated);
-  min-height: var(--wb-input-min-height);
   display: flex;
   flex-direction: column;
-  gap: var(--wb-pad-sm);
+  gap: 2px;
   /* 与上方 .wb-messages > * 保持同列宽(820):聊天输入区与对话气泡
    * 左右同宽且居中,避免帖子变宽后输入框底部看起被“两边拉伸”
    * (对齐 apps/web ChatInput 的 maxWidth:820 + margin:"0 auto")。 */

@@ -702,11 +702,11 @@
     background: var(--wb-bg, #fff);
     border: 1px solid
       color-mix(in srgb, var(--wb-border) 70%, transparent);
-    border-radius: 14px;
-    padding: 10px 10px 10px 14px;
+    border-radius: 12px;
+    padding: 6px 8px 6px 12px;
     box-shadow:
       0 1px 2px rgba(15, 23, 42, 0.04),
-      0 8px 24px -12px rgba(15, 23, 42, 0.10);
+      0 4px 16px -10px rgba(15, 23, 42, 0.08);
     transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
   }
   .wb-chat-input__composer.is-streaming {
@@ -810,11 +810,11 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 2px;
     padding: 0 4px;
     font-size: 12px;
     color: var(--wb-text-dim);
-    min-height: 32px;
+    min-height: 24px;
   }
   .wb-chat-input__toolbar-left {
     flex: 0 0 auto;
