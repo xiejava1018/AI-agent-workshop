@@ -343,6 +343,8 @@ async function handleDynamicRoutes(
     if (isUnauthorizedError(error)) {
       // 重置状态，允许重新登录后再次初始化
       routeInitInProgress = false
+      // 关闭 loading，避免在 axios 拦截器 500ms 后跳登录期间一直转圈
+      closeLoading()
       next(false)
       return
     }
