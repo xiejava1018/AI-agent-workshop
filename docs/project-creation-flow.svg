@@ -1,0 +1,523 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 2200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14">
+  <!-- ============ DEFS: arrowheads, gradients ============ -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowgreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16a34a"/>
+    </marker>
+    <marker id="arrowred" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrowblue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+
+    <linearGradient id="headerBlue" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e40af"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <linearGradient id="headerTeal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="1680" height="2200" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1680" height="80" fill="url(#headerBlue)"/>
+  <text x="40" y="50" font-size="26" font-weight="700" fill="#ffffff">Project 创建与权限流程图</text>
+  <text x="1556" y="50" font-size="14" fill="#cbd5e1" text-anchor="end">apps/web · Prisma · Team/Project/User 三层模型</text>
+
+  <!-- ===================== LEGEND ===================== -->
+  <g transform="translate(40,100)">
+    <rect width="1600" height="78" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="20" y="28" font-size="15" font-weight="700" fill="#0f172a">图例</text>
+    <g transform="translate(20,45)">
+      <rect width="22" height="16" rx="3" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="32" y="13" fill="#1e3a8a">用户/角色</text>
+
+      <rect x="120" width="22" height="16" rx="3" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="152" y="13" fill="#92400e">入口 HTTP 路由</text>
+
+      <rect x="280" width="22" height="16" rx="3" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="312" y="13" fill="#831843">鉴权 / 校验</text>
+
+      <rect x="440" width="22" height="16" rx="3" fill="#d1fae5" stroke="#10b981"/>
+      <text x="472" y="13" fill="#064e3b">DB 写入 / Prisma</text>
+
+      <rect x="640" width="22" height="16" rx="3" fill="#ede9fe" stroke="#8b5cf6"/>
+      <text x="672" y="13" fill="#4c1d95">文件系统操作</text>
+
+      <rect x="820" width="22" height="16" rx="3" fill="#fee2e2" stroke="#ef4444"/>
+      <text x="852" y="13" fill="#7f1d1d">拒绝 / 错误返回</text>
+
+      <rect x="980" width="22" height="16" rx="3" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="1012" y="13" fill="#0c4a6e">结果 / 成功</text>
+
+      <line x1="1130" y1="8" x2="1160" y2="8" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+      <text x="1170" y="13" fill="#064e3b">成功路径</text>
+
+      <line x1="1280" y1="8" x2="1310" y2="8" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowred)"/>
+      <text x="1320" y="13" fill="#7f1d1d">拒绝路径</text>
+    </g>
+  </g>
+
+  <!-- ===================== ACTORS LANES ===================== -->
+  <!-- 4 swimlanes: User, Frontend, Backend (Routes), DB/FS -->
+  <g transform="translate(40,210)">
+    <text x="0" y="0" font-size="14" font-weight="700" fill="#475569">泳道 (swimlane)</text>
+  </g>
+
+  <!-- Lane backgrounds -->
+  <g transform="translate(40,230)">
+    <rect x="0" y="0" width="1600" height="180" fill="#eef2ff" opacity="0.4"/>
+    <rect x="0" y="180" width="1600" height="520" fill="#f0f9ff" opacity="0.4"/>
+    <rect x="0" y="700" width="1600" height="620" fill="#ecfdf5" opacity="0.4"/>
+    <rect x="0" y="1320" width="1600" height="660" fill="#fefce8" opacity="0.4"/>
+
+    <!-- Lane labels -->
+    <rect x="0" y="0" width="170" height="180" fill="#6366f1" opacity="0.85"/>
+    <text x="85" y="95" fill="#ffffff" font-size="16" font-weight="700" transform="rotate(-90 85 95)">用户 / 角色</text>
+
+    <rect x="0" y="180" width="170" height="520" fill="#0ea5e9" opacity="0.85"/>
+    <text x="85" y="440" fill="#ffffff" font-size="16" font-weight="700" transform="rotate(-90 85 440)">浏览器 / 前端</text>
+
+    <rect x="0" y="700" width="170" height="620" fill="#10b981" opacity="0.85"/>
+    <text x="85" y="1010" fill="#ffffff" font-size="16" font-weight="700" transform="rotate(-90 85 1010)">Next.js 路由 + middleware</text>
+
+    <rect x="0" y="1320" width="170" height="660" fill="#eab308" opacity="0.85"/>
+    <text x="85" y="1650" fill="#ffffff" font-size="16" font-weight="700" transform="rotate(-90 85 1650)">DB (Prisma) + 文件系统</text>
+  </g>
+
+  <!-- ===================== PATH 1: BOOTSTRAP (cold start) ===================== -->
+  <g transform="translate(40,230)">
+    <!-- Section divider -->
+    <line x1="170" y1="0" x2="1600" y2="0" stroke="#6366f1" stroke-width="0" />
+    <rect x="170" y="0" width="1430" height="180" fill="#f1f5f9" opacity="0"/>
+    <text x="190" y="22" font-size="13" font-weight="700" fill="#475569">❶ 系统冷启动（bootstrap）· 一次性，系统启动脚本，没有任何用户登录时发生</text>
+
+    <!-- User → server (script run) -->
+    <g transform="translate(190,50)">
+      <rect width="160" height="40" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="80" y="25" text-anchor="middle" fill="#1e3a8a">root 用户</text>
+    </g>
+
+    <g transform="translate(420,30)">
+      <rect width="220" height="80" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="110" y="25" text-anchor="middle" font-weight="700" fill="#92400e">scripts/bootstrap-root.ts</text>
+      <text x="110" y="48" text-anchor="middle" font-size="12" fill="#78350f">"首次 DB seed"</text>
+      <text x="110" y="65" text-anchor="middle" font-size="11" fill="#a16207">用户数==0 时触发</text>
+    </g>
+
+    <g transform="translate(720,30)">
+      <rect width="220" height="80" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="110" y="25" text-anchor="middle" font-weight="700" fill="#831843">检查 User 表</text>
+      <text x="110" y="48" text-anchor="middle" font-size="12" fill="#9d174d">prisma.user.count()</text>
+      <text x="110" y="65" text-anchor="middle" font-size="11" fill="#be185d">==0 才继续</text>
+    </g>
+
+    <g transform="translate(1020,0)">
+      <rect width="560" height="110" rx="6" fill="#d1fae5" stroke="#10b981"/>
+      <text x="280" y="22" text-anchor="middle" font-weight="700" fill="#064e3b">插入初始数据（事务）</text>
+      <text x="20" y="50" font-size="12" fill="#065f46">① INSERT user(username=root, passwordHash=bcrypt(randomBytes))</text>
+      <text x="20" y="68" font-size="12" fill="#065f46">② INSERT team(name='Default Team', ownerUserId=root)</text>
+      <text x="20" y="86" font-size="12" fill="#065f46">③ INSERT teamMember(role=OWNER)  +  UPDATE user.lastProjectId</text>
+      <text x="20" y="103" font-size="12" font-weight="700" fill="#064e3b">⚙ FS: mkdir -p data/projects/default</text>
+    </g>
+
+    <g transform="translate(1020,125)">
+      <rect width="560" height="40" rx="6" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="280" y="25" text-anchor="middle" fill="#0c4a6e">✅ 输出: [BOOTSTRAP] root username=root password=xxx</text>
+    </g>
+
+    <!-- arrows -->
+    <line x1="350" y1="70" x2="420" y2="70" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="640" y1="70" x2="720" y2="70" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="940" y1="70" x2="1020" y2="70" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1300" y1="110" x2="1300" y2="125" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+  </g>
+
+  <!-- ===================== PATH 2: Team OWNER creates Project ===================== -->
+  <g transform="translate(40,410)">
+    <rect x="170" y="0" width="1430" height="300" fill="#f1f5f9" opacity="0"/>
+    <text x="190" y="22" font-size="13" font-weight="700" fill="#475569">❷ 团队负责人 (OWNER/ADMIN) 在 "Workspace" 页面创建 Project</text>
+
+    <!-- Step 1: User clicks button -->
+    <g transform="translate(190,50)">
+      <rect width="160" height="55" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="80" y="22" text-anchor="middle" font-size="13" fill="#1e3a8a">OWNER/ADMIN</text>
+      <text x="80" y="42" text-anchor="middle" font-size="12" fill="#1e40af">点击 "新建"</text>
+    </g>
+    <!-- 2 -->
+    <g transform="translate(420,40)">
+      <rect width="240" height="80" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#92400e">POST /api/projects</text>
+      <text x="120" y="45" text-anchor="middle" font-size="12" fill="#78350f">body: { name, root_path }</text>
+      <text x="120" y="63" text-anchor="middle" font-size="11" fill="#a16207">app/api/projects/route.ts</text>
+    </g>
+
+    <!-- 3: middleware check -->
+    <g transform="translate(720,40)">
+      <rect width="220" height="80" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="110" y="22" text-anchor="middle" font-weight="700" fill="#831843">middleware.ts</text>
+      <text x="110" y="42" text-anchor="middle" font-size="12" fill="#9d174d">verify pw_at JWT</text>
+      <text x="110" y="63" text-anchor="middle" font-size="11" fill="#be185d">注入 x-user-id,</text>
+      <text x="110" y="78" text-anchor="middle" font-size="11" fill="#be185d">x-must-change-password</text>
+    </g>
+
+    <!-- 4: enforceNotMustChange -->
+    <g transform="translate(990,40)">
+      <rect width="240" height="80" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#831843">enforceNotMustChange</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#9d174d">x-must-change-password</text>
+      <text x="120" y="63" text-anchor="middle" font-size="11" fill="#be185d">if true → 403 拒绝</text>
+    </g>
+
+    <!-- 5: assertCanCreate -->
+    <g transform="translate(1280,30)">
+      <rect width="280" height="100" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="140" y="22" text-anchor="middle" font-weight="700" fill="#831843">assertCanCreate(userId)</text>
+      <text x="20" y="46" font-size="11" fill="#9d174d">SELECT teamMember WHERE</text>
+      <text x="20" y="62" font-size="11" fill="#9d174d">  userId=X AND role IN</text>
+      <text x="20" y="78" font-size="11" fill="#9d174d">  ('OWNER','ADMIN')</text>
+      <text x="20" y="94" font-size="11" fill="#9d174d">❌ null → 403 forbidden</text>
+    </g>
+
+    <!-- 6: statSync check -->
+    <g transform="translate(420,160)">
+      <rect width="240" height="60" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#831843">statSync(root_path)</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#9d174d">文件系统路径必须存在</text>
+    </g>
+
+    <!-- 7: project.create -->
+    <g transform="translate(720,160)">
+      <rect width="240" height="60" rx="6" fill="#d1fae5" stroke="#10b981"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#064e3b">prisma.project.create</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#065f46">INSERT INTO project</text>
+    </g>
+
+    <!-- 8: allowFileRoot -->
+    <g transform="translate(1020,160)">
+      <rect width="240" height="60" rx="6" fill="#ede9fe" stroke="#8b5cf6"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#4c1d95">allowFileRoot(root_path)</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#5b21b6">白名单 cache +</text>
+    </g>
+
+    <!-- 9: success -->
+    <g transform="translate(1320,160)">
+      <rect width="240" height="60" rx="6" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#0c4a6e">✅ 201 { project }</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#0c4a6e">返回完整 Project 行</text>
+    </g>
+
+    <!-- 10: not bound unless user calls /bind -->
+    <g transform="translate(720,260)">
+      <rect width="800" height="30" rx="6" fill="#fff7ed" stroke="#fb923c" stroke-dasharray="4 3"/>
+      <text x="400" y="20" text-anchor="middle" font-size="12" fill="#9a3412">⚠ 创建 Project 后不会自动绑定！调用方需调 POST /api/projects/[id]/bind 才能写入 user.lastProjectId</text>
+    </g>
+
+    <!-- arrows success (main flow) -->
+    <line x1="350" y1="78" x2="420" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="660" y1="80" x2="720" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="940" y1="80" x2="990" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1230" y1="80" x2="1280" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1420" y1="130" x2="540" y2="160" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="660" y1="190" x2="720" y2="190" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="960" y1="190" x2="1020" y2="190" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1260" y1="190" x2="1320" y2="190" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+
+    <!-- arrows rejection (mustChangePwd) -->
+    <line x1="1110" y1="120" x2="1110" y2="160" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="1130" y="145" font-size="11" fill="#7f1d1d">403 "password change required"</text>
+
+    <!-- arrows rejection (assertCanCreate) -->
+    <line x1="1420" y1="130" x2="1420" y2="220" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="1440" y="180" font-size="11" fill="#7f1d1d">403 "forbidden"</text>
+
+    <!-- arrows rejection (path not exist) -->
+    <line x1="540" y1="220" x2="540" y2="270" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="555" y="245" font-size="11" fill="#7f1d1d">400 "root_path does not exist"</text>
+  </g>
+
+  <!-- ===================== PATH 3: ADMIN creates user (auto-creates project) ===================== -->
+  <g transform="translate(40,710)">
+    <rect x="170" y="0" width="1430" height="280" fill="#f1f5f9" opacity="0"/>
+    <text x="190" y="22" font-size="13" font-weight="700" fill="#475569">❸ 平台 ADMIN 创建新用户 · 若该 Team 无 Project 会自动创建"专属目录"</text>
+
+    <g transform="translate(190,50)">
+      <rect width="160" height="55" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="80" y="22" text-anchor="middle" font-size="13" fill="#1e3a8a">平台 ADMIN</text>
+      <text x="80" y="42" text-anchor="middle" font-size="12" fill="#1e40af">/admin/users</text>
+    </g>
+
+    <g transform="translate(420,40)">
+      <rect width="240" height="80" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#92400e">POST /api/admin/users</text>
+      <text x="120" y="45" text-anchor="middle" font-size="12" fill="#78350f">body: { username }</text>
+    </g>
+
+    <g transform="translate(720,40)">
+      <rect width="240" height="80" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#831843">assertPlatformAdmin</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#9d174d">platform:access 权限码</text>
+      <text x="120" y="62" text-anchor="middle" font-size="11" fill="#be185d">❌ → 401/403 拒绝</text>
+    </g>
+
+    <g transform="translate(1020,30)">
+      <rect width="290" height="100" rx="6" fill="#d1fae5" stroke="#10b981"/>
+      <text x="145" y="22" text-anchor="middle" font-weight="700" fill="#064e3b">prisma.$transaction</text>
+      <text x="20" y="46" font-size="12" fill="#065f46">① INSERT user(mustChangePwd=true)</text>
+      <text x="20" y="63" font-size="12" fill="#065f46">② INSERT teamMember(role=MEMBER)</text>
+      <text x="20" y="80" font-size="12" fill="#065f46">③ 如果 Team 无 Project →</text>
+      <text x="20" y="96" font-size="11" fill="#064e3b">     INSERT project + mkdir</text>
+    </g>
+
+    <g transform="translate(1340,40)">
+      <rect width="240" height="80" rx="6" fill="#ede9fe" stroke="#8b5cf6"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#4c1d95">⚙ FS: mkdir -p</text>
+      <text x="120" y="45" text-anchor="middle" font-size="12" fill="#5b21b6">data/projects/user-</text>
+      <text x="120" y="63" text-anchor="middle" font-size="12" fill="#5b21b6">{username}</text>
+    </g>
+
+    <g transform="translate(1020,140)">
+      <rect width="290" height="50" rx="6" fill="#d1fae5" stroke="#10b981"/>
+      <text x="145" y="22" text-anchor="middle" font-weight="700" fill="#064e3b">④ UPDATE user.lastProjectId = P.id</text>
+      <text x="145" y="42" text-anchor="middle" font-size="12" fill="#065f46">事务原子提交</text>
+    </g>
+
+    <g transform="translate(1340,140)">
+      <rect width="240" height="50" rx="6" fill="#e0f2fe" stroke="#0284c7"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#0c4a6e">✅ { id, initialPassword }</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#0c4a6e">首次登录强改密</text>
+    </g>
+
+    <g transform="translate(420,200)">
+      <rect width="1170" height="60" rx="6" fill="#fff7ed" stroke="#fb923c" stroke-dasharray="4 3"/>
+      <text x="585" y="25" text-anchor="middle" font-size="12" fill="#9a3412">⚠ Team 选择策略: ① 优先调用者所在的 Team  ② 否则用 DB 中任意已有 Team  ③ 否则才创建 "Default Team" (root 为 owner)</text>
+      <text x="585" y="46" text-anchor="middle" font-size="12" fill="#9a3412">⚠ Project 选择策略: ① 优先用 Team 内已存在的最早 Project (按 createdAt 升序)  ② 否则才创建 user-{username} 专属目录</text>
+    </g>
+
+    <!-- arrows -->
+    <line x1="350" y1="78" x2="420" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="660" y1="80" x2="720" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="960" y1="80" x2="1020" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1310" y1="80" x2="1340" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1165" y1="130" x2="1165" y2="140" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1165" y1="190" x2="1340" y2="190" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+
+    <line x1="840" y1="120" x2="840" y2="180" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowred)"/>
+    <text x="860" y="155" font-size="11" fill="#7f1d1d">403</text>
+  </g>
+
+  <!-- ===================== PATH 4: Team DELETION cascade ===================== -->
+  <g transform="translate(40,1000)">
+    <rect x="170" y="0" width="1430" height="180" fill="#f1f5f9" opacity="0"/>
+    <text x="190" y="22" font-size="13" font-weight="700" fill="#475569">❹ ADMIN 删除 Team · Project 因外键级联被自动删除</text>
+
+    <g transform="translate(190,50)">
+      <rect width="160" height="55" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="80" y="22" text-anchor="middle" font-size="13" fill="#1e3a8a">平台 ADMIN</text>
+      <text x="80" y="42" text-anchor="middle" font-size="12" fill="#1e40af">删除 Team</text>
+    </g>
+
+    <g transform="translate(420,40)">
+      <rect width="240" height="80" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#92400e">DELETE /api/admin/teams/[id]</text>
+      <text x="120" y="48" text-anchor="middle" font-size="12" fill="#78350f">app/api/admin/teams/[id]/route.ts</text>
+    </g>
+
+    <g transform="translate(720,40)">
+      <rect width="220" height="80" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="110" y="22" text-anchor="middle" font-weight="700" fill="#831843">assertPlatformAdmin</text>
+      <text x="110" y="42" text-anchor="middle" font-size="12" fill="#9d174d">✅ pass →</text>
+      <text x="110" y="62" text-anchor="middle" font-size="11" fill="#be185d">继续</text>
+    </g>
+
+    <g transform="translate(990,30)">
+      <rect width="300" height="100" rx="6" fill="#d1fae5" stroke="#10b981"/>
+      <text x="150" y="22" text-anchor="middle" font-weight="700" fill="#064e3b">prisma.$transaction([</text>
+      <text x="20" y="46" font-size="12" fill="#065f46">project.deleteMany({teamId}),</text>
+      <text x="20" y="63" font-size="12" fill="#065f46">teamMember.deleteMany({teamId}),</text>
+      <text x="20" y="80" font-size="12" fill="#065f46">team.delete({id})</text>
+      <text x="20" y="96" font-size="11" font-weight="700" fill="#064e3b">])</text>
+    </g>
+
+    <g transform="translate(1340,40)">
+      <rect width="240" height="80" rx="6" fill="#fee2e2" stroke="#ef4444"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#7f1d1d">⚠ FS 上的 root_path</text>
+      <text x="120" y="42" text-anchor="middle" font-size="12" fill="#991b1b">不会被 rm -rf</text>
+      <text x="120" y="63" text-anchor="middle" font-size="11" fill="#b91c1c">需运维手动清理</text>
+    </g>
+
+    <line x1="350" y1="78" x2="420" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="660" y1="80" x2="720" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="940" y1="80" x2="990" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1290" y1="80" x2="1340" y2="80" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowred)"/>
+  </g>
+
+  <!-- ===================== PATH 5: User MEMBER (not OWNER) tries to create ===================== -->
+  <g transform="translate(40,1190)">
+    <rect x="170" y="0" width="1430" height="130" fill="#f1f5f9" opacity="0"/>
+    <text x="190" y="22" font-size="13" font-weight="700" fill="#475569">❺ 普通成员 (MEMBER) 尝试创建 Project · 鉴权失败</text>
+
+    <g transform="translate(190,50)">
+      <rect width="160" height="55" rx="6" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="80" y="22" text-anchor="middle" font-size="13" fill="#1e3a8a">普通 MEMBER</text>
+      <text x="80" y="42" text-anchor="middle" font-size="12" fill="#1e40af">点击 "新建"</text>
+    </g>
+
+    <g transform="translate(420,40)">
+      <rect width="240" height="80" rx="6" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="120" y="22" text-anchor="middle" font-weight="700" fill="#92400e">POST /api/projects</text>
+    </g>
+
+    <g transform="translate(720,40)">
+      <rect width="380" height="80" rx="6" fill="#fce7f3" stroke="#ec4899"/>
+      <text x="190" y="22" text-anchor="middle" font-weight="700" fill="#831843">assertCanCreate()</text>
+      <text x="190" y="42" text-anchor="middle" font-size="12" fill="#9d174d">SELECT teamMember WHERE userId=X</text>
+      <text x="190" y="58" text-anchor="middle" font-size="12" fill="#9d174d">AND role IN ('OWNER','ADMIN')</text>
+      <text x="190" y="74" text-anchor="middle" font-size="11" fill="#be185d">→ null（没 OWNER/ADMIN 身份）</text>
+    </g>
+
+    <g transform="translate(1140,40)">
+      <rect width="200" height="80" rx="6" fill="#fee2e2" stroke="#ef4444"/>
+      <text x="100" y="22" text-anchor="middle" font-weight="700" fill="#7f1d1d">⛔ 403 forbidden</text>
+      <text x="100" y="48" text-anchor="middle" font-size="12" fill="#991b1b">"无权创建"</text>
+      <text x="100" y="68" text-anchor="middle" font-size="11" fill="#b91c1c">无任何 DB / FS 操作</text>
+    </g>
+
+    <line x1="350" y1="78" x2="420" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="660" y1="80" x2="720" y2="80" stroke="#16a34a" stroke-width="2" marker-end="url(#arrowgreen)"/>
+    <line x1="1100" y1="80" x2="1140" y2="80" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowred)"/>
+  </g>
+
+  <!-- ===================== SUMMARY TABLE ===================== -->
+  <g transform="translate(40,1340)">
+    <rect width="1600" height="400" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadow)"/>
+
+    <text x="20" y="30" font-size="16" font-weight="700" fill="#0f172a">总结：5 种 Project 产生路径</text>
+
+    <!-- table header -->
+    <g transform="translate(20,55)">
+      <rect width="1560" height="32" fill="#1e293b"/>
+      <text x="20" y="22" fill="#ffffff" font-weight="700">触发场景</text>
+      <text x="200" y="22" fill="#ffffff" font-weight="700">入口</text>
+      <text x="500" y="22" fill="#ffffff" font-weight="700">谁有权限</text>
+      <text x="800" y="22" fill="#ffffff" font-weight="700">rootPath 来源</text>
+      <text x="1180" y="22" fill="#ffffff" font-weight="700">自动 bind lastProjectId?</text>
+    </g>
+
+    <!-- rows -->
+    <g transform="translate(20,90)" font-size="13" fill="#1e293b">
+      <rect width="1560" height="50" fill="#fef9c3"/>
+      <text x="20" y="20" font-weight="700">❶ 冷启动</text>
+      <text x="20" y="38" font-size="12">系统首启</text>
+      <text x="200" y="20">scripts/bootstrap-root.ts</text>
+      <text x="200" y="38" font-size="12">OS 启动时</text>
+      <text x="500" y="20">系统脚本</text>
+      <text x="500" y="38" font-size="12">（无人）</text>
+      <text x="800" y="20" font-size="12">data/projects/default/</text>
+      <text x="800" y="38" font-size="12">硬编码</text>
+      <text x="1180" y="20" fill="#16a34a" font-weight="700">✅ 是</text>
+      <text x="1180" y="38" font-size="12">root 用户一启动就能用</text>
+    </g>
+
+    <g transform="translate(20,140)" font-size="13" fill="#1e293b">
+      <rect width="1560" height="50" fill="#f0f9ff"/>
+      <text x="20" y="20" font-weight="700">❷ UI 手动新建</text>
+      <text x="20" y="38" font-size="12">Workspace 页面</text>
+      <text x="200" y="20">POST /api/projects</text>
+      <text x="200" y="38" font-size="12">projects/route.ts:43</text>
+      <text x="500" y="20" font-weight="700" fill="#16a34a">OWNER 或 ADMIN</text>
+      <text x="500" y="38" font-size="12">assertCanCreate()</text>
+      <text x="800" y="20" font-size="12">body.root_path</text>
+      <text x="800" y="38" font-size="12">前端让用户选绝对路径</text>
+      <text x="1180" y="20" fill="#dc2626" font-weight="700">❌ 否</text>
+      <text x="1180" y="38" font-size="12">需再调 /api/projects/[id]/bind</text>
+    </g>
+
+    <g transform="translate(20,190)" font-size="13" fill="#1e293b">
+      <rect width="1560" height="50" fill="#f0fdf4"/>
+      <text x="20" y="20" font-weight="700">❸ ADMIN 创建用户</text>
+      <text x="20" y="38" font-size="12">后台 Users 页面</text>
+      <text x="200" y="20">POST /api/admin/users</text>
+      <text x="200" y="38" font-size="12">admin/users/route.ts:151</text>
+      <text x="500" y="20" font-weight="700" fill="#16a34a">平台 ADMIN</text>
+      <text x="500" y="38" font-size="12">assertPlatformAdmin</text>
+      <text x="800" y="20" font-size="12">若 Team 内无 Project：</text>
+      <text x="800" y="38" font-size="12">data/projects/user-{username}</text>
+      <text x="1180" y="20" fill="#16a34a" font-weight="700">✅ 是（事务内绑定）</text>
+      <text x="1180" y="38" font-size="12">新用户登录即可用</text>
+    </g>
+
+    <g transform="translate(20,240)" font-size="13" fill="#1e293b">
+      <rect width="1560" height="50" fill="#fef2f2"/>
+      <text x="20" y="20" font-weight="700">❹ Team 删除</text>
+      <text x="20" y="38" font-size="12">（不是创建路径，列出作为对比）</text>
+      <text x="200" y="20">DELETE /api/admin/teams/[id]</text>
+      <text x="200" y="38" font-size="12">admin/teams/[id]/route.ts:213</text>
+      <text x="500" y="20" font-weight="700" fill="#16a34a">平台 ADMIN</text>
+      <text x="500" y="38" font-size="12">并联 project.deleteMany</text>
+      <text x="800" y="20" font-size="12">—</text>
+      <text x="800" y="38" font-size="12">—</text>
+      <text x="1180" y="20" font-weight="700" fill="#dc2626">N/A</text>
+      <text x="1180" y="38" font-size="12">用户.lastProjectId 变成 悬空</text>
+    </g>
+
+    <g transform="translate(20,290)" font-size="13" fill="#1e293b">
+      <rect width="1560" height="50" fill="#fafafa"/>
+      <text x="20" y="20" font-weight="700">❺ MEMBER 尝试</text>
+      <text x="20" y="38" font-size="12">权限不足</text>
+      <text x="200" y="20">POST /api/projects</text>
+      <text x="200" y="38" font-size="12">projects/route.ts:30</text>
+      <text x="500" y="20" fill="#dc2626" font-weight="700">MEMBER 被挡</text>
+      <text x="500" y="38" font-size="12">assertCanCreate→null</text>
+      <text x="800" y="20" font-size="12">—</text>
+      <text x="800" y="38" font-size="12">—</text>
+      <text x="1180" y="20" fill="#dc2626" font-weight="700">— 403 —</text>
+      <text x="1180" y="38" font-size="12">不写 DB / FS</text>
+    </g>
+
+    <text x="20" y="370" font-size="13" font-weight="700" fill="#475569">🔑 关键代码引用:</text>
+    <text x="160" y="370" font-size="12" fill="#64748b" font-family="ui-monospace, SFMono-Regular, monospace">
+      apps/web/app/api/projects/route.ts · apps/web/app/api/admin/users/route.ts:151 · apps/web/app/api/admin/teams/[id]/route.ts:213 · apps/web/scripts/bootstrap-root.ts
+    </text>
+  </g>
+
+  <!-- bottom note -->
+  <g transform="translate(40,1760)">
+    <rect width="1600" height="240" rx="10" fill="#fefce8" stroke="#facc15" stroke-width="1.5"/>
+    <text x="20" y="32" font-size="15" font-weight="700" fill="#713f12">⚡ 三个隐藏陷阱</text>
+
+    <g transform="translate(20,55)" font-size="12">
+      <text x="0" y="15" fill="#713f12" font-weight="700">1. 创建 ≠ 自动绑定</text>
+      <text x="0" y="34" fill="#422006" font-family="ui-monospace, SFMono-Regular, monospace">路径 ❷ 创建 Project 后并不会出现在用户的 lastProjectId 中。前端必须再调 POST /api/projects/[id]/bind 才能使用。</text>
+
+      <text x="0" y="75" fill="#713f12" font-weight="700">2. root_path 可指向任意已存在路径</text>
+      <text x="0" y="94" fill="#422006" font-family="ui-monospace, SFMono-Regular, monospace">路径 ❷ 校验只做了 statSync()，没限制必须在 data/projects/ 下。管理员可以新建一个 "Project" 指向 /etc 或 /Users/alice/Documents（！），让 pi 的 cwd 落到不该访问的位置；allowFileRoot cache 又让它对文件路由可达。这是 audit 必须审查的攻击面。</text>
+
+      <text x="0" y="135" fill="#713f12" font-weight="700">3. 用户删 Team 后 lastProjectId 悬空</text>
+      <text x="0" y="154" fill="#422006" font-family="ui-monospace, SFMono-Regular, monospace">路径 ❹ 删 Team → project.deleteMany 把 Project 行删了，但 User.lastProjectId 字段不会被级联清空。再 /api/agent/new 时 prisma.project.findUnique 返 null → 404 "project not found"，不会自动 bind 到另一个。</text>
+    </g>
+  </g>
+
+  <!-- footer -->
+  <g transform="translate(40,2030)">
+    <rect width="1600" height="60" rx="8" fill="#1e293b"/>
+    <text x="40" y="36" fill="#cbd5e1" font-size="13">📚 对照源码文件:</text>
+    <text x="160" y="36" fill="#94a3b8" font-size="12" font-family="ui-monospace, SFMono-Regular, monospace">
+      apps/web/{prisma/schema.prisma, app/api/projects/route.ts, app/api/admin/users/route.ts, app/api/admin/teams/[id]/route.ts, scripts/bootstrap-root.ts}
+    </text>
+  </g>
+</svg>
