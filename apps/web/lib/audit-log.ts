@@ -24,14 +24,29 @@
 import { prisma } from "./prisma";
 
 export type AuditAction =
+  | "auth.login"
+  | "auth.login_failed"
+  | "auth.logout"
   | "session.create"
   | "session.access_denied"
   | "session.body_access_denied"
   | "session.share_create"
   | "session.share_delete"
+  | "session.export"
   | "user.create"
+  | "user.update"
+  | "user.delete"
+  | "user.disable"
   | "user.password_change"
-  | "user.role_change";
+  | "user.reset_password"
+  | "user.assign_role"
+  | "role.create"
+  | "role.update"
+  | "role.delete"
+  | "role.assign_permission"
+  | "menu.create"
+  | "menu.update"
+  | "menu.delete";
 
 interface AuditEvent {
   userId?: string | null;

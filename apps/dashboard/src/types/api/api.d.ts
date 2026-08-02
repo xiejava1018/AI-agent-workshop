@@ -429,21 +429,12 @@ declare namespace Api {
   /** 审计日志 */
   namespace AuditLog {
     interface AuditLogItem {
-      id: number
-      user_id?: number | null
-      username: string
+      id: string
+      user_id?: string | null
       action: string
       resource_type?: string | null
-      resource_id?: number | null
-      resource_name?: string | null
-      old_values?: any
-      new_values?: any
-      ip_address?: string | null
-      user_agent?: string | null
-      session_id?: number | null
-      request_id?: string | null
-      status: string
-      error_message?: string | null
+      resource_id?: string | null
+      metadata?: string | null
       created_at?: string
     }
 
@@ -452,11 +443,9 @@ declare namespace Api {
       size?: number
       page?: number
       page_size?: number
-      user_id?: number
-      username?: string
+      user_id?: string
       action?: string
       resource_type?: string
-      status?: string
       start_date?: string
       end_date?: string
     }

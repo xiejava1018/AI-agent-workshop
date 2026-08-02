@@ -1,0 +1,10 @@
+{
+  "openspec_proposal": "openspec/changes/agent-workbench-chat-ui-clone-v1/proposal.md",
+  "openspec_design": "openspec/changes/agent-workbench-chat-ui-clone-v1/design.md",
+  "openspec_tasks": "openspec/changes/agent-workbench-chat-ui-clone-v1/tasks.md",
+  "openspec_delta_spec": "openspec/changes/agent-workbench-chat-ui-clone-v1/specs/agent-message-chrome/spec.md",
+  "design_document": "docs/superpowers/specs/2026-07-20-agent-workbench-chat-ui-clone-v1-design.md",
+  "build_plan": "docs/superpowers/plans/2026-07-20-agent-workbench-chat-ui-clone-v1-recovery.md",
+  "build_tasks_complete": "openspec/changes/agent-workbench-chat-ui-clone-v1/tasks.md",
+  "archive_directory": "openspec/changes/archive/2026-07-21-agent-workbench-chat-ui-clone-v1"
+}

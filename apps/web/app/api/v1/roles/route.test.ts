@@ -170,6 +170,32 @@ describe("POST /api/v1/roles", () => {
     expect(bindings.length).toBe(2);
   });
 
+  it("XIE-23: records a role.create audit log entry", async () => {
+    const userId = await makePlatformAdminUser();
+    const code = uniqueRoleCode("audited");
+    const res = await POST(
+      makePostReq({
+        userId,
+        body: { code, name: "Audited Role", permissionCodes: ["user:view"] },
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const auditRow = await prisma.auditLog.findFirst({
+      where: {
+        userId,
+        action: "role.create",
+        resourceType: "role",
+        resourceId: body.data.id,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    const meta = JSON.parse(auditRow!.metadata ?? "{}");
+    expect(meta.after.code).toBe(code);
+    expect(meta.after.permissionCodes).toContain("user:view");
+  });
+
   it("returns 409 when code already exists", async () => {
     const userId = await makePlatformAdminUser();
     const code = uniqueRoleCode("dup");

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { DefaultResourceLoader, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { getCuratedEntriesBySourceFilePaths } from "@/lib/curated-skills";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,31 @@ export async function GET(req: Request) {
     const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
     await loader.reload();
     const { skills, diagnostics } = loader.getSkills();
-    return NextResponse.json({ skills, diagnostics });
+    // Join curated entry per skill by sourceFilePath (精确字符串匹配)。
+    // 内存 O(N) join,无 N+1 问题。open spec: openspec/changes/skill-curated-library §3.7
+    const sourcePaths = skills
+      .map((s) => (typeof s.filePath === "string" ? s.filePath : ""))
+      .filter((p) => p.length > 0);
+    const curatedMap = await getCuratedEntriesBySourceFilePaths(sourcePaths);
+    const enriched = skills.map((s) => {
+      const filePath = typeof s.filePath === "string" ? s.filePath : "";
+      const curated = filePath && curatedMap.has(filePath)
+        ? (() => {
+            const c = curatedMap.get(filePath)!;
+            return {
+              id: c.id,
+              slug: c.slug,
+              summary: c.summary,
+              tags: c.tags,
+              category: c.category,
+              icon: c.icon,
+              featured: c.featured,
+            };
+          })()
+        : null;
+      return { ...s, curated };
+    });
+    return NextResponse.json({ skills: enriched, diagnostics });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

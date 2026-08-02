@@ -185,7 +185,7 @@ const MENUS: ParentSeed[] = [
         name: "platform-skill",
         title: "技能精选库",
         path: "/admin/skill",
-        component: "/platform/index",
+        component: "/skill-curated/index",
         sort: 6,
         permissionCodes: ["skill:view"],
         icon: "ri:apps-2-line"

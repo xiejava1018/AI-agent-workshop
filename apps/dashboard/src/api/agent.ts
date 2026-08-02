@@ -1,5 +1,14 @@
 /**
  * Agent API
+ *
+ * v1.6 (chrome v1):引入通用 RPC 包装 `sendAgentCommand<T>`;
+ *   - sendMessage 重构为 sendAgentCommand 内部调用,签名不变
+ *   - 新增 6 个 chrome v1 command:
+ *       getSlashCommands / setModel / setThinkingLevel / setTools / getTools / cancelQueue
+ *   - 新增 ToolEntry / SlashCommandInfo / SlashCommandsResponse 类型(自包含,
+ *     不依赖 apps/web 的类型导出)
+ *   - 新增 ToolPreset 常量(对齐 apps/web/lib/tool-presets.ts PRESET_*) + 纯函数
+ *     getToolNamesForPreset(preset)
  */
 import request from '@/utils/http'
 import type { HttpClient } from '@/utils/http'
@@ -7,6 +16,66 @@ import type { HttpClient } from '@/utils/http'
 const httpClient = request as HttpClient
 
 const PREFIX = '/api/agent'
+
+/** 工具预设常量(对齐 apps/web/lib/tool-presets.ts) */
+export const PRESET_NONE: string[] = []
+export const PRESET_DEFAULT: string[] = ['read', 'bash', 'edit', 'write']
+export const PRESET_FULL: string[] = ['bash', 'read', 'edit', 'write', 'grep', 'find', 'ls']
+
+/**
+ * 工具 preset(对齐 apps/web/lib/tool-presets.ts ToolPreset):"none" 而非 "off"。
+ * Vue 端在 types.ts ToolPreset 已对齐这里。
+ */
+export type ToolPreset = 'none' | 'default' | 'full'
+
+/**
+ * get_tools 响应单条(对齐 apps/web/lib/tool-presets.ts ToolEntry)。
+ * description / active 在 SDK 里通常都会带,Vue 端保留可选。
+ */
+export interface ToolEntry {
+  name: string
+  description?: string
+  active?: boolean
+}
+
+/**
+ * get_commands 单条(对齐 apps/web/hooks/useAgentSession.ts SlashCommandInfo)。
+ * 这里复制完整 sourceInfo 形状以备 T5 palette 渲染,apps/dashboard 自包含。
+ */
+export interface SlashCommandInfo {
+  name: string
+  description?: string
+  source: 'extension' | 'prompt' | 'skill' | 'builtin'
+  sourceInfo?: {
+    path: string
+    source: string
+    scope: 'user' | 'project' | 'temporary'
+    origin: 'package' | 'top-level'
+    baseDir?: string
+  }
+}
+
+/** get_commands 响应:服务端包成 `{ commands?: SlashCommandInfo[] }` */
+export interface SlashCommandsResponse {
+  commands?: SlashCommandInfo[]
+}
+
+/**
+ * 通用 RPC 包装 —— POST /api/agent/[id],body 是任意 `{ type: ... }` command。
+ *
+ * 为什么放在这里:apps/web 的 apps/web/lib/agent-client.ts 有同样的
+ * sendAgentCommand<T>(sid, command);Vue 端之前只有 sendMessage(sid, text, userId)
+ * 这个特殊化包装,所有新 command 都要在它身上重复 6 次样板代码;这里抽到一处。
+ *
+ * 错误约定:httpClient 已把 2xx 之外的响应 reject。调用方只需要 catch 业务错。
+ */
+export const sendAgentCommand = <T = unknown>(sessionId: string, body: Record<string, unknown>) => {
+  return httpClient.post<Http.BaseResponse<T>>({
+    url: `${PREFIX}/${encodeURIComponent(sessionId)}`,
+    data: body,
+    keepFullResponse: true
+  })
+}
 
 export interface AgentSession {
   id: string
@@ -19,6 +88,26 @@ export interface AgentSession {
   available?: boolean
   /** M3 follow-up (issue #4): 从 session-prefs 拉取的 pin 状态 */
   pinned?: boolean
+
+  // ============================================================================
+  // P2: apps/web SessionInfo 同步的其他字段(后端 /api/sessions 实际都返)
+  // ----------------------------------------------------------------------------
+  // dashboard 之前未用但后端已在返回;加上后 SessionSidebar 可以实现 fork tree、
+  // 消息计数、worktree branch 显示(对齐 apps/web)。
+  // ============================================================================
+
+  /** 会话消息条数。后端从 session entry 数计算 */
+  messageCount?: number
+  /** 第一条 user 消息内容(apps/web 用作 title 兑底) */
+  firstMessage?: string
+  /** fork 树中的父会话 id(子会话 = 从某会话的某点 fork 出去的分支) */
+  parentSessionId?: string
+  /** 会话 cwd(用于侧栏底部 File Explorer) */
+  cwd?: string
+  /** git 主仓根路径(多 worktree 场景下所有 worktree 共享) */
+  projectRoot?: string
+  /** 当前会话所在 worktree 的 git 分支名 */
+  worktreeBranch?: string
 }
 
 export interface SendMessageParams {
@@ -53,17 +142,105 @@ export const createSession = (userId: string) => {
   })
 }
 
-/** 发送消息
- * 改:原 /api/agent/sessions/[id]/messages 404。
- * 后端真实端点是 POST /api/agent/[id](body.type 必填),
- * SSE agent type 接受 'prompt' | 'steer' | 'follow_up'。
+/**
+ * 发送消息。
+ *
+ * 历史:之前每个新 command 都手写一次 POST /api/agent/[id] 的样板代码;
+ *      现在统一走 sendAgentCommand 通用包装。这里只做 {type:'prompt'} 专属包装,
+ *      保留 (sessionId, content, userId) 三参签名,useEventStream.send() 调用方不破。
+ *
+ * 后端:`POST /api/agent/[id]`,body 必含 `type` 字段(否则 500)。
+ *   `'prompt' | 'steer' | 'follow_up' | 'get_commands'` 触发会话状态变更,
+ *   其它 type 走 apps/web/lib/rpc-manager.ts 的 withFinalRunningNotification 路径。
  */
 export const sendMessage = (sessionId: string, content: string, userId: string) => {
-  return httpClient.post<Http.BaseResponse<{ ok: boolean }>>({
-    url: `${PREFIX}/${sessionId}`,
-    data: { type: 'prompt', message: content, userId },
-    keepFullResponse: true
+  return sendAgentCommand<{ ok: boolean }>(sessionId, {
+    type: 'prompt',
+    message: content,
+    userId
   })
+}
+
+// ============================================================================
+// chrome v1:6 个新 RPC 包装(sendAgentCommand 复用层)
+// ============================================================================
+
+/**
+ * 拉取 slash 命令列表。
+ *
+ * 后端:`{ type: 'get_commands' }` → 响应 `{ commands?: SlashCommandInfo[] }`。
+ * 响应实际由 apps/web/lib/rpc-manager.ts `case 'get_commands'` 返回。
+ */
+export const getSlashCommands = (sessionId: string) => {
+  return sendAgentCommand<SlashCommandsResponse>(sessionId, { type: 'get_commands' })
+}
+
+/**
+ * 切换模型。
+ *
+ * 后端:`{ type: 'set_model', provider, modelId }` →
+ *   apps/web/lib/rpc-manager.ts `case 'set_model'` 直接调 registry.find + setModel。
+ */
+export const setModel = (sessionId: string, provider: string, modelId: string) => {
+  return sendAgentCommand<{ id: string; provider: string }>(sessionId, {
+    type: 'set_model',
+    provider,
+    modelId
+  })
+}
+
+/**
+ * 切换 thinking level。
+ *
+ * 后端:`{ type: 'set_thinking_level', level }` → 直接调 inner.setThinkingLevel。
+ * 注意:某些 model 上 xhigh 自动 clamp 到 high,client 端按用户原始选择显示,但
+ * SSE thinking_level_changed 会回传真实生效的 level(若 SDK 实现)。
+ */
+export const setThinkingLevel = (sessionId: string, level: string) => {
+  return sendAgentCommand<null>(sessionId, { type: 'set_thinking_level', level })
+}
+
+/**
+ * 设置激活的工具子集。
+ *
+ * 后端:`{ type: 'set_tools', toolNames: string[] }` → 调 inner.setActiveToolsByName。
+ * 空数组会 force-empty system prompt(SDK 的工具全 off 时不希望看到工具描述)。
+ */
+export const setTools = (sessionId: string, toolNames: string[]) => {
+  return sendAgentCommand<null>(sessionId, { type: 'set_tools', toolNames })
+}
+
+/**
+ * 拉取工具列表(全表 + 是否激活)。
+ *
+ * 后端:`{ type: 'get_tools' }` → 返 ToolEntry[]。
+ */
+export const getTools = (sessionId: string) => {
+  return sendAgentCommand<ToolEntry[]>(sessionId, { type: 'get_tools' })
+}
+
+/**
+ * 取消某条排队项。
+ *
+ * OQ-2 已知后端 SDK 没有 cancel_queue 单条指令(apps/web/lib/rpc-manager.ts
+ * 只有 `case 'clear_queue'` 全量清)。这里仍走 RPC 试一下:服务端若不认识该
+ * type,会 rejected,composable 层捕获并降级为本地移除。详见 useAgentSession.cancelQueue。
+ */
+export const cancelQueue = (sessionId: string, id: string) => {
+  return sendAgentCommand<null>(sessionId, { type: 'cancel_queue', id })
+}
+
+/**
+ * 将 ToolPreset 映射到具体 tool name 列表(纯函数,无 IO)。
+ *
+ * 这里与 apps/web/lib/tool-presets.ts getToolNamesForPreset 完全对齐:不走 allTools 过滤,
+ * 三档写死。这是 chrome v1 与 design §3.1 的偏差 —— design 误用了 allTools.filter,
+ * React 参考实现是常量数组。
+ */
+export function getToolNamesForPreset(preset: ToolPreset): string[] {
+  if (preset === 'none') return [...PRESET_NONE]
+  if (preset === 'full') return [...PRESET_FULL]
+  return [...PRESET_DEFAULT]
 }
 
 /** 获取可用的 Digital Employees */
@@ -146,12 +323,36 @@ interface SdkTextBlock {
   type?: string
   text?: string
   thinking?: string
+  // toolCall 块字段(SDK wire 形如 {type:'toolCall', toolCallId, toolName, input}
+  // 或 {type:'toolUse', id, name, input};SDK 两代这两种名都出现过,兼底):
+  id?: string
+  toolCallId?: string
+  name?: string
+  toolName?: string
+  input?: unknown
+  arguments?: unknown
+  [k: string]: unknown
 }
 
 interface SdkMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool'
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'toolResult'
   content: SdkTextBlock[] | string
   timestamp?: number
+  /** SDK assistant message 携带的模型 id(apps/web session 源 wire 字段) */
+  model?: string
+  /** SDK assistant message 携带的模型 provider(SDK wire 上可能是 "miniMAX-provider" 等) */
+  provider?: string
+  /** SDK assistant message 携带的 token 使用统计(apps/web MessageView footer 渲染依据) */
+  usage?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+  }
+  /** SDK toolResult message 字段(apps/web/lib/types.ts ToolResultMessage 同形) */
+  toolCallId?: string
+  toolName?: string
+  isError?: boolean
   errorMessage?: string
   stopReason?: string
 }
@@ -170,17 +371,48 @@ interface SessionDetailResponse {
   context: SessionDetailContext
 }
 
-/** 把 SDK content 数组展平成字符串(text/thinking 块拼接) */
-function flattenSdkContent(content: SdkMessage['content']): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((b) => {
-      if (typeof b?.text === 'string') return b.text
-      if (typeof b?.thinking === 'string') return b.thinking
-      return ''
-    })
-    .join('')
+/**
+ * 把 SDK content 数组转换为本项目 mirror 契约的 AssistantContentBlock[]。
+ *
+ * 转换规则:
+ *   - text block:原样透传
+ *   - thinking block:原样透传
+ *   - toolCall / toolUse block(SDK wire 形如 {type:'toolCall', toolCallId, toolName, input}
+ *     或 {type:'toolUse', id, name, input})→ 统一转 mirror {type:'toolCall',
+ *     toolCallId, toolName, input}
+ *   - 其他 / 不可识别的块:丢弃
+ *
+ * 返回 readonly AssistantContentBlock[]。
+ */
+function sdkBlocksToMirror(
+  blocks: ReadonlyArray<SdkTextBlock>
+): import('@/views/agent-workbench/types/assistant-blocks').AssistantContentBlock[] {
+  const out: import('@/views/agent-workbench/types/assistant-blocks').AssistantContentBlock[] = []
+  for (const raw of blocks) {
+    const type = raw.type
+    if (type === 'text' && typeof raw.text === 'string') {
+      out.push({ type: 'text', text: raw.text })
+    } else if (type === 'thinking' && typeof raw.thinking === 'string') {
+      out.push({ type: 'thinking', thinking: raw.thinking })
+    } else if (type === 'toolCall' || type === 'toolUse') {
+      const toolCallId =
+        (typeof raw.toolCallId === 'string' && raw.toolCallId) ||
+        (typeof raw.id === 'string' && raw.id) ||
+        `tc-${out.length}`
+      const toolName =
+        (typeof raw.toolName === 'string' && raw.toolName) ||
+        (typeof raw.name === 'string' && raw.name) ||
+        'tool'
+      out.push({
+        type: 'toolCall',
+        toolCallId,
+        toolName,
+        input: (raw.input ?? raw.arguments ?? {}) as Record<string, unknown>
+      })
+    }
+    // image / 其他未在 mirror 契约里的:丢弃。G2.x 启用 image block 时再补。
+  }
+  return out
 }
 
 export const fetchSessionMessages = async (
@@ -202,17 +434,84 @@ export const fetchSessionMessages = async (
   // 转换 SDK message → 前端 AgentMessage
   // id 优先用 entryIds[i](稳定 entry id),无 entryIds 时退化为 `${role}-${timestamp}-${idx}`
   const messages = rawMsgs.map((m, idx) => {
-    const text = flattenSdkContent(m.content)
     const id = entryIds[idx] ?? `hist-${m.role}-${m.timestamp ?? idx}-${idx}`
-    const ts = typeof m.timestamp === 'number'
-      ? new Date(m.timestamp).toISOString()
-      : new Date().toISOString()
+    const ts =
+      typeof m.timestamp === 'number'
+        ? new Date(m.timestamp).toISOString()
+        : new Date().toISOString()
+
+    // A:为 assistant role 保留 block 形态(否则 React 端的 ProcessDetailsGroup
+    // / Vue 回合聚合都无法识别 process blocks / toolCall)。user/system 仍
+    // 拍扁为 string(下游 MarkdownBody 路径不变)。
+    // B:toolResult role 保留 content blocks(SDK 形态 [{type:'text', text:'...'}])
+    //   + 透传 toolCallId/isError/toolName 给 ChatWindow 聚合 pairedResultsByToolCallId。
+    let content:
+      string | import('@/views/agent-workbench/types/assistant-blocks').AssistantContentBlock[]
+    if (m.role === 'assistant' && Array.isArray(m.content)) {
+      content = sdkBlocksToMirror(m.content)
+    } else {
+      // 其他 role + assistant content 为 string 的情况:拍扁为 string
+      const flat = Array.isArray(m.content)
+        ? m.content
+            .map((b) => {
+              if (typeof b?.text === 'string') return b.text
+              if (typeof b?.thinking === 'string') return b.thinking
+              return ''
+            })
+            .join('')
+        : typeof m.content === 'string'
+          ? m.content
+          : ''
+      content = flat
+    }
+
+    // toolResult 专用 extra 字段透传:用于 ToolCallBlock 按 toolCallId 查找 result。
+    // 这些字段为 undefined 时表示非 toolResult role(不污染其他 message 形态)。
+    const toolResultExtras: {
+      toolCallId?: string
+      toolIsError?: boolean
+      toolName?: string
+    } =
+      m.role === 'toolResult'
+        ? {
+            toolCallId: m.toolCallId,
+            toolIsError: m.isError,
+            toolName: m.toolName
+          }
+        : {}
+
+    // C:assistant message 透传 SDK wire model/provider 给 MessageView.
+    //    assistantLabel fallback 顺序(modelNames map → modelId → 'assistant')
+    //    在 modelNames 永远为空 时会以 modelId 作为默认显示——所以这里
+    //    modelId 必须从 SDK wire 拿到。SDK 字段名是 m.model/m.provider,
+    //    与 AgentMessage.modelProvider/modelId 一一对应。
+    const modelExtras: { modelProvider?: string; modelId?: string } =
+      m.role === 'assistant' && (m.model || m.provider)
+        ? { modelProvider: m.provider, modelId: m.model }
+        : {}
+
+    // D:assistant message 透传 SDK wire usage(input/output/cacheRead/cacheWrite)。
+    //    footer "117 in · 71 out · 9,271 cache" 的渲染依据。
+    //    showUsageFooter 判 isAssistant + streamStatus==='done' + Boolean(usage);
+    //    SDK usage 不含 cost(API wire 上没有),这里也不构造 cost 以免污染类型。
+    const usageExtras: {
+      usage?: {
+        input: number
+        output: number
+        cacheRead: number
+        cacheWrite: number
+      }
+    } = m.role === 'assistant' && m.usage ? { usage: m.usage } : {}
+
     return {
       id,
       role: m.role,
-      content: text,
+      content,
       createdAt: ts,
-      streamStatus: 'done' as const
+      streamStatus: 'done' as const,
+      ...toolResultExtras,
+      ...modelExtras,
+      ...usageExtras
     } as import('@/views/agent-workbench/types').AgentMessage
   })
   return {
@@ -288,14 +587,22 @@ export interface ModelConfigEntry {
  *   此处展开为扁平 UI 模型条目。
  */
 export const getModelConfig = async (): Promise<ModelConfigEntry[]> => {
-  const res = await httpClient.get<Http.BaseResponse<{
-    providers?: Record<string, { models?: Array<{ id: string; name?: string; contextWindow?: number }> }>
-  }>>({
+  const res = await httpClient.get<
+    Http.BaseResponse<{
+      providers?: Record<
+        string,
+        { models?: Array<{ id: string; name?: string; contextWindow?: number }> }
+      >
+    }>
+  >({
     url: '/api/models-config',
     keepFullResponse: true
   })
   const payload = res.data
-  const providers = (payload.providers ?? {}) as Record<string, { models?: Array<{ id: string; name?: string; contextWindow?: number }> }>
+  const providers = (payload.providers ?? {}) as Record<
+    string,
+    { models?: Array<{ id: string; name?: string; contextWindow?: number }> }
+  >
   const items: ModelConfigEntry[] = []
   for (const [providerName, provider] of Object.entries(providers)) {
     for (const m of provider.models ?? []) {
@@ -322,10 +629,7 @@ export const getModelConfig = async (): Promise<ModelConfigEntry[]> => {
  * providers[*].models 中过滤掉来表达 enabled=false;重新启用时恢复。
  * 因此需要先缓存原始配置列表,详见 useConfigPanel。
  */
-export const setModelConfig = async (
-  modelId: string,
-  enabled: boolean
-): Promise<void> => {
+export const setModelConfig = async (modelId: string, enabled: boolean): Promise<void> => {
   // 拉取当前全量配置
   const cur = await httpClient.get<Http.BaseResponse<any>>({
     url: '/api/models-config',
@@ -381,16 +685,22 @@ export interface SkillConfigEntry {
  *   - enabled 默认为 true(SKILL.md 文件存在即视为启用)
  */
 export const getSkills = async (cwd: string): Promise<SkillConfigEntry[]> => {
-  const res = await httpClient.get<Http.BaseResponse<{
-    skills?: Array<{ name: string; description?: string; filePath?: string }>
-    diagnostics?: unknown
-  }>>({
+  const res = await httpClient.get<
+    Http.BaseResponse<{
+      skills?: Array<{ name: string; description?: string; filePath?: string }>
+      diagnostics?: unknown
+    }>
+  >({
     url: '/api/skills',
     params: { cwd },
     keepFullResponse: true
   })
   const payload = res.data
-  const items = (payload.skills ?? []) as Array<{ name: string; description?: string; filePath?: string }>
+  const items = (payload.skills ?? []) as Array<{
+    name: string
+    description?: string
+    filePath?: string
+  }>
   return items.map((s) => ({
     id: s.filePath ?? s.name,
     name: s.name,
@@ -405,10 +715,7 @@ export const getSkills = async (cwd: string): Promise<SkillConfigEntry[]> => {
  *
  * 后端: PATCH /api/skills body: { filePath, disableModelInvocation }
  */
-export const setSkillEnabled = async (
-  filePath: string,
-  enabled: boolean
-): Promise<void> => {
+export const setSkillEnabled = async (filePath: string, enabled: boolean): Promise<void> => {
   await httpClient.request<Http.BaseResponse<{ success: boolean }>>({
     url: '/api/skills',
     method: 'PATCH',
@@ -432,16 +739,18 @@ export interface PluginConfigEntry {
  *   响应: { packages: Array<{ source, scope, disabled, installedPath, packageName?, version?, ... }> }
  */
 export const getPlugins = async (cwd: string): Promise<PluginConfigEntry[]> => {
-  const res = await httpClient.get<Http.BaseResponse<{
-    packages?: Array<{
-      source: string
-      scope: string
-      disabled: boolean
-      installedPath?: string
-      packageName?: string
-      version?: string
+  const res = await httpClient.get<
+    Http.BaseResponse<{
+      packages?: Array<{
+        source: string
+        scope: string
+        disabled: boolean
+        installedPath?: string
+        packageName?: string
+        version?: string
+      }>
     }>
-  }>>({
+  >({
     url: '/api/plugins',
     params: { cwd },
     keepFullResponse: true
@@ -551,7 +860,10 @@ export const getFile = (sessionId: string, filePath: string) => {
   // apps/web uses catch-all `[...path]` — path goes in the URL, not query.
   // Reject `..` and absolute paths client-side too (server has assertWithinRoot
   // as the authoritative gate).
-  const safe = filePath.split('/').filter((seg) => seg && seg !== '..').join('/')
+  const safe = filePath
+    .split('/')
+    .filter((seg) => seg && seg !== '..')
+    .join('/')
   if (!safe) {
     return Promise.reject(new Error('invalid file path'))
   }

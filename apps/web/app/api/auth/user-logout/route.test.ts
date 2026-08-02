@@ -7,6 +7,7 @@ import { isRefreshTokenRevoked } from "../../../../lib/token-blacklist";
 
 const TEST_JTI_PREFIX = "test-logout-jti-";
 const TEST_USERNAME_PREFIX = "test-logout-user-";
+const createdUserIds: string[] = [];
 
 function loadSecret(): Uint8Array {
   const secret = process.env.PI_WEB_JWT_SECRET;
@@ -20,9 +21,15 @@ async function cleanTestRows(): Promise<void> {
   await prisma.refreshTokenBlacklist.deleteMany({
     where: { jti: { startsWith: TEST_JTI_PREFIX } },
   });
+  if (createdUserIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: { userId: { in: [...createdUserIds] } },
+    });
+  }
   await prisma.user.deleteMany({
     where: { username: { startsWith: TEST_USERNAME_PREFIX } },
   });
+  createdUserIds.length = 0;
 }
 
 beforeEach(async () => {
@@ -66,6 +73,7 @@ async function createTestUser(): Promise<string> {
       mustChangePassword: false,
     },
   });
+  createdUserIds.push(user.id);
   return user.id;
 }
 
@@ -102,6 +110,13 @@ describe("POST /api/auth/user-logout", () => {
     expect(setCookie).toMatch(/pw_at=/);
     expect(setCookie).toMatch(/pw_rt=/);
     expect(setCookie).toMatch(/(?:Max-Age=0|max-age=0)/);
+
+    // XIE-23: logout records an auth.logout audit entry for the user.
+    const auditRow = await prisma.auditLog.findFirst({
+      where: { userId, action: "auth.logout", resourceType: "user" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
   });
 
   it("returns 200 and clears cookies but does NOT persist anything when pw_rt is garbage", async () => {

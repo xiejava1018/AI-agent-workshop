@@ -15,6 +15,7 @@ export enum RoutesAlias {
   Role = '/system/role', // 角色
   UserCenter = '/system/user-center', // 用户中心
   Menu = '/system/menu', // 菜单
+  Models = '/system/models', // 模型配置
   AuditLog = '/system/audit-log/index', // 审计日志
   SystemConfig = '/system/config', // 系统配置
   ModelsConfig = '/system/models/index', // 模型配置

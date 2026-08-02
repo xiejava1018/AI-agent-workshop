@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,17 @@ export async function PUT(
   }
   if (Object.keys(data).length === 0) return badRequest("no fields to update");
 
-  await prisma.user.update({ where: { id }, data });
+  const updated = await prisma.user.update({ where: { id }, data });
+  void auditLog({
+    userId,
+    action: "user.update",
+    resourceType: "user",
+    resourceId: id,
+    metadata: {
+      before: { username: target.username, disabled: target.disabled },
+      after: { username: updated.username, disabled: updated.disabled },
+    },
+  });
   return NextResponse.json({ code: 200, message: "success", data: { id } });
 }
 
@@ -83,5 +94,12 @@ export async function DELETE(
   if (!target) return notFound();
 
   await prisma.user.delete({ where: { id } });
+  void auditLog({
+    userId: callerId,
+    action: "user.delete",
+    resourceType: "user",
+    resourceId: id,
+    metadata: { before: target },
+  });
   return NextResponse.json({ code: 200, message: "success", data: { id } });
 }

@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -112,7 +113,14 @@ export async function PUT(
 
   if (Object.keys(data).length === 0) return badRequest("no fields to update");
 
-  await prisma.sysMenu.update({ where: { id }, data });
+  const updated = await prisma.sysMenu.update({ where: { id }, data });
+  void auditLog({
+    userId: callerId,
+    action: "menu.update",
+    resourceType: "menu",
+    resourceId: id,
+    metadata: { before: menu, after: updated },
+  });
   return NextResponse.json({ code: 200, message: "success", data: { id } });
 }
 
@@ -136,5 +144,12 @@ export async function DELETE(
   }
 
   await prisma.sysMenu.delete({ where: { id } });
+  void auditLog({
+    userId: callerId,
+    action: "menu.delete",
+    resourceType: "menu",
+    resourceId: id,
+    metadata: { before: menu },
+  });
   return NextResponse.json({ code: 200, message: "success", data: { id } });
 }

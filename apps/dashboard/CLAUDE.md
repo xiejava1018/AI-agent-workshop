@@ -34,3 +34,9 @@ Vue 不直连数据库 / Pi Agent，**经 Vite proxy 消费 `apps/web` 的 API**
 - `useSessionList` 的乐观 push：连续 create 多个会话时，乐观项由 `optimisticIds: Set<string>` 跟踪；`load()` 走 Map-by-id 合并而非整体覆盖，避免乐观项被挤掉。**改乐观更新逻辑时**确保 `optimisticIds.delete(id)` 也在 delete 成功路径上同步执行，否则已删除会话会"复活"。
 - `useAgentSession.fetchHistory()` 用 `fetchHistorySeq` 序号防 race——快速切两次会话时，只采纳最后一次请求的响应。**新增类似的"按 sessionId 异步拉数据"模式**时记得复用这个序号门控，否则会跨会话污染。
 - `AppShell` 用 localStorage[`wb:lastSessionId`] 恢复 currentSessionId，但 SessionSidebar 内部还有自己的 `useSessionList` 实例——两实例独立，AppShell 仅**读**侧栏列表用于查"last id 是否存在"，不写入共享状态。**改造时**记得区分"读实例"vs"写实例"，避免双实例互相覆盖。
+
+### chat chrome v1
+
+- `MessageView.vue` 的 `assistantLabel` 是两级查表：先 `modelNames[\`${provider}:${modelId}\`]`，再 `modelNames[modelId]`，最后兜底字面量 `'assistant'`。命中空字符串会被 `if (named)` 当 falsy 跳过继续往下查。**改 modelNames 映射或 fallback 文案时**确认所有未命中分支都落到 `'assistant'`，不要让 unknown 模型渲染成 `undefined`/`null`。
+- IME 组合守卫必须独占、且在 slash palette 之前：`ChatInput.vue` 的 `isComposing` ref 由 `<el-input>` 上的 `@compositionstart`/`@compositionend` 翻转，`onKeydown` 顶部 `const e = evt as KeyboardEvent` 后紧跟 `if (isComposing.value) return`，在 palette 块之前。中文拼音按 Enter 确认候选时该守卫放行，不会误触发 `handleSend`。**改 onKeydown 时**不要把 IME 守卫与 palette 守卫合并成 OR——组合期间方向键要交给 IME 候选，不能被 palette activeIndex 截走。
+- `MessageActionBar.vue` 是 presentational：只 import `ElNotification` / `ref` / `copyText`，不 import 也不调 `useAgentSession`。`edit` / `fork` / `navigate` / `retry` 全部 emit 由 `MessageView` 转给 `ChatWindow` 容器层处理（`retry` 实做向前找 user 消息重发，其余阶段 1 仅 `console.log` TODO）。`copy` 是有意例外——本组件内直接 `copyText` + `flashCopy('copied'|'failed')` + 失败 `ElNotification`，再 `emit('copy')` 通知父级。**在 action bar 加新动作时**一律 emit 透传到容器层，不要在子组件内调 hook / RPC；只有跟自身 UI 紧绑定的反馈才留在本组件。

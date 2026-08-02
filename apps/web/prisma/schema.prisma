@@ -193,6 +193,39 @@ model SkillPackage {
   @@index([userId])
 }
 
+// M3.5 — SkillCuratedEntry: 平台精选的技能展示条目,独立于 SkillPackage。
+// 一条 entry 可指向一个 builtin Skill、一个已上传 Skill、一个 git/npm
+// 远程 Skill,或纯描述的"概念能力"(尚未实现 source 落盘)。
+// 与 SkillPackage 不同:精选库是"运营/治理层",SkillPackage 是"运行时实际
+// 加载的包";一个精选条目可被 0..N 个 SkillPackage 实际安装。
+model SkillCuratedEntry {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  name              String
+  description       String   @default("")
+  summary           String   @default("")
+  category          String   @default("general")
+  tags              String[] @default([])
+  icon              String   @default("")
+  version           String   @default("1.0.0")
+  author            String   @default("")
+  sourceKind        String   @default("builtin")
+  sourceFilePath    String   @default("")
+  sourceBuiltinPath String   @default("")
+  sourceUrl         String   @default("")
+  visibility        String   @default("global")
+  featured          Boolean  @default(false)
+  enabled           Boolean  @default(true)
+  installCount      Int      @default(0)
+  createdBy         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([category])
+  @@index([featured])
+  @@index([enabled])
+}
+
 // M3 — SkillInvocation: record an invocation/use of a SkillPackage by a user
 // in a session. Analytics/auditing row; no FK relations, validated in-app.
 model SkillInvocation {

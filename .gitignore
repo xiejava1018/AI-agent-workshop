@@ -64,3 +64,11 @@ openspec/changes/*/.comet/
 # build/lock scratch
 *.bak
 test-results/
+
+# Local Playwright inspect/shot scripts (debug only, never committed)
+apps/web/inspect*.mjs
+apps/web/shot*.mjs
+apps/web/probe*.mjs
+
+# pi agent worktrees (local)
+.claude/worktrees/

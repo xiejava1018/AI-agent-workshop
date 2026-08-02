@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,14 @@ export async function PUT(
   for (const k of ["name", "desc", "enabled", "sort"] as const) {
     if (k in body) data[k] = body[k];
   }
-  await prisma.sysRole.update({ where: { id }, data });
+  const updated = await prisma.sysRole.update({ where: { id }, data });
+  void auditLog({
+    userId,
+    action: "role.update",
+    resourceType: "role",
+    resourceId: id,
+    metadata: { before: role, after: updated },
+  });
 
   return NextResponse.json({ code: 200, message: "success", data: { id } });
 }
@@ -74,5 +82,12 @@ export async function DELETE(
   }
 
   await prisma.sysRole.delete({ where: { id } });
+  void auditLog({
+    userId,
+    action: "role.delete",
+    resourceType: "role",
+    resourceId: id,
+    metadata: { before: role },
+  });
   return NextResponse.json({ code: 200, message: "success", data: { id } });
 }

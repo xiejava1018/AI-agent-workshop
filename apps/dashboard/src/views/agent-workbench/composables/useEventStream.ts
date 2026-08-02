@@ -33,6 +33,13 @@
  *
  *   8. onUnmounted 清理(幂等门)
  *
+ * chrome v1 增量: + 3 个新 SSE 事件 + message_start 上保留 usage/modelProvider/modelId
+ *   - queue_update        → pendingQueueUpdate(useAgentSession 拷给 queuedMessages)
+ *   - thinking_level_changed → pendingThinkingLevel
+ *   - model_changed       → pendingModelUpdate
+ *   - message_start       → 必须保留 payload 里的 message.usage/model/provider,否则
+ *                            chrome v1 footer + header 永远拿不到数据。
+ *
  * 不在白名单的事件直接 console.warn + 丢弃,不做泛洪累加。
  */
 
@@ -42,13 +49,97 @@ import {
   ALLOWED_SSE_EVENTS,
   STREAM_TIMEOUT_MS,
   type AgentMessage,
+  type AgentMessageUsage,
   type StreamStatus
 } from '../types'
+import type { AssistantContentBlock, ToolCallContent } from '../types/assistant-blocks'
 
 /** 内部窄事件:useEventStream 透传的所有事件 type */
 export interface StreamEvent {
   readonly type: string
   readonly data: unknown
+}
+
+/**
+ * normalizeContent — 把 SSE event 的 content 字段归一化为 AssistantContentBlock[]。
+ *
+ * 接受的输入形态:
+ *   - null / undefined → []
+ *   - string → [{type:'text', text:string}]
+ *   - 单个 block 对象 → [block]
+ *   - block 数组 → 过滤掉 null/undefined 元素的浅拷贝数组;block 元素引用保持
+ *   - 其他 primitive (number / boolean / bigint / symbol) → []
+ *
+ * 结构上 idempotent: 同一输入跑两次产出结构相等。
+ * 不原地修改、不深拷贝 block;只在外层数组与 string→text 形态里分配新对象。
+ *
+ * 调用方(T2.4)在所有 emit AgentMessage 的点位跑这个函数。
+ * 元素层正确性由 caller 契约保证 —— 函数只过滤 nullish,不深度校验 block shape。
+ *
+ * 对应 OpenSpec spec.md "SSE 入口归一化" Requirement 的 scenario (a)–(d)。
+ */
+export function normalizeContent(raw: unknown): AssistantContentBlock[] {
+  if (raw === null || raw === undefined) return []
+  if (typeof raw === 'string') return [{ type: 'text', text: raw }]
+  if (Array.isArray(raw)) {
+    // T2.3 introduce normalizeContentBlocks for SDK→mirror rename; for now
+    // T2.2 always allocates a fresh outer array via filter; block elements retain identity; nullish entries are dropped.
+    return raw.filter((b): b is AssistantContentBlock => b !== null && b !== undefined)
+  }
+  // single block object — wrap
+  if (typeof raw === 'object') return [raw as AssistantContentBlock]
+  return []
+}
+
+/**
+ * normalizeContentBlocks — 把 SDK wire 形态的 AssistantContentBlock[] 重命名 / 形状转换为 mirror 形态。
+ *
+ * 转换规则:
+ *   toolCall: SDK `{id, name, arguments}` → mirror `{toolCallId, toolName, input}`(若已 mirror 则保持)
+ *   image: SDK 扁平 `{data, mimeType}` → mirror 嵌套 `{source:{type:'base64', media_type, data}}`;
+ *         嵌套 source 形态不变(URL / base64 都透传)
+ *   text / thinking: 透传
+ *
+ * 结构上 idempotent。输入数组本身不修改;输出新数组(必要时分元素拷贝)。
+ * 对应 OpenSpec spec.md "SSE 入口归一化" Requirement 的两个新 scenario:
+ *   toolCall wire 字段重命名、image 形状转换。
+ *
+ * 参考 apps/web/lib/normalize.ts:normalizeToolCallBlock 的 rename 层,
+ *     apps/web/components/MessageView.tsx:imageSource 的双形态识别。
+ */
+export function normalizeContentBlocks(blocks: AssistantContentBlock[]): AssistantContentBlock[] {
+  return blocks.map((block) => {
+    if (block.type === 'toolCall') {
+      const result = { ...block } as ToolCallContent
+      if (result.toolCallId === undefined && (block as { id?: string }).id !== undefined) {
+        result.toolCallId = (block as { id?: string }).id as string
+      }
+      if (result.toolName === undefined && (block as { name?: string }).name !== undefined) {
+        result.toolName = (block as { name?: string }).name as string
+      }
+      if (result.input === undefined && (block as { arguments?: Record<string, unknown> }).arguments !== undefined) {
+        result.input = (block as { arguments?: Record<string, unknown> }).arguments as Record<string, unknown>
+      }
+      return result
+    }
+    if (block.type === 'image') {
+      // SDK flat shape: {type:'image', data, mimeType}
+      if ('data' in block && 'mimeType' in block && !('source' in block)) {
+        const flat = block as { data: string; mimeType: string }
+        return {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: flat.mimeType,
+            data: flat.data,
+          },
+        }
+      }
+      // already mirror nested shape: pass through
+      return block
+    }
+    return block
+  })
 }
 
 /**
@@ -61,6 +152,11 @@ export interface StreamEvent {
  *   - prompt 失败原因被白名单丢弃,UI 永远停留在"已取消重试"
  *   - 用户角色 `message_start` 也会被无差别建出 assistant 占位
  *
+ * chrome v1:必须在 message_start 归一化阶段保留 SDK payload 里的
+ *   - message.usage(token 计数,header footer 用)
+ *   - message.provider / message.model(modelId)(A1 header chrome 用)
+ * 否则 UI 永远拿不到这些字段。
+ *
  * 返回 null 表示该事件对 UI 无意义,直接丢弃;返回的 payload 已对齐
  * 内部事件形状,可继续走白名单 + handleEvent 状态机。
  */
@@ -70,21 +166,60 @@ export function normalizeAgentWorkbenchEvent(
   const type = typeof raw.type === 'string' ? raw.type : ''
 
   if (type === 'message_start') {
-    const role = (raw.message as { role?: unknown } | undefined)?.role
-    if (role !== 'assistant') return null
-    return { type: 'message_start', content: '' }
+    const rawMsg = raw.message as
+      | { role?: unknown; usage?: unknown; provider?: unknown; model?: unknown; modelId?: unknown }
+      | undefined
+    if (rawMsg?.role !== 'assistant') return null
+    // chrome v1:把 SDK AssistantMessage 上的 usage/provider/model 透出
+    // SDK 真实字段是 model(向后兼容),但新版本可能用 modelId — 两个都尝试一下
+    const provider = typeof rawMsg.provider === 'string' ? rawMsg.provider : null
+    const modelId =
+      typeof rawMsg.modelId === 'string'
+        ? rawMsg.modelId
+        : typeof rawMsg.model === 'string'
+          ? rawMsg.model
+          : null
+    return {
+      type: 'message_start',
+      content: '',
+      // 透传归一化字段,供 handleEvent 写入 AssistantMessage
+      ...(rawMsg.usage ? { usage: rawMsg.usage } : {}),
+      ...(provider ? { provider } : {}),
+      ...(modelId ? { modelId } : {})
+    }
   }
 
   if (type === 'message_update') {
+    // 2026-07-22 wire 修复:SDK message_update event 带 raw.message(完整 AgentMessage,
+    // content 是 AssistantContentBlock[])。之前只透传 assistantMessageEvent.delta
+    // (string),丢失结构化 content,导致 BlockView/ProcessDetails 拿不到 block 数组。
+    // 现在:优先透传 raw.message.content(array);若 message 缺失,fallback 到 delta string
+    // (向后兼容老 provider)。
+    const rawMsg = raw.message as { content?: unknown } | undefined
     const inner = raw.assistantMessageEvent as { type?: unknown; delta?: unknown } | undefined
+    if (rawMsg && Array.isArray(rawMsg.content)) {
+      return { type: 'message_delta', content: rawMsg.content, contentIsArray: true }
+    }
     if (inner && inner.type === 'text_delta' && typeof inner.delta === 'string') {
-      return { type: 'message_delta', content: inner.delta }
+      return { type: 'message_delta', content: inner.delta, contentIsArray: false }
     }
     return null
   }
 
   if (type === 'message_end') {
-    return { type: 'message_end' }
+    // chrome v1:message_end 上有时也会带最终 usage(provider 计费修改)。
+    // 注意:SDK 在 message_start 一次性给完成 usage 时 message_end 没有;
+    // 反过来,某些 provider 在 message_end 上结算,这里我们也要透传。
+    //
+    // T2.4:服务端在 message_end 把完整 `message.content: AssistantContentBlock[]`
+    // 一次性推送(dash 设计 R2-bis 已确认)。归一化器在 handleEvent.message_end
+    // case 跑;这里只透传 raw shape,不做形态判断(保持与 SDK 约定对齐)。
+    const rawMsg = raw.message as { usage?: unknown; content?: unknown } | undefined
+    return {
+      type: 'message_end',
+      ...(rawMsg?.usage ? { usage: rawMsg.usage } : {}),
+      ...(rawMsg && 'content' in rawMsg ? { content: rawMsg.content } : {})
+    }
   }
 
   if (type === 'prompt_error') {
@@ -147,6 +282,15 @@ export interface UseEventStreamReturn {
    * 重复(SSE 实时流的最新 messageId 优先保留)。
    */
   prependMessages: (history: readonly AgentMessage[]) => void
+  // ↓ chrome v1:暴露 SSE 事件 ref,useAgentSession 在 watch 中 reconcile 到
+  // 自身的业务 ref(queuedMessages/thinkingLevel/modelProvider/modelId)。
+  // 这里只在内部使用,useEventStream 的"公共表面"仍以 SSE 流控制为主。
+  /** queue_update 事件最新值: { steer: QueueItem[], followUp: QueueItem[] } */
+  pendingQueueUpdate: Ref<{ steer: import('../types').QueueItem[]; followUp: import('../types').QueueItem[] } | null>
+  /** thinking_level_changed 事件最新值(字符串 level) */
+  pendingThinkingLevel: Ref<string | null>
+  /** model_changed 事件最新值:{ provider, modelId } */
+  pendingModelUpdate: Ref<{ provider: string; modelId: string } | null>
 }
 
 /**
@@ -165,6 +309,15 @@ export function useEventStream(
   const messages = ref<AgentMessage[]>([]) as Ref<AgentMessage[]>
   const streamStatus = ref<StreamStatus>('idle')
   const error = ref<string | null>(null)
+
+  // chrome v1:SSE 事件 ref,useAgentSession 监听这些 ref 写入自己的业务 ref。
+  // 由于 SSE 流可能高频,这些 ref 只在事件触发时 push 新值,不做轮询或合并。
+  const pendingQueueUpdate = ref<{
+    steer: import('../types').QueueItem[]
+    followUp: import('../types').QueueItem[]
+  } | null>(null)
+  const pendingThinkingLevel = ref<string | null>(null)
+  const pendingModelUpdate = ref<{ provider: string; modelId: string } | null>(null)
 
   // 三层防护 #1:released 幂等门。值是 WeakSet<EventSource>。
   // 组件 onUnmounted 时整个 WeakSet 重建为 new WeakSet() 一次性作废,旧的
@@ -286,9 +439,11 @@ export function useEventStream(
   /**
    * 单一事件分发:
    *   message_start / message_delta / message_end → 累积到当前 assistant 消息
+   *     (chrome v1:保留 payload.usage / provider / modelId 到 message 上)
    *   tool_update → 推一条 tool 消息
    *   prompt_done → 收尾(标记 done)
    *   error → 报错
+   *   queue_update / thinking_level_changed / model_changed → 写入 pending* ref
    *   其它白名单事件 → 暂不映射到 messages(留给 useAgentSession 决定)
    */
   function handleEvent(type: string, raw: Record<string, unknown>): void {
@@ -296,30 +451,54 @@ export function useEventStream(
       case 'connected':
         return
       case 'message_start': {
-        // 开新 assistant 占位
-        messages.value = [
-          ...messages.value,
-          {
-            id: `asst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            role: 'assistant',
-            content: '',
-            createdAt: new Date().toISOString(),
-            streamStatus: 'streaming'
-          }
-        ]
+        // chrome v1:如果归一化阶段透出了 usage/provider/modelId,把它们写到
+        // 占位 assistant 消息上,这样 footer + header 后续能直接拿到。
+        // 类型守卫:normalizeAgentWorkbenchEvent 仅在 usage 为真值时透传。
+        const usage = raw.usage as AgentMessage['usage'] | undefined
+        const provider = typeof raw.provider === 'string' ? raw.provider : undefined
+        const modelId = typeof raw.modelId === 'string' ? raw.modelId : undefined
+        const next: AgentMessage = {
+          id: `asst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date().toISOString(),
+          streamStatus: 'streaming',
+          ...(usage ? { usage } : {}),
+          ...(provider ? { modelProvider: provider } : {}),
+          ...(modelId ? { modelId } : {})
+        }
+        messages.value = [...messages.value, next]
         streamStatus.value = 'streaming'
         return
       }
       case 'message_delta': {
-        const delta = typeof raw.content === 'string' ? raw.content : ''
+        // 2026-07-22 wire 修复:若归一化层透传了 contentIsArray=true(SDK message_update
+        // 带完整 message.content array),直接用 array 替换 last.content,不再 string 累积。
+        // 这样 streaming 期间 content 始终是 AssistantContentBlock[],BlockView + 折叠都能工作。
+        // 向后兼容:contentIsArray=false 时走老路径(string concat / fallback wrap)。
+        const contentIsArray = raw.contentIsArray === true
         const last = messages.value[messages.value.length - 1]
-        if (last && last.role === 'assistant') {
+        if (contentIsArray && last && last.role === 'assistant') {
+          // array 形态:用 normalizeContentBlocks 重命名 SDK→mirror,直接替换
+          const blocks = normalizeContentBlocks(
+            normalizeContent(raw.content as unknown)
+          )
           messages.value = [
             ...messages.value.slice(0, -1),
-            { ...last, content: last.content + delta }
+            { ...last, content: blocks }
           ]
-        } else {
-          // 兜底:没占位直接 push
+        } else if (!contentIsArray && last && last.role === 'assistant') {
+          // 老 string delta 路径(向后兼容)
+          const delta = typeof raw.content === 'string' ? raw.content : ''
+          const nextContent: AgentMessage['content'] =
+            typeof last.content === 'string' ? last.content + delta : [{ type: 'text', text: delta }]
+          messages.value = [
+            ...messages.value.slice(0, -1),
+            { ...last, content: nextContent }
+          ]
+        } else if (!contentIsArray) {
+          // 兜底:没占位直接 push(仅 string 路径)
+          const delta = typeof raw.content === 'string' ? raw.content : ''
           messages.value = [
             ...messages.value,
             {
@@ -337,9 +516,31 @@ export function useEventStream(
       case 'message_end': {
         const last = messages.value[messages.value.length - 1]
         if (last && last.role === 'assistant') {
+          // chrome v1:某些 provider 在 message_end 上结算最终 usage,
+          // 这里覆盖(空值不写)。
+          const usage = raw.usage as AgentMessage['usage'] | undefined
+          // T2.4:把 server 在 message_end 推送的最终结构化 content
+          // 跑 normalizeContent + normalizeContentBlocks,产出 mirror
+          // 契约的 AssistantContentBlock[]。若 server 没带 content
+          // (旧 provider 兼容),把累积的 string 形态也归一化为单 text block,
+          // 保证 assistant role done 形态统一为数组(下游 BlockView 单一形状消费)。
+          //
+          // T2.5:AgentMessage.content 已扩展为 `string | AssistantContentBlock[]`,
+          // 数组形态直接落入 content 字段,无需 `as unknown as string` 断言。
+          const rawContent = 'content' in raw ? raw.content : undefined
+          const normalizedBlocks =
+            rawContent === undefined
+              ? normalizeContent(last.content)
+              : normalizeContent(rawContent)
+          const finalContent = normalizeContentBlocks(normalizedBlocks)
           messages.value = [
             ...messages.value.slice(0, -1),
-            { ...last, streamStatus: 'done' as StreamStatus }
+            {
+              ...last,
+              content: finalContent,
+              streamStatus: 'done' as StreamStatus,
+              ...(usage ? { usage } : {})
+            }
           ]
         }
         return
@@ -379,6 +580,89 @@ export function useEventStream(
       case 'done': {
         streamStatus.value = 'done'
         clearStreamTimer()
+        return
+      }
+      // ↓ chrome v1:3 个新事件,只 push 到 pending* ref,不污染 messages
+      case 'queue_update': {
+        // payload 形状:{ steer: string[]; followUp: string[] }(SDK 约定)
+        // 我们要把它规整成 { steer: QueueItem[]; followUp: QueueItem[] }
+        // —— 每条分配一个新 id + createdAt 以满足 QueueItem 类型,真实 id 由
+        // 后端在重连时回传决定(本阶段简化用前端的临时 id)。
+        const steerRaw = Array.isArray(raw.steer) ? raw.steer : []
+        const followUpRaw = Array.isArray(raw.followUp) ? raw.followUp : []
+        const now = new Date().toISOString()
+        pendingQueueUpdate.value = {
+          steer: steerRaw.map((s, i) => ({
+            id: `q-steer-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+            kind: 'steer',
+            text: typeof s === 'string' ? s : '',
+            createdAt: now
+          })),
+          followUp: followUpRaw.map((s, i) => ({
+            id: `q-follow-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+            kind: 'followUp',
+            text: typeof s === 'string' ? s : '',
+            createdAt: now
+          }))
+        }
+        return
+      }
+      case 'thinking_level_changed': {
+        const level = raw.level
+        if (typeof level === 'string') {
+          pendingThinkingLevel.value = level
+        } else {
+          console.warn('[useEventStream] thinking_level_changed 缺 level 字段')
+        }
+        return
+      }
+      case 'model_changed': {
+        const provider = raw.provider
+        const modelId = raw.modelId
+        if (typeof provider === 'string' && typeof modelId === 'string') {
+          pendingModelUpdate.value = { provider, modelId }
+        } else {
+          console.warn('[useEventStream] model_changed 缺 provider/modelId 字段')
+        }
+        return
+      }
+      // chrome v1 T1.2b:把 SDK 流期间追加的 token 计数写入 rawMessages 中
+      // 最后一条 assistant 消息的 usage 字段(不可变更新,新数组 + 新对象)。
+      // T2.2 token footer 渲染依赖该字段。
+      case 'message_usage': {
+        const input = raw.input
+        const output = raw.output
+        const cacheRead = raw.cacheRead
+        const cacheWrite = raw.cacheWrite
+        if (
+          typeof input !== 'number' ||
+          typeof output !== 'number' ||
+          typeof cacheRead !== 'number' ||
+          typeof cacheWrite !== 'number'
+        ) {
+          console.warn('[useEventStream] message_usage 缺字段或类型错误,丢弃')
+          return
+        }
+        const last = messages.value[messages.value.length - 1]
+        if (!last || last.role !== 'assistant') {
+          console.warn('[useEventStream] message_usage 无对应 assistant 消息,丢弃')
+          return
+        }
+        messages.value = [
+          ...messages.value.slice(0, -1),
+          {
+            ...last,
+            usage: {
+              input,
+              output,
+              cacheRead,
+              cacheWrite,
+              ...(raw.cost && typeof raw.cost === 'object'
+                ? { cost: raw.cost as AgentMessageUsage['cost'] }
+                : {})
+            }
+          }
+        ]
         return
       }
       default:
@@ -451,6 +735,10 @@ export function useEventStream(
     streamStatus.value = 'idle'
     error.value = null
     clearStreamTimer()
+    // chrome v1:session 切换时一并清空 pending ref,避免跨会话串味。
+    pendingQueueUpdate.value = null
+    pendingThinkingLevel.value = null
+    pendingModelUpdate.value = null
   }
 
   /**
@@ -498,6 +786,10 @@ export function useEventStream(
     abort,
     clearError,
     resetMessages,
-    prependMessages
+    prependMessages,
+    // chrome v1:暴露 pending ref 给 useAgentSession reconcile
+    pendingQueueUpdate,
+    pendingThinkingLevel,
+    pendingModelUpdate
   }
 }

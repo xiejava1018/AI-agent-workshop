@@ -83,7 +83,11 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
   }
 
   const statusCode = error.response?.status
-  const errorMessage = error.response?.data?.message || error.message
+  // Next.js 风格 API 返回 { error, code? } (无 envelope),但有些路由包了 envelope { data, message }
+  // 依次尝试: data.error / data.data.message / data.message / axios 默认 message
+  const errData = error.response?.data as
+    { error?: string; message?: string; data?: { message?: string } } | undefined
+  const errorMessage = errData?.error || errData?.data?.message || errData?.message || error.message
   const requestConfig = error.config
 
   // 401 属于鉴权流程，由 handleUnauthorizedError 处理；这里静默处理避免重复打日志

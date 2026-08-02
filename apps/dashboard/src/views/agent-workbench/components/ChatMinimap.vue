@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { computed, ref } from 'vue'
   import type { AgentMessage } from '../types'
+  import type { AssistantContentBlock } from '../types/assistant-blocks'
 
   interface Props {
     messages: AgentMessage[]
@@ -11,12 +12,35 @@
 
   const hoveredId = ref<string | null>(null)
 
+  /**
+   * 把 message.content 归一为 string 形态供 minimap 预览列使用。
+   * dashboard v1.8(T2.5)之前 content 始终为 string;之后下放
+   * AssistantContentBlock[] 给 assistant role done 阶段(由 useEventStream
+   * message_end 归一化产出)。minimap 仍按 text 预览,我们把数组形态
+   * flatten 成文本(text block 拼接,其它 block 视为空白)。
+   * no-mutation:仅读 content,产出新字符串。
+   */
+  function contentAsPreviewString(content: AgentMessage['content']): string {
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+      return content
+        .map((b) => {
+          const block = b as AssistantContentBlock
+          if (block.type === 'text') return block.text
+          if (block.type === 'thinking') return block.thinking
+          return ''
+        })
+        .join('')
+    }
+    return ''
+  }
+
   const visibleMessages = computed(() =>
-    props.messages.filter(
-      (message) =>
-        (message.role === 'user' || message.role === 'assistant') &&
-        message.content.trim().length > 0
-    )
+    props.messages.filter((message) => {
+      if (message.role !== 'user' && message.role !== 'assistant') return false
+      const preview = contentAsPreviewString(message.content)
+      return preview.trim().length > 0
+    })
   )
 
   const messagePosition = (index: number): string => {
@@ -25,7 +49,7 @@
   }
 
   const messagePreview = (message: AgentMessage): string => {
-    return message.content.replace(/\s+/g, ' ').trim().slice(0, 80)
+    return contentAsPreviewString(message.content).replace(/\s+/g, ' ').trim().slice(0, 80)
   }
 
   const nodeClass = (message: AgentMessage): string => {

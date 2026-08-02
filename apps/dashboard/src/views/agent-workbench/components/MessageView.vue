@@ -2,35 +2,216 @@
   /**
    * MessageView —— 单条消息渲染(等价 apps/web/components/MessageView.tsx)。
    *
-   * Vue 端 v1 简化:不实现 thinking block 延迟加载 / tool call 配对 / patch diff
-   * 渲染,只做 user / assistant / tool 三种 role 的基础视图,以及 partial /
-   * cancelled 状态的提示与重试按钮。
+   * chrome v1(A 组)改造:
+   *   - 头部 chrome:<header> + el-tag 角色标签 + 智能时间戳(formatTime)
+   *   - token footer:<footer class="wb-message__usage">{n} in · {n} out · {n} cache>
+   *     仅当 assistant + streamStatus==='done' + msg.usage 存在时显示
+   *   - 操作按钮(MessageActionBar):hover 时显示 Copy/Edit/Fork/Retry/Navigate Up
    *
    * props / emits 与 design §"组件契约 / MessageView.vue" 一致。
    */
   import { computed } from 'vue'
   import MarkdownBody from './MarkdownBody.vue'
+  import MessageActionBar from './MessageActionBar.vue'
+  import BlockView from './messages/BlockView.vue'
+  import ProcessDetailsGroup from './ProcessDetailsGroup.vue'
+  import { splitFinalAssistantBlocks, countToolCallBlocks } from '../composables/message-display'
   import type { AgentMessage, Branch } from '../types'
+  import type { AssistantContentBlock } from '../types/assistant-blocks'
 
   interface Props {
     message: AgentMessage
     branches?: readonly Branch[]
     isLast?: boolean
+    /** chrome v1:{ 'provider/modelId' -> displayName } */
+    modelNames?: Record<string, string>
+    /** chrome v1:SDK entryId(用于 fork / navigate emit) */
+    entryId?: string
+    /** chrome v1:上一条 assistant 的 entryId */
+    prevAssistantEntryId?: string
+    /** chrome v1:是否正在流式(用于助手 Retry 按钮的可见性 + footer 渲染判断) */
+    isStreaming?: boolean
+    /** Process-details:toolResult 按 toolCallId 聚合的 Map,传给 ToolCallBlock 显示 result */
+    pairedResults?: ReadonlyMap<string, unknown>
+    /**
+     * 回合聚合(A):父级 ChatWindow 在做回合聚合时,会把 assistant message 的
+     * content 拆成 processBlocks(进 ProcessDetailsGroup)+ answerBlocks(独立渲染)。
+     * 这里用 displayBlocksOverride 强制覆盖默认的 message.content 渲染。
+     * 不传则用 message.content 自己 splitFinalAssistantBlocks。
+     *
+     * 注意:传了之后,MessageView 内部不再包 ProcessDetailsGroup(因为父级
+     * ChatWindow 已经把 ProcessDetailsGroup 渲染好了),只负责渲染 displayBlocks。
+     */
+    displayBlocksOverride?: readonly AssistantContentBlock[]
+    /** 回合聚合(A):父级如果已外层渲染了 ProcessDetailsGroup,这里为 true,
+     * MessageView 不再自己包 ProcessDetailsGroup。 */
+    suppressProcessGroup?: boolean
+    /** 回合聚合(A):force-render chrome(footer actions/token usage/time)
+     * 即使 message 处于 process group 内部,也照样显示 */
+    showChrome?: boolean
+    /** 回合聚合(A):isLast 控制 ProcessDetailsGroup 内 process message 不显示时间戳 */
+    showTimestamp?: boolean
   }
 
   const props = withDefaults(defineProps<Props>(), {
     branches: () => [] as readonly Branch[],
-    isLast: false
+    isLast: false,
+    modelNames: () => ({}),
+    entryId: undefined,
+    prevAssistantEntryId: undefined,
+    isStreaming: false,
+    pairedResults: () => new Map<string, unknown>(),
+    displayBlocksOverride: undefined,
+    suppressProcessGroup: false,
+    showChrome: true,
+    showTimestamp: true
   })
 
   const emit = defineEmits<{
     branchSwitch: [messageId: string, branchId: string]
     toolExpand: [toolCallId: string]
     retry: [messageId: string]
+    copy: [text: string]
+    edit: [entryId: string | undefined, content: string]
+    fork: [entryId: string]
+    navigate: [entryId: string | undefined, prevAssistantEntryId: string, content: string]
   }>()
 
   const isPartial = computed(() => Boolean(props.message.partial))
   const isCancelled = computed(() => Boolean(props.message.cancelled))
+  const isAssistant = computed(() => props.message.role === 'assistant')
+  const isUser = computed(() => props.message.role === 'user')
+
+  /**
+   * T2.5:把 message.content 窄化为下游消费所需的 string 形态。
+   * dashboard v1.8 之前 content 始终 string;之后下放 AssistantContentBlock[]
+   * 给 assistant role done 阶段。本任务不改渲染路径(留 G3 切 BlockView),
+   * 仅做形态对齐:数组形态 flatten 成 text(只提取 text / thinking block 的字符串,
+   * toolCall / image 等非文本块在 minimap-style preview 中忽略)。
+   * 这保证 :content="message.content" 在 MarkdownBody / MessageActionBar 上
+   * 静态分析为 string,渲染不出错;实际数组形态的 done 消息文本也能展示。
+   *
+   * 语义说明:这是过渡形态,toolCall / image 在 BlockView 化之前不会渲染,
+   *          主动接受这一可见性损失以换取 T2.5 类型扩展的最小化改动面。
+   * no-mutation:不修改原 content,产出新字符串。
+   */
+  const contentAsString = computed((): string => {
+    const c = props.message.content
+    if (typeof c === 'string') return c
+    if (Array.isArray(c)) {
+      return c
+        .map((b) => {
+          const block = b as AssistantContentBlock
+          if (block.type === 'text') return block.text
+          if (block.type === 'thinking') return block.thinking
+          return ''
+        })
+        .join('')
+    }
+    return ''
+  })
+
+  /**
+   * G5:把 assistant role message.content 收窄为 AssistantContentBlock[] 形态喂给 BlockView。
+   * - string 形态(流式阶段)→ wrap 为 [{type:'text', text:string}] 单元素
+   * - array 形态(done 阶段)→ 原样
+   * - 其他(undefined / 异常)→ 空数组
+   *
+   * 这是 T2.5/T2.5b 推迟的 transition 收尾:BlockView 接助手消息的真正渲染路径。
+   */
+  const messageBlocks = computed((): readonly AssistantContentBlock[] => {
+    // A:父级回合聚合传入的 override(只用于渲染,不参与拆分)
+    if (props.displayBlocksOverride !== undefined) return props.displayBlocksOverride
+    const c = props.message.content
+    if (Array.isArray(c)) return c
+    if (typeof c === 'string') return [{ type: 'text', text: c }]
+    return []
+  })
+
+  /**
+   * 把 assistant message 的 content blocks 拆成 processBlocks(thinking/toolCall → 折叠)
+   * 与 answerBlocks(最终 text/image → 独立)。port 自 apps/web splitFinalAssistantBlocks。
+   *
+   * 流式期间(streaming)不拆 — 直接全显示(用户看到实时累积)。
+   */
+  const splitBlocks = computed(() => {
+    if (props.isStreaming) {
+      return {
+        processBlocks: [] as AssistantContentBlock[],
+        answerBlocks: [...messageBlocks.value]
+      }
+    }
+    return splitFinalAssistantBlocks(messageBlocks.value)
+  })
+
+  const processBlocks = computed(() => splitBlocks.value.processBlocks)
+  const answerBlocks = computed(() => splitBlocks.value.answerBlocks)
+  const processToolCallCount = computed(() => countToolCallBlocks(processBlocks.value))
+  // A:suppressProcessGroup=true 时父级已在外层渲染 ProcessDetailsGroup,这里不重复包
+  const hasProcessDetails = computed(
+    () => !props.suppressProcessGroup && processBlocks.value.length > 0
+  )
+
+  /** 助手消息头部模型名:对齐 apps/web React MessageView.tsx:456 fallback 顺序
+   *  1) modelNames[`${provider}:${modelId}`] —— 人类可读 display name
+   *  2) modelNames[modelId]           —— 退化为按 modelId 查
+   *  3) modelId                       —— SDK 原始 id(如 "MiniMax-M3")
+   *  4) 'assistant'                   —— 最后 fallback(任何 meta 都丢了的退化) */
+  const assistantLabel = computed((): string => {
+    const m = props.message
+    if (!isAssistant.value) return ''
+    const provider = m.modelProvider
+    const modelId = m.modelId
+    if (provider && modelId) {
+      const key = `${provider}:${modelId}`
+      const named = props.modelNames?.[key]
+      if (named) return named
+    }
+    if (modelId && props.modelNames?.[modelId]) {
+      return props.modelNames[modelId]
+    }
+    if (modelId) return modelId
+    return 'assistant'
+  })
+
+  /** 智能时间戳 + 完整 ISO(用于 attribute) */
+  const createdAtAttr = computed((): string => {
+    const t = props.message.createdAt
+    if (!t) return ''
+    const d = new Date(t)
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString()
+  })
+
+  function formatTime(iso: string): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    const now = new Date()
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    if (sameDay) {
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mm = String(d.getMinutes()).padStart(2, '0')
+      return `${hh}:${mm}`
+    }
+    if (d.getFullYear() === now.getFullYear()) {
+      return `${d.getMonth() + 1}月${d.getDate()}日`
+    }
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+  }
+
+  /** 千分位格式化(用于 token footer) */
+  function formatToken(n: number | undefined): string {
+    if (typeof n !== 'number' || Number.isNaN(n)) return '0'
+    return n.toLocaleString()
+  }
+
+  /** token footer 仅在完成且 usage 存在时显示 */
+  const showUsageFooter = computed(
+    () => isAssistant.value && props.message.streamStatus === 'done' && Boolean(props.message.usage)
+  )
 
   function onBranchSwitch(branchId: string): void {
     emit('branchSwitch', props.message.id, branchId)
@@ -45,14 +226,75 @@
   function onRetry(): void {
     emit('retry', props.message.id)
   }
+
+  function onCopy(text: string): void {
+    emit('copy', text)
+  }
+
+  function onEdit(entryId: string | undefined, content: string): void {
+    emit('edit', entryId, content)
+  }
+
+  function onFork(entryId: string): void {
+    emit('fork', entryId)
+  }
+
+  function onNavigate(
+    entryId: string | undefined,
+    prevAssistantEntryId: string,
+    content: string
+  ): void {
+    emit('navigate', entryId, prevAssistantEntryId, content)
+  }
 </script>
 
 <template>
   <div class="wb-message" :class="`wb-message--${message.role}`" :data-message-id="message.id">
-    <!-- User / Assistant: MarkdownBody 渲染 -->
+    <!-- User / Assistant: MarkdownBody 渲染 + chrome(模型名/复制/时间)+ token footer -->
     <template v-if="message.role === 'user' || message.role === 'assistant'">
       <div class="wb-message__bubble">
-        <MarkdownBody :content="message.content" />
+        <!-- assistant:模型名(左上,渲染文本之上) -->
+        <span v-if="isAssistant" class="wb-message__model-name">{{ assistantLabel }}</span>
+
+        <!-- assistant 内容:按 splitFinalAssistantBlocks 拆成 processBlocks(折叠) + answerBlocks(独立)。
+             流式期间不拆,全显示。
+             A 回合聚合:suppressProcessGroup=true 时父级已外层渲染了 ProcessDetailsGroup,
+             这里直接渲染 messageBlocks 全量(不二次包 ProcessDetailsGroup,不再拆分),
+             这样 process 消息的 toolCall/thinking 能直接输出。 -->
+        <template v-if="isAssistant">
+          <!-- suppressProcessGroup:父级已聚合,这里直接渲染全部 blocks(不拆) -->
+          <div v-if="suppressProcessGroup && messageBlocks.length > 0" class="wb-message__blocks">
+            <BlockView
+              :blocks="messageBlocks"
+              :paired-results="props.pairedResults"
+              :done="!props.isStreaming"
+              tool-call-default-open
+            />
+          </div>
+          <!-- 默认路径:按 splitFinalAssistantBlocks 拆 -->
+          <template v-else>
+            <!-- Process details 折叠:thinking + toolCall blocks -->
+            <ProcessDetailsGroup
+              v-if="hasProcessDetails"
+              :message-count="1"
+              :tool-call-count="processToolCallCount"
+            >
+              <BlockView
+                :blocks="processBlocks"
+                :paired-results="props.pairedResults"
+                :done="!props.isStreaming"
+                tool-call-default-open
+              />
+            </ProcessDetailsGroup>
+            <!-- 最终回复:text + image blocks,独立渲染 -->
+            <div v-if="answerBlocks.length > 0" class="wb-message__blocks">
+              <BlockView :blocks="answerBlocks" :done="!props.isStreaming" />
+            </div>
+          </template>
+        </template>
+
+        <!-- user role 走 MarkdownBody(contentAsString) 路径渲染 -->
+        <MarkdownBody v-if="isUser" :content="contentAsString" />
 
         <!-- 流式 / 错误 / 取消 状态标记 -->
         <div
@@ -81,12 +323,70 @@
           </slot>
         </div>
       </div>
+
+      <!-- assistant:chrome 在气泡外、占满列宽的一行(对齐 apps/web):
+           [usage][actionbar] 在左中,time 用 margin-left:auto 推到最右。
+           这样 time 与下面 user 消息的 time 共享同一个右边缘(列宽右沿)。 -->
+      <footer
+        v-if="isAssistant && showChrome"
+        class="wb-message__chrome wb-message__chrome--assistant"
+      >
+        <span v-if="showUsageFooter" class="wb-message__usage"
+          >{{ formatToken(message.usage?.input) }} in ·
+          {{ formatToken(message.usage?.output) }} out ·
+          {{ formatToken(message.usage?.cacheRead) }} cache</span
+        >
+        <MessageActionBar
+          class="wb-message__chrome-action"
+          :role="message.role === 'user' ? 'user' : 'assistant'"
+          :content="contentAsString"
+          :message-id="message.id"
+          :is-streaming="isStreaming"
+          :entry-id="entryId"
+          :prev-assistant-entry-id="prevAssistantEntryId"
+          @copy="onCopy"
+          @edit="onEdit"
+          @fork="onFork"
+          @navigate="onNavigate"
+          @retry="onRetry"
+        />
+        <time
+          v-if="createdAtAttr && showTimestamp"
+          class="wb-message__time"
+          :datetime="createdAtAttr"
+          >{{ formatTime(message.createdAt) }}</time
+        >
+      </footer>
+
+      <!-- user:chrome 在气泡外另起一行(复制 / 编辑 / 时间 同行右对齐) -->
+      <footer v-if="isUser && showChrome" class="wb-message__chrome wb-message__chrome--user">
+        <MessageActionBar
+          class="wb-message__chrome-action"
+          :role="message.role === 'user' ? 'user' : 'assistant'"
+          :content="contentAsString"
+          :message-id="message.id"
+          :is-streaming="isStreaming"
+          :entry-id="entryId"
+          :prev-assistant-entry-id="prevAssistantEntryId"
+          @copy="onCopy"
+          @edit="onEdit"
+          @fork="onFork"
+          @navigate="onNavigate"
+          @retry="onRetry"
+        />
+        <time
+          v-if="createdAtAttr && showTimestamp"
+          class="wb-message__time"
+          :datetime="createdAtAttr"
+          >{{ formatTime(message.createdAt) }}</time
+        >
+      </footer>
     </template>
 
     <!-- Tool: monospace 样式 -->
     <template v-else-if="message.role === 'tool'">
       <div class="wb-message__bubble">
-        <pre class="wb-message__tool-content">{{ message.content }}</pre>
+        <pre class="wb-message__tool-content">{{ contentAsString }}</pre>
         <button type="button" class="wb-stream-error__retry" @click="onToolExpand(message.id)">
           展开
         </button>
@@ -96,13 +396,99 @@
     <!-- System / 其它 role: 简单文本展示 -->
     <template v-else>
       <div class="wb-message__bubble">
-        <MarkdownBody :content="message.content" />
+        <MarkdownBody :content="contentAsString" />
       </div>
     </template>
   </div>
 </template>
 
 <style scoped>
+  /* 顶层 .wb-message 作为对齐 wrapper:user 时整条右靠,assistant 左靠 */
+  .wb-message {
+    display: block;
+  }
+  .wb-message--user {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end; /* bubble 与 chrome 都贴右 */
+  }
+  .wb-message--assistant {
+    display: block; /* assistant 默认流式,左对齐 */
+  }
+
+  /* bubble 提供定位上下文(被 tool / system / 其它 role 复用) */
+  .wb-message__bubble {
+    position: relative;
+  }
+
+  /* assistant 模型名(文本之上) */
+  .wb-message__model-name {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11px;
+    color: var(--wb-text-secondary);
+    font-weight: 500;
+  }
+
+  /* assistant bubble:vertical flex 让内容块(model name / blocks / streaming tag)竖向堆叠。
+     chrome footer 已移出 bubble(在气泡外占满列宽的一行),所以这里不再需要它参与布局。 */
+  .wb-message--assistant .wb-message__bubble {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* assistant chrome:占满列宽的一行(在气泡外),对齐 apps/web:
+     默认 flex-start, [usage][actionbar] 在左侧,time 用 margin-left:auto 推到最右。
+     这样 time 与 user 消息 time 共享同一个右边缘。 */
+  .wb-message__chrome--assistant {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--wb-text-dim);
+    opacity: 0.85;
+    transition: opacity 120ms ease-out;
+  }
+  .wb-message:hover .wb-message__chrome--assistant,
+  .wb-message:focus-within .wb-message__chrome--assistant {
+    opacity: 1;
+  }
+
+  .wb-message__chrome--assistant .wb-message__usage {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* user:chrome 在气泡正下方换行一栏(外层 --user 是 column flex align-items:flex-end,
+     chrome 贴右)。占满列宽与 assistant 对齐,内部 justify-content:flex-end。 */
+  .wb-message__chrome--user {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--wb-text-dim);
+    opacity: 0.85;
+    transition: opacity 120ms ease-out;
+  }
+  /* user 行用 justify-content:flex-end 把 [actionbar][time] 一起贴右,不靠 margin-left:auto
+     (否则 time 会被单独推到最右,actionbar 被甩到左边出现空隙)。这里重置全局 .wb-message__time
+     的 margin-left:auto。 */
+  .wb-message__chrome--user .wb-message__time {
+    margin-left: 0;
+  }
+
+  .wb-message__chrome .wb-message__time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wb-message__chrome-action {
+    min-width: 1px;
+  }
+
   .wb-message__streaming-tag {
     display: inline-flex;
     align-items: center;

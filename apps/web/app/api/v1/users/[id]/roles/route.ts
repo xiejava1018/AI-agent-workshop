@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,12 @@ export async function PUT(
     roleIds = roles.map((r) => r.id);
   }
 
+  const beforeRoles = await prisma.userRole.findMany({
+    where: { userId: id },
+    select: { role: { select: { code: true } } },
+  });
+  const beforeCodes = beforeRoles.map((row) => row.role.code);
+
   await prisma.$transaction([
     prisma.userRole.deleteMany({ where: { userId: id } }),
     ...(roleIds.length > 0
@@ -73,6 +80,14 @@ export async function PUT(
         ]
       : []),
   ]);
+
+  void auditLog({
+    userId: callerId,
+    action: "user.assign_role",
+    resourceType: "user",
+    resourceId: id,
+    metadata: { before: { roleCodes: beforeCodes }, after: { roleCodes: codes } },
+  });
 
   return NextResponse.json({ code: 200, message: "success", data: { id, roleCodes: codes } });
 }

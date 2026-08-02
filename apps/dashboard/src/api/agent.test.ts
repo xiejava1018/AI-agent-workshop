@@ -71,10 +71,18 @@ describe('fetchSessionMessages — /api/sessions/[id] 顶层 context 形状(Bug 
     // 关键断言:旧实现读 res.data.context 会拿到 undefined,messages 为空
     expect(msgs).toHaveLength(2)
     expect(msgs[0].role).toBe('user')
+    // user role:content 拍扁为 string(下游 MarkdownBody / minimap 等仍走 string 路径)
     expect(msgs[0].content).toBe('今天天气怎么样?')
     expect(msgs[0].id).toBe('entry-u1') // entryIds[i] 优先作稳定 id
     expect(msgs[1].role).toBe('assistant')
-    expect(msgs[1].content).toBe('我无法查询实时天气。')
+    // A 回合聚合:assistant role 保留 AssistantContentBlock[] 结构,
+    // 供 ProcessDetailsGroup / turn-grouping 识别 process blocks
+    expect(Array.isArray(msgs[1].content)).toBe(true)
+    const a1Blocks = msgs[1].content as unknown as Array<{ type?: string; text?: string }>
+    expect(a1Blocks[0]).toMatchObject({
+      type: 'text',
+      text: '我无法查询实时天气。'
+    })
     expect(msgs[1].id).toBe('entry-a1')
   })
 
@@ -88,9 +96,7 @@ describe('fetchSessionMessages — /api/sessions/[id] 顶层 context 形状(Bug 
     })
 
     const res = await fetchSessionMessages('s1')
-    const msgs = (
-      res as { data: { messages: Array<{ content: string }> } }
-    ).data.messages
+    const msgs = (res as { data: { messages: Array<{ content: string }> } }).data.messages
 
     expect(msgs[0].content).toBe('hi')
   })
@@ -103,5 +109,60 @@ describe('fetchSessionMessages — /api/sessions/[id] 顶层 context 形状(Bug 
 
     expect(msgs).toEqual([])
     expect((res as { data: { total: number } }).data.total).toBe(0)
+  })
+
+  it('assistant message 透传 model/provider/usage(toolbar/footer 渲染依据)', async () => {
+    httpGet.mockResolvedValue({
+      sessionId: 's1',
+      context: {
+        messages: [
+          {
+            role: 'assistant',
+            model: 'MiniMax-M3',
+            provider: 'miniMAX-provider',
+            usage: { input: 117, output: 71, cacheRead: 9271, cacheWrite: 0 },
+            content: [{ type: 'text', text: 'reply' }],
+            timestamp: 1
+          }
+        ]
+      }
+    })
+
+    const res = await fetchSessionMessages('s1')
+    const m = (res as { data: { messages: Array<{ modelId?: string; modelProvider?: string; usage?: unknown }> } }).data.messages[0]!
+    expect(m.modelId).toBe('MiniMax-M3')
+    expect(m.modelProvider).toBe('miniMAX-provider')
+    expect(m.usage).toEqual({ input: 117, output: 71, cacheRead: 9271, cacheWrite: 0 })
+  })
+
+  it('toolResult message 透传 toolCallId/isError/toolName(ToolCallBlock 配对依据)', async () => {
+    httpGet.mockResolvedValue({
+      sessionId: 's1',
+      context: {
+        messages: [
+          {
+            role: 'assistant',
+            content: [{ type: 'toolCall', toolCallId: 'call_1', toolName: 'bash', input: { command: 'ls' } }],
+            timestamp: 1
+          },
+          {
+            role: 'toolResult',
+            toolCallId: 'call_1',
+            toolName: 'bash',
+            isError: false,
+            content: [{ type: 'text', text: 'result output' }],
+            timestamp: 2
+          }
+        ]
+      }
+    })
+
+    const res = await fetchSessionMessages('s1')
+    const msgs = (res as { data: { messages: Array<{ role: string; toolCallId?: string; toolIsError?: boolean; toolName?: string }> } }).data.messages
+    // tool role 不进 content 数组(flatten 为 string),但 metadata 必须保留
+    expect(msgs[1].role).toBe('toolResult')
+    expect(msgs[1].toolCallId).toBe('call_1')
+    expect(msgs[1].toolIsError).toBe(false)
+    expect(msgs[1].toolName).toBe('bash')
   })
 })

@@ -25,6 +25,7 @@
 
 import { prisma } from "./prisma";
 import type { SessionMetaRow } from "./session-meta";
+import { recordSessionMeta } from "./session-meta";
 import { assertPermission } from "./permissions";
 
 export type UserRole = "OWNER" | "ADMIN" | "MEMBER";
@@ -38,6 +39,40 @@ export type UserRole = "OWNER" | "ADMIN" | "MEMBER";
  * (teamId, userId). If this becomes a hot path, cache in globalThis
  * keyed by userId.
  */
+/**
+ * M7 fix: when getSessionMeta() returns undefined (jsonl on disk missing,
+ * or lazy rebuildFromJsonl hasn't completed yet), fall back to the
+ * authoritative prisma.session row and seed the in-memory map so subsequent
+ * auth checks succeed without restarting the server. Without this, every
+ * `assertCanReadSession*` denies with `forbidden` even for the session
+ * owner, because the list endpoint reads DB but the auth layer reads only
+ * the filesystem.
+ */
+async function ensureSessionMetaFromDb(
+  sessionId: string,
+  meta: SessionMetaRow | undefined
+): Promise<SessionMetaRow | undefined> {
+  if (meta) return meta;
+  try {
+    const row = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, teamId: true, projectId: true, createdAt: true },
+    });
+    if (!row) return undefined;
+    const recovered: SessionMetaRow = {
+      userId: row.userId,
+      projectId: row.projectId,
+      teamId: row.teamId,
+      createdAt: row.createdAt.getTime(),
+    };
+    // Seed in-memory map so subsequent calls skip the DB hit.
+    recordSessionMeta(row.id, recovered.userId, recovered.projectId, recovered.teamId);
+    return recovered;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function getUserTeamMemberships(
   userId: string
 ): Promise<Map<string, UserRole>> {
@@ -127,6 +162,8 @@ export async function assertCanReadSessionScoped(
     return { allowed: true, reason: "owner" }
   }
 
+  // M7: DB fallback so dev/restart scenarios where jsonl is gone still pass auth.
+  meta = await ensureSessionMetaFromDb(sessionId, meta);
   if (!meta) return { allowed: false, reason: "deny" };
 
   // userRole is accepted for backwards compatibility with the M2.3
@@ -176,6 +213,8 @@ export async function assertCanReadSessionBody(
   meta: SessionMetaRow | undefined,
   sessionId: string
 ): Promise<{ allowed: boolean; reason: "owner" | "team_admin" | "body_access_denied" | "deny"; teamRole?: UserRole }> {
+  // M7: DB fallback (see assertCanReadSessionScoped comment for why).
+  meta = await ensureSessionMetaFromDb(sessionId, meta);
   if (!meta) return { allowed: false, reason: "deny" };
   void userRole;
 

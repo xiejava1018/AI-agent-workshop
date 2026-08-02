@@ -17,6 +17,11 @@
   --wb-bg-sidebar: var(--el-fill-color-light, #f5f7fa);
   --wb-bg-hover: var(--el-fill-color, #eef0f3);
   --wb-bg-active: var(--el-color-primary-light-9, #e6f1fc);
+  /* B:用户消息气泡背景/边框色 — port 自 React ChatWindow.tsx MessageView:140-189
+   * rgba(59,130,246,...) 是 React 用的蓝色调(user role)
+   */
+  --wb-bg-user: rgba(59, 130, 246, 0.06);
+  --wb-border-user: rgba(59, 130, 246, 0.2);
 
   --wb-border: var(--el-border-color-lighter, #ebeef5);
   --wb-border-strong: var(--el-border-color, #dcdfe6);
@@ -24,6 +29,10 @@
   --wb-text: var(--el-text-color-primary, #303133);
   --wb-text-secondary: var(--el-text-color-regular, #606266);
   --wb-text-muted: var(--el-text-color-secondary, #909399);
+  /* B:文本暗色 —— port 自 React MessageView.tsx `--text-dim`(用于模型名 / time / usage footer)
+   * 较 --wb-text-muted 更隐,但仍可读。
+   */
+  --wb-text-dim: color-mix(in srgb, var(--wb-text) 55%, transparent);
 
   --wb-accent: var(--el-color-primary, #409eff);
   --wb-success: var(--el-color-success, #67c23a);
@@ -120,24 +129,24 @@
   overflow: hidden;
 }
 
-/* ============ 会话项 ============ */
+/* ============ 会话项 ============
+ *
+ * 注意:会话项的 active indicator(2px left-border)与 hover 高亮现在
+ * 由 SessionItemRow.vue 內部 row 控制。原因:这些 visual 本质上是
+ * per-row(54px 2 区)内容,不应与 .wb-session-item 包装层的状态污染。
+ * .wb-session-item.active 遗留的外层边框会与内嵌 row 的同色边框叠加,
+ * 在 active 行上看见两条同色竖线。
+ * 这里保留 .wb-session-item.unavailable 透明度(适用于会话不允许开启)。
+ */
 
 .wb-session-item {
-  padding: var(--wb-pad-sm) var(--wb-pad-md);
-  border-bottom: 1px solid var(--wb-border);
+  padding: 0;
+  border-bottom: 0;
   cursor: pointer;
   transition: background-color var(--wb-transition-fast) var(--wb-ease-out);
 }
 .wb-session-item:hover {
-  background: var(--wb-bg-hover);
-}
-.wb-session-item.active {
-  background: var(--wb-bg-active);
-  border-left: 2px solid var(--wb-accent);
-}
-.wb-session-item.pinned .wb-session-title::before {
-  content: '★ ';
-  color: var(--wb-warning);
+  background: transparent;
 }
 .wb-session-item.unavailable {
   opacity: 0.5;
@@ -190,6 +199,25 @@
   min-height: 0;
   overflow-y: auto;
   padding: var(--wb-pad-lg);
+  /* B:主区宽度限制 —— port 自 React ChatWindow.tsx 默认 820px 列宽。
+   * 在宽屏上居中避免气泡拉得太宽;窄屏 (< 820 + padding) 自动占满。
+   */
+  max-width: 100%;
+}
+/* 让最后一条消息下方保留可视空间,滚到底时不会贴着 ChatInput 边缘,
+ * 也不会出现在"看起来还没滚到底"的歧义状态。
+ * scrollToBottom 滚到 anchor(高度 1px)对齐 wrap 底部后,这段额外 space
+ * 会被 scrollHeight 计入,保证用户能看到最后一条 message 完整 + 额外呼吸空间。
+ */
+.wb-messages .wb-chat-window__anchor + * ,
+.wb-messages {
+  padding-bottom: 24px;
+}
+.wb-messages > * {
+  /* B:列宽限制 —— 让 MessageView 内的内容列宽不超过 820,避免超宽屏拉暴 */
+  max-width: 820px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .wb-message {
@@ -202,24 +230,80 @@
   flex-direction: row-reverse;
 }
 
+/* T5 反馈修复 1 + B 样式对齐:user/assistant 左右对齐布局
+ *  .wb-message--user / .wb-message--assistant 是模板当前使用的 BEM 类
+ *  (MessageView.vue 的 `:class="\`wb-message--${message.role}\`"`)
+ *  .wb-message__bubble 是消息气泡子元素。
+ *
+ *  B 升级(对照 React ChatWindow.tsx:140-189 + MessageView.tsx:440-490):
+ *   - user 气泡:浅蓝底 + 浅蓝边框 + 统一圆角 12px + 紧凑 padding 8/12
+ *   - assistant 气泡:max-width 85%(React 无限制,这里贴近 react 默认 85)
+ *   - assistant 气泡 marginBottom 16(block gap 8 由 .wb-message__blocks 控制)
+ */
+.wb-message--user {
+  justify-content: flex-end;
+}
+.wb-message--user .wb-message__bubble {
+  max-width: 85%;
+  background: var(--wb-bg-user);
+  border: 1px solid var(--wb-border-user);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.wb-message--assistant {
+  justify-content: flex-start;
+}
+.wb-message--assistant .wb-message__bubble {
+  max-width: 85%;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+/* B:assistant 内容块间距 —— port React gap 8 */
+.wb-message__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* B:模型名样式 —— port React fontSize 11 + --text-dim + marginBottom 4 */
+.wb-message__model-name {
+  font-size: 11px;
+  color: var(--wb-text-dim);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* B:chrome footer 间距 —— port React marginTop 4 + gap 8 */
+.wb-message__chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.wb-message__chrome--user {
+  justify-content: flex-end;
+  margin-top: 3px;
+}
+/* B:token usage / 时间 字号颜色 —— port React fontSize 10-11 + --text-dim */
+.wb-message__usage,
+.wb-message__time {
+  font-size: 11px;
+  color: var(--wb-text-dim);
+}
+.wb-message__time {
+  font-size: 10px;
+  margin-left: auto;
+}
+.wb-message__chrome--assistant .wb-message__time {
+  margin-left: auto;
+}
+
 @keyframes wb-fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-.wb-message-content {
-  max-width: 75%;
-  padding: var(--wb-pad-md);
-  border-radius: var(--wb-radius-md);
-  background: var(--wb-bg-elevated);
-  border: 1px solid var(--wb-border);
-  font-size: 14px;
-  line-height: 1.6;
-  word-break: break-word;
-}
-.wb-message.user .wb-message-content {
-  background: var(--wb-bg-active);
-  border-color: var(--wb-accent);
 }
 
 /* ============ 输入区 ============ */
@@ -241,6 +325,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--wb-pad-sm);
+  /* 与上方 .wb-messages > * 保持同列宽(820):聊天输入区与对话气泡
+   * 左右同宽且居中,避免帖子变宽后输入框底部看起被“两边拉伸”
+   * (对齐 apps/web ChatInput 的 maxWidth:820 + margin:"0 auto")。 */
+  max-width: 820px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
 }
 
 .wb-input-actions {
@@ -271,6 +363,12 @@
   cursor: pointer;
   font-size: 12px;
   white-space: nowrap;
+  /* 限定 max 200px + shrink=1 允许 tab 在 tabbar 拥挤时被压缩,label 内 ellipsis 收敛。
+   * min-width 由子元素 .wb-tab-label(以及关闭按钮的 min-content 需求)决定;
+   * 调 min-width: 0 是为了让 flex 子项能修氏缩到超出内容尺寸。 */
+  max-width: 200px;
+  flex-shrink: 1;
+  min-width: 0;
   transition: background-color var(--wb-transition-fast) var(--wb-ease-out);
 }
 .wb-tab:hover {
@@ -297,44 +395,141 @@
   flex-shrink: 0;
 }
 
-/* ============ Markdown 渲染 ============ */
+/* ============ Markdown 渲染 ============
+ *
+ * T5 反馈修复 3:之前 .wb-markdown 只覆盖了 pre/code/a/blockquote 4 个标签,
+ * markdown-it 输出的 <p>/<strong>/<em>/<h1-6>/<ul>/<ol>/<li>/<hr>/<table>/<kbd>/<img>
+ * 全部裸奔,视觉上等同于纯文本。这里补齐选择器以匹配参考实现的渲染质量。
+ *
+ * 注意:这些规则必须在 .agent-workbench 作用域外也能工作
+ * —— MarkdownBody.vue 用 v-html 输出,v-html 内容不会被 Vue 的 scoped CSS 命中,
+ * 所以规则放在全局 CSS(.workbench.css)里。
+ */
 
 .wb-markdown {
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
+  color: var(--wb-text);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.wb-markdown p {
+  margin: 0 0 8px 0;
+}
+.wb-markdown p:last-child {
+  margin-bottom: 0;
+}
+.wb-markdown h1,
+.wb-markdown h2,
+.wb-markdown h3,
+.wb-markdown h4,
+.wb-markdown h5,
+.wb-markdown h6 {
+  margin: 12px 0 6px 0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.wb-markdown h1 { font-size: 22px; }
+.wb-markdown h2 { font-size: 19px; }
+.wb-markdown h3 { font-size: 16px; }
+.wb-markdown h4,
+.wb-markdown h5,
+.wb-markdown h6 { font-size: 14px; }
+.wb-markdown strong { font-weight: 600; }
+.wb-markdown em { font-style: italic; }
+.wb-markdown del,
+.wb-markdown s { text-decoration: line-through; color: var(--wb-text-muted); }
+.wb-markdown a {
+  color: var(--wb-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.wb-markdown a:hover {
+  text-decoration: none;
+}
+.wb-markdown ul,
+.wb-markdown ol {
+  padding-left: 20px;
+  margin: 6px 0 8px 0;
+}
+.wb-markdown li {
+  margin: 2px 0;
+}
+.wb-markdown li::marker {
+  color: var(--wb-text-muted);
+}
+.wb-markdown code {
+  font-family: var(--wb-font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  background: var(--wb-bg-hover);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius-sm);
 }
 .wb-markdown pre {
+  margin: 8px 0;
+  padding: var(--wb-pad-md);
   background: var(--el-color-black, #1e1e1e);
   color: #d4d4d4;
-  padding: var(--wb-pad-md);
   border-radius: var(--wb-radius-md);
   overflow-x: auto;
   font-family: var(--wb-font-mono);
   font-size: 13px;
 }
-.wb-markdown code {
+.wb-markdown pre code {
   font-family: var(--wb-font-mono);
   font-size: 0.9em;
-  background: var(--wb-bg-hover);
-  padding: 2px 4px;
-  border-radius: var(--wb-radius-sm);
-}
-.wb-markdown pre code {
-  background: transparent;
   padding: 0;
-}
-.wb-markdown a {
-  color: var(--wb-accent);
-  text-decoration: none;
-}
-.wb-markdown a:hover {
-  text-decoration: underline;
+  background: transparent;
+  border: none;
+  color: inherit;
 }
 .wb-markdown blockquote {
   margin: var(--wb-pad-md) 0;
-  padding: var(--wb-pad-sm) var(--wb-pad-md);
+  padding: 6px var(--wb-pad-md);
   border-left: 3px solid var(--wb-border-strong);
   color: var(--wb-text-secondary);
+  background: var(--wb-bg-elevated);
+  border-radius: 0 var(--wb-radius-sm) var(--wb-radius-sm) 0;
+}
+.wb-markdown blockquote p {
+  margin: 0;
+}
+.wb-markdown hr {
+  border: none;
+  border-top: 1px solid var(--wb-border);
+  margin: 12px 0;
+}
+.wb-markdown table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+  font-size: 13px;
+}
+.wb-markdown th,
+.wb-markdown td {
+  padding: 6px 10px;
+  border: 1px solid var(--wb-border);
+  text-align: left;
+}
+.wb-markdown th {
+  background: var(--wb-bg-elevated);
+  font-weight: 600;
+}
+.wb-markdown kbd {
+  display: inline-block;
+  font-family: var(--wb-font-mono);
+  font-size: 0.85em;
+  padding: 1px 6px;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-border-strong);
+  border-radius: var(--wb-radius-sm);
+  box-shadow: 0 1px 0 var(--wb-border-strong);
+}
+.wb-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
 }
 
 /* ============ 文件浏览器 ============ */

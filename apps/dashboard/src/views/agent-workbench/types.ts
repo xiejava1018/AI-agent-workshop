@@ -11,7 +11,25 @@
  * - v1.5: 合并 Track A / Track C 注释(行尾字段说明从其他分支同步)
  */
 
+/**
+ * v1.6: + AgentMessage.usage/entryId/prevAssistantEntryId/modelProvider/modelId
+ *        (chrome v1 头部 + token footer 需要)
+ *      + QueueItem(steer/followUp 队列)
+ *      + SlashCommandInfo / ToolEntry / ThinkingLevel 枚举(slash palette + 状态条用)
+ *
+ * v1.7: + AgentMessage.content 形态文档 — T2.4 把 server 在 message_end 推送的
+ *        `AssistantContentBlock[]` 经 normalizeContent + normalizeContentBlocks
+ *        归一化为 mirror 契约;但当前类型签名仍保留 `string`(T2.5 延后到 G3
+ *        与下游组件一起扩展为 `string | AssistantContentBlock[]`)。
+ *
+ * v1.8: T2.5 类型扩展落地 — AgentMessage.content 改为 `string | AssistantContentBlock[]`。
+ *        下游 7 个 site(ChatMinimap / ChatWindow / MessageView / useAgentSession)
+ *        通过 Array.isArray(content) 窄化同步修。下游组件不在本任务里切到
+ *        BlockView(T5.x),仅做类型对齐,渲染逻辑保持 string 路径不变。
+ */
+
 import type { AgentSession } from '@/api/agent'
+import type { AssistantContentBlock } from './types/assistant-blocks'
 
 // ============================================================================
 // 会话
@@ -23,7 +41,7 @@ export type { AgentSession }
 // 消息 / 工具调用 / 分支
 // ============================================================================
 
-export type AgentRole = 'user' | 'assistant' | 'system' | 'tool'
+export type AgentRole = 'user' | 'assistant' | 'system' | 'tool' | 'toolResult'
 
 export type ToolCallStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -37,12 +55,67 @@ export interface ToolCall {
   completedAt?: string
 }
 
+/**
+ * AgentMessage.usage —— SDK 在流期间(message_start / message_usage)携带的
+ * token 使用统计。chrome v1 T1.2b 由 useEventStream.message_usage case 写入
+ * rawMessages 中最后一条 assistant 消息的 usage 字段,供 T2.2 token footer
+ * 渲染使用。cost 为可选,产品决策不在 v1 footer 展示。
+ */
+export interface AgentMessageUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
+}
+
 export type StreamStatus = 'idle' | 'streaming' | 'done' | 'error' | 'cancelled'
+
+/**
+ * AgentMessage.usage —— SDK 在 message_start 上携带的 token 使用统计。
+ * 字段镜像 apps/web/lib/types.ts AssistantMessage.usage,但 cost? 可选(v1 footer
+ * 不展示 cost,见 A2-b 决策)。
+ */
+export interface AgentMessageUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    total: number
+  }
+}
 
 export interface AgentMessage {
   id: string
   role: AgentRole
-  content: string
+  /**
+   * 消息内容形态:
+   *   - 'user' / 'tool' / 'system' role:始终 `string`(markdown-it 渲染路径)。
+   *   - 'assistant' role streaming 阶段:`string`(SSE text_delta 累积)。
+   *   - 'assistant' role done 阶段:`AssistantContentBlock[]`(mirror 契约,
+   *     由 useEventStream message_end case 经 normalizeContent + normalizeContentBlocks 产出)。
+   *
+   * T2.5:类型扩展为 `string | AssistantContentBlock[]`,以纳入 done 阶段的
+   *        形态。下游消费站点位于:
+   *          - ChatMinimap.vue:visibleMessages message.content.trim() / messagePreview
+   *          - ChatWindow.vue:onRetry sendMessage(lastUser.content)
+   *          - MessageView.vue:MarkdownBody / MessageActionBar :content="message.content"
+   *              (user / tool / system 路径不变,assistant 路径仍按 string 渲染,留 G3 切 BlockView)
+   *          - useAgentSession.ts:rebuildIndex 同 stableId 合并 content
+   *        合并点形态由 SSE emit 决定(流式 string、done 数组);两侧均需窄化。
+   */
+  content: string | AssistantContentBlock[]
   toolCalls?: ToolCall[]
   branchId?: string
   parentMessageId?: string
@@ -53,6 +126,26 @@ export interface AgentMessage {
   cancelled?: boolean
   /** Track B: 流状态机,用于 UI 区分 idle/streaming/done/error/cancelled */
   streamStatus?: StreamStatus
+  // ↓ chrome v1 新增字段
+  /** SDK 在 message_start / message_usage 携带的 token 用量(仅 assistant 有);footer 渲染依据 */
+  usage?: AgentMessageUsage
+  /** SDK entryId(stable id,用于 fork / navigate) */
+  entryId?: string
+  /** 上一条 assistant 的 entryId(用于 Navigate Up 按钮) */
+  prevAssistantEntryId?: string
+  /** SDK 在 message_start 携带的模型来源(provider id) */
+  modelProvider?: string
+  /** SDK 在 message_start 携带的模型 id */
+  modelId?: string
+  /** toolResult role message 配对的 toolCall.id —— 供 ToolCallBlock 按 toolCallId
+   *  查找 result block。SDK source 中 role:'toolResult' 的 message 才有该字段。 */
+  toolCallId?: string
+  /** toolResult role 的错误标识(SDK source 中 isError 字段 mirror)。 */
+  toolIsError?: boolean
+  /** toolResult role 的人类可读名(SDK source 中 toolName 字段 mirror)。 */
+  toolName?: string
+  /** Process-details:由 ChatWindow.processGroups 设置,标记本 assistant 正在被折叠组包裹 */
+  inProcessDetails?: boolean
 }
 
 export interface Branch {
@@ -87,7 +180,18 @@ export const ALLOWED_SSE_EVENTS = [
   'session_renamed',
   'prompt_done',
   'error',
-  'done'
+  'done',
+// chrome v1:4 个新事件
+  // - queue_update:后端推 { steer, followUp } 更新,直接覆盖 queuedMessages
+  // - thinking_level_changed:模型 thinking 档位变化
+  // - model_changed:模型切换(provider+modelId)
+  // - message_usage(T1.2b):SDK 在流期间追加的 token 计数,
+  //   写入 rawMessages 中最后一条 assistant 消息的 usage 字段,
+  //   是 T2.2 token footer 渲染的依据
+  'queue_update',
+  'thinking_level_changed',
+  'model_changed',
+  'message_usage'
 ] as const
 
 export type AllowedSseEvent = (typeof ALLOWED_SSE_EVENTS)[number]
@@ -116,6 +220,10 @@ export type SSEEventPayload =
   | { type: 'prompt_done' }
   | { type: 'error'; message: string; code?: string }
   | { type: 'done' }
+  // chrome v1 新增
+  | { type: 'queue_update'; steer: QueueItem[]; followUp: QueueItem[] }
+  | { type: 'thinking_level_changed'; level: ThinkingLevel }
+  | { type: 'model_changed'; provider: string; modelId: string }
 
 // ============================================================================
 // Running SSE(全局,侧栏用 /api/agent/running/events)
@@ -203,6 +311,96 @@ export interface PluginConfig {
 }
 
 export type ConfigPanelKey = 'none' | 'files' | 'models' | 'skills' | 'plugins'
+
+// ============================================================================
+// chrome v1(v1.6 新增):streaming 队列 / thinking 档 / tool preset / slash 命令
+// ============================================================================
+
+/**
+ * Streaming-time queue 中的单条消息。
+ * - kind='steer':当前轮内插入,会抢断当前 assistant
+ * - kind='followUp':当前轮结束后追加
+ */
+export interface QueueItem {
+  id: string
+  kind: 'steer' | 'followUp'
+  text: string
+  createdAt: string
+}
+
+/** Thinking 档位枚举(对齐 apps/web/lib/types 提供的 8 档)。 */
+export type ThinkingLevel =
+  | 'auto'
+  | 'off'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
+
+/** Tool preset(对齐 apps/web/lib/tool-presets.ts ToolPreset —— 用 "none" 而非 "off") */
+export type ToolPreset = 'none' | 'default' | 'full'
+
+/**
+ * 单条 tool 注册项(对齐 apps/web/lib/tool-presets.ts ToolEntry)。
+ * 浅拷贝避免跨应用类型依赖,apps/dashboard 自包含。
+ *
+ * chrome v1 修订:description / active 在 React 参考实现里都是 required;
+ * Vue 端保留兼容(可选),现有 /api/agent get_tools 响应里可能没有
+ * description / active,我们也允许省略。
+ */
+export interface ToolEntry {
+  name: string
+  description?: string
+  /** 是否在当前 preset 中启用 */
+  active?: boolean
+}
+
+/**
+ * 单条 slash 命令(对齐 apps/web/hooks/useAgentSession.ts SlashCommandInfo)。
+ *
+ * source:
+ *   - "extension": 来自 extension 注册
+ *   - "prompt":    prompt template
+ *   - "skill":     skill:xxx 形式
+ *   - "builtin":   Vue 端内置(/compact /branch /model /fork),由 T5 添加
+ */
+export interface SlashCommandInfo {
+  name: string
+  description?: string
+  source: 'extension' | 'prompt' | 'skill' | 'builtin'
+  sourceInfo?: {
+    path: string
+    source: string
+    scope: 'user' | 'project' | 'temporary'
+    origin: 'package' | 'top-level'
+    baseDir?: string
+  }
+}
+
+/**
+ * Slash palette 单项(对齐 B8 spec:slash 命令面板):
+ * - name: 命令主名(如 "/compact")
+ * - aliases: 别名数组(中文 / 简短别名,如 "/压缩")
+ * - description: 单行描述
+ * - source: 同 SlashCommandInfo.source 的子集(palette 仅展示内置 / 扩展 / prompt / skill)
+ */
+export interface SlashCommandPaletteItem {
+  name: string
+  aliases: string[]
+  description: string
+  source: 'builtin' | 'extension' | 'prompt' | 'skill'
+}
+
+/**
+ * get_commands 响应(由 apps/web/lib/rpc-manager.ts `case 'get_commands'` 实测
+ * 确认):服务端返回 `{ commands?: SlashCommandInfo[] }`,commands 是可选数组
+ * (apps/web/hooks/useAgentSession.ts:139 把它定义为可选)。
+ */
+export interface SlashCommandsResponse {
+  commands?: SlashCommandInfo[]
+}
 
 // ============================================================================
 // 安全工具

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { auditLog } from "@/lib/audit-log";
 
 export async function POST(req: NextRequest) {
   const userId = req.headers.get("x-user-id");
@@ -13,6 +14,13 @@ export async function POST(req: NextRequest) {
   await prisma.user.update({
     where: { id: userId },
     data: { passwordHash: hash, mustChangePassword: false },
+  });
+  void auditLog({
+    userId,
+    action: "user.password_change",
+    resourceType: "user",
+    resourceId: userId,
+    metadata: { self: true },
   });
   return NextResponse.json({ ok: true });
 }

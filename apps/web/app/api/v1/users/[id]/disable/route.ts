@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,13 @@ export async function PUT(
   await prisma.user.update({
     where: { id },
     data: { disabled: body.disabled },
+  });
+  void auditLog({
+    userId: callerId,
+    action: "user.disable",
+    resourceType: "user",
+    resourceId: id,
+    metadata: { before: { disabled: target.disabled }, after: { disabled: body.disabled } },
   });
   return NextResponse.json({
     code: 200,

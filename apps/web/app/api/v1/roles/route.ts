@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAnyPermission } from "@/lib/permissions";
+import { auditLog } from "@/lib/audit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       data: permissionIds.map((pid) => ({ roleId: role.id, permissionId: pid })),
     });
   }
+
+  void auditLog({
+    userId,
+    action: "role.create",
+    resourceType: "role",
+    resourceId: role.id,
+    metadata: {
+      after: {
+        code: role.code,
+        name: role.name,
+        desc: role.desc,
+        enabled: role.enabled,
+        sort: role.sort,
+        permissionCodes: body.permissionCodes ?? [],
+      },
+    },
+  });
 
   return NextResponse.json({
     code: 200,
