@@ -9,8 +9,15 @@
 //   - 这两个字段驱动前端动态菜单 + v-auth 按钮级权限。
 //   - 平滑过渡:若用户 UserRole 为空但 TeamMember.role='OWNER',自动绑 team_owner
 //     全局角色(防锁死 + 让历史团队 OWNER 也能立即看到 team 管理菜单)。
+//
+// Project 扩展:
+//   - 响应新增 lastProjectId: string | null(来自 User.lastProjectId)
+//   - 前端 workbench ProjectPicker 用它定位“当前项目”,并在切换后立即
+//     同步本地 store(不等下次 /me)。新增这个字段避免前端多调一次
+//     /api/projects 才能算出 current。
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { getCurrentUserContext } from "@/lib/server-user";
 import {
   ensureTeamOwnerRoleForExistingOwners,
@@ -39,6 +46,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // 静默:不阻塞主流程;下次 /me 再试
   }
 
+  // 拿 lastProjectId(getCurrentUserContext 没 select,这里单独查)
+  const userRow = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { lastProjectId: true },
+  });
+
   const [permissions, roles] = await Promise.all([
     getUserPermissions(userId),
     getUserRoles(userId),
@@ -48,6 +61,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     id: ctx.user.id,
     username: ctx.user.username,
     mustChangePassword: ctx.user.mustChangePassword,
+    lastProjectId: userRow?.lastProjectId ?? null,
     role: ctx.role,
     permissions,
     roles,

@@ -43,6 +43,11 @@ export async function PUT(
   if (!(await assertAnyPermission(userId, "role:edit"))) return forbidden();
 
   const { id } = await params;
+  // 修复点：SysRole.id 是 cuid 字符串(Prisma @id @default(cuid()))。
+  // 前端页面 value-key 是字符串。若前端误传 number/NaN 会进函数但 prisma
+  // findUnique 会 500 —— 提前拦截格式错误,避免误导为"角色不存在 (404)"。
+  if (typeof id !== "string" || id.length === 0) return badRequest("invalid id");
+
   const role = await prisma.sysRole.findUnique({ where: { id } });
   if (!role) return notFound();
 
@@ -54,6 +59,20 @@ export async function PUT(
   for (const k of ["name", "desc", "enabled", "sort"] as const) {
     if (k in body) data[k] = body[k];
   }
+  // enabled 必须是 boolean,否则可能被静默写入字符串"true"在某些客户端。
+  if ("enabled" in data && typeof data.enabled !== "boolean") {
+    return badRequest("enabled must be boolean");
+  }
+  // sort 必须是 number
+  if ("sort" in data && typeof data.sort !== "number") {
+    return badRequest("sort must be number");
+  }
+  // 防御性:不能通过此接口修改 code(code 一旦创建不可变更,避免破坏 RolePermission 等)。
+  if ("code" in body) {
+    return badRequest("code is immutable; create a new role instead");
+  }
+  if (Object.keys(data).length === 0) return badRequest("no fields to update");
+
   const updated = await prisma.sysRole.update({ where: { id }, data });
   void auditLog({
     userId,
@@ -75,6 +94,7 @@ export async function DELETE(
   if (!(await assertAnyPermission(userId, "role:delete"))) return forbidden();
 
   const { id } = await params;
+  if (typeof id !== "string" || id.length === 0) return badRequest("invalid id");
   const role = await prisma.sysRole.findUnique({ where: { id } });
   if (!role) return notFound();
   if (PROTECTED_ROLES.has(role.code)) {

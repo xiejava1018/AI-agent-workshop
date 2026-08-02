@@ -41,7 +41,13 @@
         <div v-if="detail" class="detail-content">
           <ElDescriptions :column="2" border>
             <ElDescriptionsItem label="ID">{{ detail.id }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="操作用户">{{ detail.user_id || '-' }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="操作用户">
+              <span v-if="detail.username">{{ detail.username }}</span>
+              <span v-else>{{ detail.user_id || '-' }}</span>
+              <span v-if="detail.username && detail.user_id" class="user-id-hint">
+                ({{ detail.user_id }})
+              </span>
+            </ElDescriptionsItem>
             <ElDescriptionsItem label="操作类型">
               <ElTag :type="getActionTagType(detail.action)" size="small">
                 {{ detail.action }}
@@ -108,7 +114,7 @@
       key: 'user_id',
       type: 'input',
       clearable: true,
-      placeholder: '请输入用户 ID',
+      placeholder: '请输入登录账号',
     },
     {
       label: '操作类型',
@@ -222,11 +228,18 @@
           showOverflowTooltip: true,
         },
         {
-          prop: 'user_id',
+          prop: 'username',
           label: '操作用户',
           align: 'center',
           width: 140,
-          formatter: (row: any) => row.user_id || '-',
+          // 后端已 join User 返回 username,这里优先显示登录账号。
+          // username 缺失时(匿名/系统日志、userId 为 null)fallback 到 cuid,
+          // 并在 hover tooltip 里提示完整 ID,避免看起来像空。
+          formatter: (row: any) => {
+            if (row.username) return row.username
+            if (row.user_id) return row.user_id
+            return '-'
+          },
         },
         {
           prop: 'action',
@@ -351,6 +364,11 @@
     }
     .muted {
       color: var(--el-text-color-placeholder);
+    }
+    .user-id-hint {
+      margin-left: 6px;
+      color: var(--el-text-color-placeholder);
+      font-size: 12px;
     }
   }
 </style>

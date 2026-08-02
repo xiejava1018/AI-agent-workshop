@@ -174,13 +174,22 @@ describe("GET /api/admin/audit/export", () => {
     // tolerate an optional leading UTF-8 BOM emitted for Excel compatibility
     const header = lines[0].replace(/^﻿/, "");
     expect(header).toBe(
-      "id,created_at,user_id,action,resource_type,resource_id,metadata",
+      "id,created_at,username,user_id,action,resource_type,resource_id,metadata",
     );
     const dataLine = lines.find((l) => l.includes(id));
     expect(dataLine).toBeTruthy();
     expect(dataLine!).toContain("user.create");
     expect(dataLine!).toContain(RT);
     expect(dataLine!).toContain("u-1");
+    // 验证 username 列存在于数据行。该行 username 是 admin 的测试账户名
+    // (test-audit-...) —— username 列与 user_id 列紧邻,中间隔一个逗号。
+    // 简单起见只做 username 为名空间开头的字符串检查。
+    const cols = dataLine!.split(",");
+    // 列序: id, created_at, username, user_id, action, resource_type, resource_id, metadata
+    expect(cols[0]).toBe(id);
+    expect(cols[2]).toMatch(/^test-audit-/);
+    expect(cols[3]).toMatch(/^(test-audit-)?/);
+    expect(cols[4]).toBe("user.create");
   });
 
   it("respects the action filter", async () => {

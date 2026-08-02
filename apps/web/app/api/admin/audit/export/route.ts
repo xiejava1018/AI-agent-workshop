@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 const CSV_COLUMNS = [
   "id",
   "created_at",
+  "username",
   "user_id",
   "action",
   "resource_type",
@@ -38,11 +39,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     where,
     orderBy: { createdAt: "desc" },
     take: MAX_AUDIT_EXPORT_ROWS,
+    // 不引入 user relation(AuditLog 没有 FK),走批量查询...
   });
+  const userIds = Array.from(
+    new Set(entries.map((e) => e.userId).filter((id): id is string => !!id)),
+  );
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, username: true },
+      })
+    : [];
+  const usernameById = new Map(users.map((u) => [u.id, u.username]));
+
   const rows = entries.map((entry) =>
     [
       entry.id,
       entry.createdAt.toISOString(),
+      entry.userId ? usernameById.get(entry.userId) ?? "" : "",
       entry.userId,
       entry.action,
       entry.resourceType,

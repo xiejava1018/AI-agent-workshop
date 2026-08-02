@@ -13,6 +13,11 @@ model User {
   passwordHash          String
   mustChangePassword    Boolean            @default(false)
   disabled              Boolean            @default(false)
+  // 用户管理补齐的可空扩展属性:全 nullable,旧数据不受影响。
+  email                 String?            @unique
+  full_name             String?
+  phone                 String?
+  gender                Int?               // 1=男 / 2=女(与前端 1/2 枚举对齐),NULL=未设置
   lastProjectId         String?
   createdBy             String?
   createdAt             DateTime           @default(now())

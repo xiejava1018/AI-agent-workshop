@@ -155,6 +155,15 @@ const MENUS: ParentSeed[] = [
         icon: "ri:key-2-line"
       },
       {
+        name: "platform-teams",
+        title: "团队管理",
+        path: "/system/team",
+        component: "/system/team/index",
+        sort: 10,
+        permissionCodes: ["platform:access"],
+        icon: "ri:group-2-line"
+      },
+      {
         name: "platform-menus",
         title: "菜单管理",
         path: "/system/menu",
@@ -167,7 +176,7 @@ const MENUS: ParentSeed[] = [
         name: "platform-models",
         title: "模型配置",
         path: "/admin/models",
-        component: "/platform/index",
+        component: "/system/models/index",
         sort: 4,
         permissionCodes: ["model:view"],
         icon: "ri:cpu-line"

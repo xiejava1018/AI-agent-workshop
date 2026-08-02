@@ -72,3 +72,6 @@ apps/web/probe*.mjs
 
 # pi agent worktrees (local)
 .claude/worktrees/
+
+# understand tool cache (local)
+.ua/

@@ -17,10 +17,23 @@ export async function GET(
   }
 
   const { id } = await params;
-  const entry = await prisma.auditLog.findUnique({ where: { id } });
+  const entry = await prisma.auditLog.findUnique({
+    where: { id },
+  });
   if (!entry) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ entry });
+  // AuditLog 没有 FK 到 User,需要单独查询 username。userId 为 null(系统/匿名
+  // 记录)时 username 也为 null,前端负责 fallback。
+  const username = entry.userId
+    ? (
+        await prisma.user.findUnique({
+          where: { id: entry.userId },
+          select: { username: true },
+        })
+      )?.username ?? null
+    : null;
+
+  return NextResponse.json({ entry: { ...entry, username } });
 }

@@ -95,10 +95,20 @@ export const asyncRoutes: AppRouteRecord[] = [
           keepAlive: true,
           roles: ['R_SUPER', 'R_ADMIN'],
           authList: [
-            { title: '新增', authMark: 'add' },
-            { title: '编辑', authMark: 'edit' },
-            { title: '删除', authMark: 'delete' }
-          ]
+           { title: '新增', authMark: 'add' },
+           { title: '编辑', authMark: 'edit' },
+           { title: '删除', authMark: 'delete' }
+         ]
+       }
+      },
+      {
+        path: 'models',
+        name: 'ModelsConfig',
+        component: RoutesAlias.ModelsConfig,
+        meta: {
+          title: '模型配置',
+          keepAlive: true,
+          roles: ['R_SUPER', 'R_ADMIN']
         }
       }
     ]

@@ -38,6 +38,13 @@
         destroy-on-close
       >
         <ElForm ref="formRef" :model="form" :rules="rules" label-width="100px" @submit.prevent>
+          <ElFormItem label="角色编码" prop="code">
+            <ElInput
+              v-model="form.code"
+              :disabled="dialogType === 'edit'"
+              placeholder="请输入角色编码（英文字母或下划线）"
+            />
+          </ElFormItem>
           <ElFormItem label="角色名称" prop="name">
             <ElInput v-model="form.name" placeholder="请输入角色名称" />
           </ElFormItem>
@@ -101,10 +108,11 @@
 
   // 表单数据
   const form = reactive({
-    id: '',
-    name: '',
-    desc: '',
-    status: true
+    id: '' as string,
+    code: '' as string,
+    name: '' as string,
+    desc: '' as string,
+    status: true as boolean
   })
   const dialogType = ref('add')
   const dialogVisible = ref(false)
@@ -115,6 +123,15 @@
 
   // 表单验证规则
   const rules = reactive<FormRules>({
+    code: [
+      { required: true, message: '请输入角色编码', trigger: 'blur' },
+      {
+        pattern: /^[a-z][a-z0-9_]*$/,
+        message: '角色编码以小写字母开头，仅含小写字母、数字、下划线',
+        trigger: 'blur'
+      },
+      { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' }
+    ],
     name: [
       { required: true, message: '请输入角色名称', trigger: 'blur' },
       { min: 2, max: 20, message: '长度在 2 到 20 个字符', trigger: 'blur' }
@@ -148,25 +165,32 @@
       },
       columnsFactory: () => [
         {
+          prop: 'code',
+          label: '角色编码',
+          align: 'center',
+          formatter: (row: any) => row.code || '--'
+        },
+        {
           prop: 'name',
           label: '角色名称',
           align: 'center'
         },
         {
-          prop: 'description',
+          prop: 'desc',
           label: '描述',
           align: 'center',
-          showOverflowTooltip: true
+          showOverflowTooltip: true,
+          formatter: (row: any) => row.desc || '--'
         },
         {
-          prop: 'status',
+          prop: 'enabled',
           label: '状态',
           align: 'center',
           formatter: (row: any) =>
             h(
               resolveComponent('ElTag'),
-              { type: row.is_active !== false ? 'primary' : 'warning' },
-              { default: () => (row.is_active !== false ? '启用' : '禁用') }
+              { type: row.enabled !== false ? 'primary' : 'warning' },
+              { default: () => (row.enabled !== false ? '启用' : '禁用') }
             )
         },
         {
@@ -209,12 +233,16 @@
     nextTick(() => {
       formRef.value?.resetFields()
       if (type === 'edit' && row) {
-        form.id = row.id
-        form.name = row.name
-        form.desc = row.description || ''
-        form.status = row.is_active !== false
+        form.id = row.id ? String(row.id) : ''
+        form.code = row.code || ''
+        form.name = row.name || ''
+        form.desc = row.desc || ''
+        // 后端 GET 返回 enabled boolean。表格渲染 / 编辑表单都用 status 表达 1/2。
+        // 这里直接保留 boolean 即可（ElSwitch 期望 boolean）。
+        form.status = row.enabled !== false
       } else {
         form.id = ''
+        form.code = ''
         form.name = ''
         form.desc = ''
         form.status = true
@@ -234,7 +262,7 @@
   }
 
   // 删除角色
-  const deleteRoleAction = (id: number) => {
+  const deleteRoleAction = (id: string | number) => {
     ElMessageBox.confirm('确定删除该角色吗？删除后无法恢复！', '删除确认', {
       confirmButtonText: '确定删除',
       cancelButtonText: '取消',
@@ -242,16 +270,21 @@
     })
       .then(async () => {
         try {
-          const response = await deleteRole(id)
-          if (response.code === 200) {
+          // 后端 SysRole.id 是 cuid 字符串。直接透传避免 Number(cuid) → NaN → 404。
+          const response = await deleteRole(String(id))
+          if (response && (response.id || response.code === 200)) {
             ElMessage.success('删除成功')
             refresh()
           } else {
-            ElMessage.error(response.message || '删除失败')
+            ElMessage.error('删除失败')
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('删除角色出错:', err)
-          ElMessage.error('删除失败，请稍后再试')
+          const serverMessage =
+            err?.message ||
+            err?.response?.data?.error ||
+            err?.response?.data?.message
+          ElMessage.error(serverMessage || '删除失败，请稍后再试')
         }
       })
       .catch(() => {})
@@ -264,28 +297,49 @@
       if (valid) {
         submitLoading.value = true
         try {
-          // 字段名映射：前端 desc → 后端 description；status:1/2 → is_active:bool
-          const roleData = {
-            name: form.name,
-            description: form.desc,
-            is_active: form.status === true
-          }
+          // 后端契约（SysRole）：code / name / desc / enabled / sort
+          //   - 新增时需要带 code(后端唯一键);
+          //   - 编辑时**严禁**带 code(后端 PUT 路由会拒绝并 400 'code is immutable',
+          //     这就是用户报“修改角色名称和描述报错”的根因)。编辑仅传 name/desc/enabled。
+          const roleData =
+            dialogType.value === 'add'
+              ? {
+                  code: form.code,
+                  name: form.name,
+                  desc: form.desc,
+                  enabled: form.status === true
+                }
+              : {
+                  name: form.name,
+                  desc: form.desc,
+                  enabled: form.status === true
+                }
           const response =
             dialogType.value === 'add'
               ? await addRole(roleData)
-              : await updateRole(Number(form.id), roleData)
-          // axios 默认解包 → response 是 RoleResponse 对象本身（无 code 字段）
-          // 没 reject 就视为成功
-          if (response && (response.id || response.name)) {
+              : await updateRole(form.id, roleData)
+          // httpClient 默认解包 res.data —— 拿到的 response 是后端 envelope.data
+          //   新增：{ id, code }
+          //   修改：{ id }
+          // 只要拿到 id 就视为成功；新增时后端 code & name 唯一性重复会返回 409，
+          // 这种错误会在 catch 里从 error.message 抽取后端 message。
+          if (response && (response.id || response.code)) {
             ElMessage.success(dialogType.value === 'add' ? '新增成功' : '修改成功')
             dialogVisible.value = false
             refresh()
           } else {
             ElMessage.error('操作失败')
           }
-        } catch (err) {
+        } catch (err: any) {
+          // 后端 400/409 等错误响应会被 httpClient 拦截器包装成 HttpError；
+          // error.message 已含后端返回的具体原因（如 "code & name required" /
+          // "role code 'xxx' already exists"），直接透传给用户更可读。
           console.error('提交表单出错:', err)
-          ElMessage.error('操作失败，请稍后再试')
+          const serverMessage =
+            err?.message ||
+            err?.response?.data?.error ||
+            err?.response?.data?.message
+          ElMessage.error(serverMessage || '操作失败，请稍后再试')
         } finally {
           submitLoading.value = false
         }

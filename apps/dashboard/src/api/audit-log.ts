@@ -16,6 +16,11 @@ export interface AuditLogListParams {
 interface BackendAuditLogEntry {
   id: string
   userId?: string | null
+  // 后端 /api/admin/audit(/[id]) 与 export 都会带上 username(顶层字段),
+  // 是为补充可读业务标识(用户报告“操作用户显示 ID 而不是账号名”问题);
+  // userId 可能为 null(匿名/系统操作),此时 username 也为 null,
+  // 前端负责 fallback 到 user_id 占位。
+  username?: string | null
   action: string
   resourceType: string
   resourceId?: string | null
@@ -35,6 +40,7 @@ interface BackendAuditLogResponse {
 export interface AuditLogItem {
   id: string
   user_id?: string | null
+  username?: string | null
   action: string
   resource_type: string
   resource_id?: string | null
@@ -54,6 +60,7 @@ function toRow(entry: BackendAuditLogEntry): AuditLogItem {
   return {
     id: entry.id,
     user_id: entry.userId ?? null,
+    username: entry.username ?? null,
     action: entry.action,
     resource_type: entry.resourceType,
     resource_id: entry.resourceId ?? null,
