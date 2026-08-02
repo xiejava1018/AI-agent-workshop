@@ -86,10 +86,37 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
       take: limit,
+      // 不引入 user relation(AuditLog 没有 FK),走以下两步:
+      //   1) 取出本页 entries 涉及到的 userId(去重)
+      //   2) 一次性从 User 表查出 username,映射 cuid → username
+      // 前端表格“操作用户”列读 entry.username。
+      //
+      // userId 为 null(匿名/系统记录)怎么办?
+      //   entries[i].userId === null => username 设为 null,前端负责 fallback 到 --。
     }),
   ]);
 
-  return NextResponse.json({ entries, total, page, limit });
+  // 批量 join username(避免 prisma include user(无 FK))
+  const userIds = Array.from(
+    new Set(entries.map((e) => e.userId).filter((id): id is string => !!id)),
+  );
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, username: true },
+      })
+    : [];
+  const usernameById = new Map(users.map((u) => [u.id, u.username]));
+
+  const entriesWithUsername = entries.map((e) => ({
+    ...e,
+    // 注意:除了 entries 本身的字段,额外 append username,后端查询本身
+    // 用 select 时不会多选列。这里使用对象展开 + override,序列化后
+    // JSON 会多一个 username 字段。
+    username: e.userId ? usernameById.get(e.userId) ?? null : null,
+  }));
+
+  return NextResponse.json({ entries: entriesWithUsername, total, page, limit });
 }
 
 // -----------------------------------------------------------------------------
