@@ -9,8 +9,10 @@
 ## 进度
 
 - **P0 分发管道打通** ✅ 已完成（commit `605b389`）—— `materializeSkill` + install 改造 + `startRpcSession` sync；26 单测 + 真实 fs 冒烟通过。
-- **P1 curated 数据规范化** ✅ 已完成（本批）—— `seedFromBuiltin` 落 SKILLS_ROOT + upsert global SkillPackage + 存量迁移脚本；dev server API 端到端验证通过。
-- P2 / P3 / P4 待实施。
+- **P1 curated 数据规范化** ✅ 已完成（commit `25269ec`）—— `seedFromBuiltin` 落 SKILLS_ROOT + upsert global SkillPackage + 存量迁移脚本；dev server API 端到端验证通过。
+- **P2 来源追溯** ✅ 已完成（commit `04b0f6e`）—— `GET /api/digital-employees/[id]` skillBindings enrich（slug/name/scope/source/curated）+ 前端编辑器来源徽标；curl 验证全字段。
+- **P3 反馈闭环** ✅ 已完成（commit `04b0f6e`）—— `SkillInvocation` migration（triggerKind/outcome/...）+ skill-invoke/skill-block 写入 + `GET /api/skills/[id]/stats`；curl 验证 200。
+- P4 治理规范 待实施。
 
 > 注：P0.3.4「sync 失败写 SkillInvocation(outcome)」依赖 P3 的 schema 迁移（triggerKind/outcome 字段），P0 阶段先用 `console.warn` 替代，P3 补 DB 写入。
 > 注：`openspec-*` 等 frontmatter 缺 `name` 的 builtin skill 会被 seed 跳过，其 CuratedEntry.sourceFilePath 仍为开发机路径（但文件存在时 install curated 仍可 materialize）。彻底规范化留 P4 frontmatter 治理。
