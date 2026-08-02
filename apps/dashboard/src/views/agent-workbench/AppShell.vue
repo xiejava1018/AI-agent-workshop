@@ -11,6 +11,13 @@
 -->
 <template>
   <div class="agent-workbench art-full-height">
+    <!-- 项目切换顶栏:任何会话创建都依赖 user.lastProjectId,这里是必选入口。
+         没项目时 ProjectPicker 会显示空态引导,避免用户点「新建会话」才报错。 -->
+    <div class="wb-project-bar">
+      <ProjectPicker @change="handleProjectChange" />
+      <div class="wb-project-bar-spacer" />
+    </div>
+
     <div class="workbench-card">
       <!-- 左侧: 会话列表 -->
       <aside class="wb-session-list">
@@ -149,6 +156,8 @@
   import SkillsConfig from './components/SkillsConfig.vue'
   import PluginsConfig from './components/PluginsConfig.vue'
   import FileExplorer from './components/FileExplorer.vue'
+  import ProjectPicker from './components/ProjectPicker.vue'
+  import type { ProjectItem } from '@/api/projects'
 
   import type { ConfigPanelKey, WorkbenchTab } from './types'
   import { useSessionList } from './composables/useSessionList'
@@ -413,9 +422,45 @@
   function handleFileChanged(path: string): void {
     ElMessage.info(`文件已变更: ${path}`)
   }
+
+  // ============================================================================
+  // 项目切换
+  // ============================================================================
+
+  /**
+   * ProjectPicker 切换项目后回调。
+   *
+   * 会话是项目上下文绑定的(后端 agent/new 用 user.lastProjectId 解析 cwd),
+   * 切项目后旧的 tab/session 已经不属于当前项目,需:
+   *   1. 清空当前 tab + currentSessionId(避免用户误以为旧会话还在新项目下)
+   *   2. 重新拉取会话列表(sessionList.load()) —— 后端会返回新项目下的会话
+   */
+  async function handleProjectChange(_project: ProjectItem): Promise<void> {
+    tabs.value = []
+    currentSessionId.value = null
+    writeLastSessionId(null)
+    await sessionList.load(true)
+  }
 </script>
 
 <style scoped>
+  /* 让顶栏(project bar) + workbench-card 上下堆叠。
+     workbench.css 里 .agent-workbench 默认是 row flex,这里覆盖为 column
+     以容纳项目切换顶栏。 */
+  .agent-workbench {
+    flex-direction: column;
+  }
+  .wb-project-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    padding: var(--wb-pad-sm, 6px) var(--wb-pad-md, 12px);
+    border-bottom: 1px solid var(--wb-border, #e4e7ed);
+    background: var(--wb-bg-elevated, #fff);
+  }
+  .wb-project-bar-spacer {
+    flex: 1 1 auto;
+  }
   .wb-empty {
     flex: 1 1 auto;
     display: flex;
