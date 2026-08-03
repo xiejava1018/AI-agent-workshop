@@ -185,7 +185,7 @@ const MENUS: ParentSeed[] = [
         name: "platform-mcp",
         title: "MCP 精选库",
         path: "/admin/mcp",
-        component: "/platform/index",
+        component: "/mcp-curated/index",
         sort: 5,
         permissionCodes: ["mcp:view"],
         icon: "ri:puzzle-line"

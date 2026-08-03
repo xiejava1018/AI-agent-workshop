@@ -370,6 +370,21 @@ async function fetchUserInfo(): Promise<void> {
   const userStore = useUserStore()
   const data = await fetchGetUserInfo()
   userStore.setUserInfo(data)
+  // M4: 填充权限码与角色集合。后端 /api/auth/me 已返回 permissions / roles,
+  // 但 setUserInfo 只存 info 基础字段(username/avatar...),不碰这两项。
+  // 若不在此写入 store,则 hasPermission / hasAnyPermission / roles 永远为空,
+  // 导致 v-auth 指令与所有 canEdit 按钮级权限判断失效(平台管理类页面
+  // 的新增/编辑/删除按钮全部隐藏)。
+  const me = data as Api.Auth.UserInfo & {
+    permissions?: string[]
+    roles?: Array<{ code: string; name: string }>
+  }
+  if (Array.isArray(me.permissions)) {
+    userStore.permissions = new Set(me.permissions)
+  }
+  if (Array.isArray(me.roles)) {
+    userStore.roles = me.roles
+  }
   // 检查并清理工作台标签页（如果是不同用户登录）
   userStore.checkAndClearWorktabs()
 }

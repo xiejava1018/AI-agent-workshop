@@ -51,6 +51,27 @@ function isBindingMode(v: unknown): v is BindingMode {
 }
 
 // -----------------------------------------------------------------------------
+// GET — 当前 Agent 绑定列表
+// -----------------------------------------------------------------------------
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  const gate = await ownerGate(req);
+  if (!("ok" in gate)) {
+    return gate.authed ? forbiddenResponse() : unauthorizedResponse();
+  }
+
+  const { id } = await params;
+  const server = await prisma.mcpServer.findUnique({ where: { id } });
+  if (!server) return notFoundResponse();
+
+  const bindings = await prisma.agentMcpBinding.findMany({ where: { mcpServerId: id } });
+  return NextResponse.json({ bindings });
+}
+
+// -----------------------------------------------------------------------------
 // PATCH
 // -----------------------------------------------------------------------------
 
